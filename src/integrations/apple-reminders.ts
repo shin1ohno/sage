@@ -380,63 +380,124 @@ end tell`;
 
   /**
    * Build AppleScript for fetching reminders
+   * Returns data in a parseable format with ||| as field delimiter and %%% as record delimiter
    */
   private buildFetchRemindersScript(listName?: string): string {
     const targetList = listName ? `list "${listName}"` : 'default list';
 
     return `
 tell application "Reminders"
-  set reminderList to {}
+  set output to ""
   set targetList to ${targetList}
+  set recordDelim to "%%%"
+  set fieldDelim to "|||"
 
   repeat with r in reminders of targetList
-    set reminderInfo to {id of r, name of r, body of r, completed of r, due date of r, creation date of r, modification date of r, priority of r}
-    set end of reminderList to reminderInfo
+    set reminderId to id of r
+    set reminderName to name of r
+
+    -- Handle body (notes) - may be missing value
+    try
+      set reminderBody to body of r
+      if reminderBody is missing value then
+        set reminderBody to ""
+      end if
+    on error
+      set reminderBody to ""
+    end try
+
+    set reminderCompleted to completed of r
+
+    -- Handle due date - may be missing value
+    try
+      set reminderDue to due date of r
+      if reminderDue is missing value then
+        set reminderDueStr to ""
+      else
+        set reminderDueStr to (reminderDue as string)
+      end if
+    on error
+      set reminderDueStr to ""
+    end try
+
+    -- Handle creation date
+    try
+      set reminderCreated to (creation date of r as string)
+    on error
+      set reminderCreated to ""
+    end try
+
+    -- Handle modification date
+    try
+      set reminderModified to (modification date of r as string)
+    on error
+      set reminderModified to ""
+    end try
+
+    set reminderPriority to priority of r
+
+    set reminderRecord to reminderId & fieldDelim & reminderName & fieldDelim & reminderBody & fieldDelim & reminderCompleted & fieldDelim & reminderDueStr & fieldDelim & reminderCreated & fieldDelim & reminderModified & fieldDelim & reminderPriority
+
+    if output is "" then
+      set output to reminderRecord
+    else
+      set output to output & recordDelim & reminderRecord
+    end if
   end repeat
 
-  return reminderList
+  return output
 end tell`;
   }
 
   /**
    * Parse AppleScript result into reminder objects
+   * Format: record1%%%record2%%%...
+   * Each record: id|||name|||body|||completed|||dueDate|||creationDate|||modificationDate|||priority
    */
   private parseRemindersResult(result: string): ReminderFromAppleScript[] {
-    if (!result || result.trim() === '' || result.trim() === '{}') {
+    if (!result || result.trim() === '') {
       return [];
     }
 
     try {
-      // AppleScript returns a list of lists
-      // Format: {{id, name, notes, completed, dueDate, creationDate, modificationDate, priority}, ...}
+      const RECORD_DELIMITER = '%%%';
+      const FIELD_DELIMITER = '|||';
       const reminders: ReminderFromAppleScript[] = [];
 
-      // Basic parsing - AppleScript result format varies
-      // This is a simplified parser that handles common formats
-      const cleanResult = result.trim();
+      // Split by record delimiter
+      const records = result.split(RECORD_DELIMITER);
 
-      // If result looks like a structured list
-      if (cleanResult.startsWith('{{') || cleanResult.startsWith('{')) {
-        // Split by reminder entries (rough approximation)
-        const entries = cleanResult
-          .replace(/^\{+|\}+$/g, '')
-          .split(/\},\s*\{/);
+      for (const record of records) {
+        const trimmedRecord = record.trim();
+        if (!trimmedRecord) continue;
 
-        for (const entry of entries) {
-          const parts = entry.split(',').map((p) => p.trim());
-          if (parts.length >= 2) {
-            reminders.push({
-              id: parts[0]?.replace(/"/g, '') || '',
-              title: parts[1]?.replace(/"/g, '') || 'Untitled',
-              notes: parts[2]?.replace(/"/g, '') || undefined,
-              completed: parts[3]?.toLowerCase() === 'true',
-              dueDate: this.parseAppleScriptDate(parts[4]),
-              creationDate: this.parseAppleScriptDate(parts[5]),
-              modificationDate: this.parseAppleScriptDate(parts[6]),
-              priority: parseInt(parts[7] || '0', 10) || undefined,
-            });
-          }
-        }
+        // Split by field delimiter
+        const fields = trimmedRecord.split(FIELD_DELIMITER);
+
+        if (fields.length < 2) continue; // At minimum need id and title
+
+        const id = fields[0]?.trim() || '';
+        const title = fields[1]?.trim() || 'Untitled';
+        const notes = fields[2]?.trim() || undefined;
+        const completedStr = fields[3]?.trim().toLowerCase() || 'false';
+        const dueDateStr = fields[4]?.trim() || undefined;
+        const creationDateStr = fields[5]?.trim() || undefined;
+        const modificationDateStr = fields[6]?.trim() || undefined;
+        const priorityStr = fields[7]?.trim() || '0';
+
+        // Skip if no valid id
+        if (!id) continue;
+
+        reminders.push({
+          id,
+          title,
+          notes: notes || undefined,
+          completed: completedStr === 'true',
+          dueDate: this.parseAppleScriptDate(dueDateStr),
+          creationDate: this.parseAppleScriptDate(creationDateStr),
+          modificationDate: this.parseAppleScriptDate(modificationDateStr),
+          priority: parseInt(priorityStr, 10) || undefined,
+        });
       }
 
       return reminders;
