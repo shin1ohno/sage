@@ -1,0 +1,66 @@
+{
+  "manifest_version": "1",
+  "id": "@shin1ohno/sage",
+  "name": "sage - AI Task Manager",
+  "description": "AI Task Management Assistant for Claude. Analyze tasks, set priorities, manage reminders, and integrate with Apple Reminders, Notion, and Calendar.",
+  "version": "0.1.0",
+  "author": {
+    "name": "shin1ohno"
+  },
+  "website": "https://github.com/shin1ohno/sage",
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js"
+  },
+  "compatibility": {
+    "os": ["darwin"],
+    "arch": ["x64", "arm64"],
+    "min_claude": "1.0.0"
+  },
+  "permissions": [
+    "filesystem.read",
+    "filesystem.write"
+  ],
+  "tools": [
+    {
+      "name": "check_setup_status",
+      "description": "Check if sage has been configured. Returns setup status and guidance."
+    },
+    {
+      "name": "start_setup_wizard",
+      "description": "Start the interactive setup wizard for sage. Returns the first question."
+    },
+    {
+      "name": "answer_wizard_question",
+      "description": "Answer a question in the setup wizard and get the next question."
+    },
+    {
+      "name": "save_config",
+      "description": "Save the configuration after completing the setup wizard."
+    },
+    {
+      "name": "analyze_tasks",
+      "description": "Analyze tasks to determine priority, estimate time, and identify stakeholders."
+    },
+    {
+      "name": "set_reminder",
+      "description": "Set a reminder for a task in Apple Reminders or Notion."
+    },
+    {
+      "name": "find_available_slots",
+      "description": "Find available time slots in the calendar for scheduling tasks."
+    },
+    {
+      "name": "sync_to_notion",
+      "description": "Sync a task to Notion database for long-term tracking."
+    },
+    {
+      "name": "update_config",
+      "description": "Update sage configuration settings."
+    }
+  ],
+  "update": {
+    "type": "github_release",
+    "repo": "shin1ohno/sage"
+  }
+}

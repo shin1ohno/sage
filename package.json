@@ -19,6 +19,7 @@
   },
   "files": [
     "dist",
+    "manifest.json",
     "README.md",
     "LICENSE"
   ],
