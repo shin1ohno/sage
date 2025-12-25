@@ -4,7 +4,7 @@
   "description": "AI Task Management Assistant - タスク分析、優先順位付け、リマインド設定、カレンダー統合",
   "author": "shin1ohno",
   "license": "MIT",
-  "repository": "https://github.com/anthropics/sage",
+  "repository": "https://github.com/shin1ohno/sage",
   "mcpVersion": "1.0",
   "runtime": "node",
   "entryPoint": "dist/index.js",

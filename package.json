@@ -38,12 +38,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/anthropics/sage.git"
+    "url": "https://github.com/shin1ohno/sage.git"
   },
   "bugs": {
-    "url": "https://github.com/anthropics/sage/issues"
+    "url": "https://github.com/shin1ohno/sage/issues"
   },
-  "homepage": "https://github.com/anthropics/sage#readme",
+  "homepage": "https://github.com/shin1ohno/sage#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
     "run-applescript": "^7.1.0",
