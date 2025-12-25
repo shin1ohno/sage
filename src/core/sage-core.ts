@@ -1,11 +1,13 @@
 /**
  * SageCore
- * Platform-independent core logic for sage task management
+ * Core logic for sage task management
  * Requirements: 2.1, 2.2, 11.1, 7.3, 7.4
  *
- * 実装:
- * - desktop_mcp: AppleScript経由の統合
- * - remote_mcp: Remote MCP Server経由の統合
+ * sage は macOS 専用で、以下の方式で動作します：
+ * - desktop_mcp: Claude Desktop/Code から直接実行（AppleScript統合）
+ * - remote_mcp: macOS 上の Remote MCP Server 経由でアクセス（iOS/Web クライアント用）
+ *
+ * 注意: Remote MCP Server も macOS 上で実行する必要があります（AppleScript のため）
  */
 
 import type { PlatformAdapter, PlatformInfo, FeatureSet } from '../platform/types.js';
@@ -15,19 +17,18 @@ import type { AnalysisResult } from '../tools/analyze-tasks.js';
 import { DEFAULT_CONFIG } from '../types/config.js';
 
 /**
- * Integration recommendation for a specific platform
+ * Integration recommendation for the platform
  */
 export interface IntegrationRecommendation {
   integration: 'reminders' | 'calendar' | 'notion';
   available: boolean;
-  method: 'native' | 'applescript' | 'mcp' | 'remote' | 'manual_copy';
-  fallback?: string;
+  method: 'applescript' | 'mcp' | 'remote';
   description: string;
 }
 
 /**
  * SageCore - The main entry point for sage functionality
- * Works with any platform adapter to provide consistent task management
+ * Works with platform adapters to provide task management
  */
 export class SageCore {
   private adapter: PlatformAdapter;
@@ -126,24 +127,16 @@ export class SageCore {
     if (platformType === 'desktop_mcp') {
       recommendations.push({
         integration: 'reminders',
-        available: true,
+        available: features.appleReminders,
         method: 'applescript',
         description: 'AppleScript経由でApple Remindersに連携',
       });
     } else if (platformType === 'remote_mcp') {
       recommendations.push({
         integration: 'reminders',
-        available: true,
+        available: features.appleReminders,
         method: 'remote',
         description: 'Remote MCP Server経由でApple Remindersに連携',
-      });
-    } else {
-      recommendations.push({
-        integration: 'reminders',
-        available: false,
-        method: 'manual_copy',
-        fallback: 'manual_copy',
-        description: 'Apple Remindersへは手動コピーで追加してください',
       });
     }
 
@@ -151,51 +144,33 @@ export class SageCore {
     if (platformType === 'desktop_mcp') {
       recommendations.push({
         integration: 'calendar',
-        available: true,
+        available: features.calendarIntegration,
         method: 'applescript',
         description: 'AppleScript経由でCalendar.appから予定を取得',
       });
     } else if (platformType === 'remote_mcp') {
       recommendations.push({
         integration: 'calendar',
-        available: true,
+        available: features.calendarIntegration,
         method: 'remote',
         description: 'Remote MCP Server経由でカレンダーイベントを取得',
-      });
-    } else {
-      recommendations.push({
-        integration: 'calendar',
-        available: false,
-        method: 'manual_copy',
-        fallback: 'manual_input',
-        description: 'カレンダー情報は手動で入力してください',
       });
     }
 
     // Notion integration
-    if (features.notionIntegration) {
-      if (platformType === 'desktop_mcp') {
-        recommendations.push({
-          integration: 'notion',
-          available: true,
-          method: 'mcp',
-          description: 'MCP経由でNotionデータベースに連携',
-        });
-      } else if (platformType === 'remote_mcp') {
-        recommendations.push({
-          integration: 'notion',
-          available: true,
-          method: 'remote',
-          description: 'Remote MCP Server経由でNotionデータベースに連携',
-        });
-      }
-    } else {
+    if (platformType === 'desktop_mcp') {
       recommendations.push({
         integration: 'notion',
-        available: false,
-        method: 'manual_copy',
-        fallback: 'manual_copy',
-        description: 'Notionへは手動コピーで追加してください',
+        available: features.notionIntegration,
+        method: 'mcp',
+        description: 'MCP経由でNotionデータベースに連携',
+      });
+    } else if (platformType === 'remote_mcp') {
+      recommendations.push({
+        integration: 'notion',
+        available: features.notionIntegration,
+        method: 'remote',
+        description: 'Remote MCP Server経由でNotionデータベースに連携',
       });
     }
 

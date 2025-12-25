@@ -2,12 +2,14 @@
 
 ## Overview
 
-sage (賢者) は、マルチプラットフォーム対応の AI タスク管理アシスタントです。Apple Reminders、Notion、Calendar サービスと連携し、以下の環境で動作します:
+sage (賢者) は、macOS 専用の AI タスク管理アシスタントです。AppleScript を使用して Apple Reminders、Calendar と統合し、Notion とは MCP 経由で連携します。
 
-| 環境 | 実行方式 | 統合方法 |
-|------|----------|----------|
-| **Desktop MCP** | Claude Desktop/Code | Local MCP Server |
-| **Remote MCP** | iOS/iPadOS/Web | HTTP-based MCP Server |
+| 環境 | 実行方式 | 説明 |
+|------|----------|------|
+| **Desktop MCP** | Claude Desktop/Code | macOS 上で直接実行 |
+| **Remote MCP** | iOS/iPadOS/Web からアクセス | macOS 上の Remote MCP Server 経由 |
+
+**重要**: Remote MCP Server も macOS 上で実行する必要があります（AppleScript のため）。
 
 ## Architecture Diagram
 

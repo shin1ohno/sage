@@ -70,11 +70,13 @@ Tasks are automatically routed to the appropriate system:
 
 ### Platform Support
 
-| Platform | Apple Reminders | Calendar | Notion |
-|----------|----------------|----------|--------|
-| macOS (Desktop/Code) | AppleScript | AppleScript | MCP |
-| iOS/iPadOS (Remote) | Remote MCP | Remote MCP | Remote MCP |
-| Web (Remote) | Remote MCP | Remote MCP | Remote MCP |
+| クライアント | サーバー | Apple Reminders | Calendar | Notion |
+|--------------|----------|----------------|----------|--------|
+| Claude Desktop/Code | macOS (直接) | AppleScript | AppleScript | MCP |
+| Claude iOS/iPadOS | macOS (Remote MCP) | AppleScript | AppleScript | MCP |
+| Claude Web | macOS (Remote MCP) | AppleScript | AppleScript | MCP |
+
+**すべてのケースで macOS が必要です**（AppleScript のため）。
 
 ## Tools
 
@@ -100,9 +102,11 @@ Tasks are automatically routed to the appropriate system:
 
 ## Requirements
 
+- **macOS** (必須 - AppleScript で Apple Reminders/Calendar と統合)
 - Node.js >= 18.0.0
-- macOS (for Apple Reminders/Calendar via AppleScript)
-- Notion MCP server (optional, for Notion integration)
+- Notion MCP server (任意、Notion 統合用)
+
+**注意**: sage は macOS 専用です。Remote MCP Server を使用する場合も、サーバーは macOS 上で実行する必要があります。
 
 ## Development
 

@@ -1,18 +1,14 @@
 /**
  * Platform Compatibility Tests
- * Requirements: 7.3, 7.4, 7.5
- * Tests for cross-platform functionality
+ * Requirements: 7.3, 7.4
  *
- * 実装:
- * - desktop_mcp: MCPAdapter
- * - remote_mcp: RemoteMCPAdapter
+ * sage は macOS 専用で、AppleScript を使用して
+ * Apple Reminders/Calendar と統合します。
  */
 
 import { SageCore } from '../../src/core/sage-core.js';
 import { MCPAdapter } from '../../src/platform/adapters/mcp-adapter.js';
-import { RemoteMCPAdapter } from '../../src/platform/adapters/remote-mcp-adapter.js';
 import { UserConfig, DEFAULT_CONFIG } from '../../src/types/config.js';
-import { HybridIntegrationManager, Platform } from '../../src/remote/hybrid-integration.js';
 
 describe('Platform Compatibility', () => {
   const testConfig: UserConfig = {
@@ -30,7 +26,7 @@ describe('Platform Compatibility', () => {
       緊急: サーバー障害対応
     `;
 
-    it('should produce consistent task analysis across MCP adapter', async () => {
+    it('should produce consistent task analysis', async () => {
       const adapter = new MCPAdapter();
       const sage = new SageCore(adapter);
       await sage.initialize(testConfig);
@@ -41,45 +37,20 @@ describe('Platform Compatibility', () => {
       expect(result.analyzedTasks.some((t) => t.priority === 'P0')).toBe(true);
     });
 
-    it('should produce consistent task analysis across Remote MCP adapter', async () => {
-      const adapter = new RemoteMCPAdapter();
+    it('should identify urgent tasks correctly', async () => {
+      const adapter = new MCPAdapter();
       const sage = new SageCore(adapter);
       await sage.initialize(testConfig);
 
       const result = await sage.analyzeFromText(testInput);
 
-      expect(result.analyzedTasks.length).toBeGreaterThan(0);
-      expect(result.analyzedTasks.some((t) => t.priority === 'P0')).toBe(true);
-    });
-
-    it('should produce identical priority rankings across all platforms', async () => {
-      const mcpAdapter = new MCPAdapter();
-      const remoteAdapter = new RemoteMCPAdapter();
-
-      const sageMCP = new SageCore(mcpAdapter);
-      const sageRemote = new SageCore(remoteAdapter);
-
-      await Promise.all([sageMCP.initialize(testConfig), sageRemote.initialize(testConfig)]);
-
-      const results = await Promise.all([
-        sageMCP.analyzeFromText(testInput),
-        sageRemote.analyzeFromText(testInput),
-      ]);
-
-      // All platforms should identify the same number of tasks
-      const taskCounts = results.map((r) => r.analyzedTasks.length);
-      expect(taskCounts[0]).toBe(taskCounts[1]);
-
-      // All platforms should identify urgent task
-      const hasUrgent = results.map((r) =>
-        r.analyzedTasks.some((t) => t.original.title.includes('緊急'))
-      );
-      expect(hasUrgent.every((v) => v)).toBe(true);
+      const hasUrgent = result.analyzedTasks.some((t) => t.original.title.includes('緊急'));
+      expect(hasUrgent).toBe(true);
     });
   });
 
-  describe('Configuration Portability', () => {
-    it('should handle timezone configuration consistently', async () => {
+  describe('Configuration', () => {
+    it('should handle timezone configuration', async () => {
       const tokyoConfig: UserConfig = {
         ...DEFAULT_CONFIG,
         user: { name: 'Tokyo User', timezone: 'Asia/Tokyo' },
@@ -96,73 +67,22 @@ describe('Platform Compatibility', () => {
       await sageTokyo.initialize(tokyoConfig);
       await sageNY.initialize(nyConfig);
 
-      // Config should be accessible
       expect(sageTokyo.getConfig().user.timezone).toBe('Asia/Tokyo');
       expect(sageNY.getConfig().user.timezone).toBe('America/New_York');
     });
   });
 
   describe('Feature Availability', () => {
-    it('should report correct features for MCP adapter', () => {
+    it('should report correct features for macOS MCP adapter', () => {
       const adapter = new MCPAdapter();
       const features = adapter.getAvailableFeatures();
 
       expect(features.taskAnalysis).toBe(true);
       expect(features.appleReminders).toBe(true);
+      expect(features.calendarIntegration).toBe(true);
       expect(features.notionIntegration).toBe(true);
       expect(features.fileSystemAccess).toBe(true);
-    });
-
-    it('should report correct features for Remote MCP adapter', () => {
-      const adapter = new RemoteMCPAdapter();
-      const features = adapter.getAvailableFeatures();
-
-      expect(features.taskAnalysis).toBe(true);
-      expect(features.appleReminders).toBe(true); // via Remote MCP Server
-      expect(features.calendarIntegration).toBe(true); // via Remote MCP Server
-      expect(features.notionIntegration).toBe(true); // via Remote MCP Server
-      expect(features.fileSystemAccess).toBe(false);
-    });
-  });
-
-  describe('Hybrid Integration Compatibility', () => {
-    let hybridManager: HybridIntegrationManager;
-
-    beforeEach(() => {
-      hybridManager = new HybridIntegrationManager();
-    });
-
-    it('should coordinate between macOS and iOS platforms', () => {
-      const plan = hybridManager.planCoordination(['macos', 'ios']);
-
-      expect(plan.platforms).toContain('macos');
-      expect(plan.platforms).toContain('ios');
-      expect(plan.syncStrategy).toBe('real-time');
-    });
-
-    it('should handle web-only configuration', () => {
-      const plan = hybridManager.planCoordination(['web']);
-
-      expect(plan.syncStrategy).toBe('manual');
-    });
-
-    it('should handle mixed native and web platforms', () => {
-      const plan = hybridManager.planCoordination(['macos', 'ios', 'web']);
-
-      expect(plan.syncStrategy).toBe('eventual');
-      expect(plan.conflictResolution).toBe('last-write-wins');
-    });
-
-    const platforms: Platform[] = ['macos', 'ios', 'ipados', 'web'];
-
-    platforms.forEach((platform) => {
-      it(`should provide valid capabilities for ${platform}`, () => {
-        const capabilities = hybridManager.detectCapabilities(platform);
-
-        expect(capabilities.reminders).toBeDefined();
-        expect(capabilities.calendar).toBeDefined();
-        expect(capabilities.notion).toBeDefined();
-      });
+      expect(features.persistentConfig).toBe(true);
     });
   });
 
@@ -174,21 +94,17 @@ describe('Platform Compatibility', () => {
       また、田中さんへのフォローアップも必要
     `;
 
-    it('should correctly parse Japanese task separators on all platforms', async () => {
-      const adapters = [new MCPAdapter(), new RemoteMCPAdapter()];
+    it('should correctly parse Japanese task separators', async () => {
+      const sage = new SageCore(new MCPAdapter());
+      await sage.initialize(testConfig);
 
-      for (const adapter of adapters) {
-        const sage = new SageCore(adapter);
-        await sage.initialize(testConfig);
+      const result = await sage.analyzeFromText(japaneseInput);
 
-        const result = await sage.analyzeFromText(japaneseInput);
-
-        // Should detect multiple tasks from Japanese input
-        expect(result.analyzedTasks.length).toBeGreaterThanOrEqual(2);
-      }
+      // Should detect multiple tasks from Japanese input
+      expect(result.analyzedTasks.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('should detect Japanese manager keywords consistently', async () => {
+    it('should detect Japanese manager keywords', async () => {
       const sage = new SageCore(new MCPAdapter());
       await sage.initialize(testConfig);
 
@@ -202,33 +118,25 @@ describe('Platform Compatibility', () => {
     });
   });
 
-  describe('Error Handling Consistency', () => {
-    it('should handle empty input consistently across platforms', async () => {
-      const adapters = [new MCPAdapter(), new RemoteMCPAdapter()];
+  describe('Error Handling', () => {
+    it('should handle empty input gracefully', async () => {
+      const sage = new SageCore(new MCPAdapter());
+      await sage.initialize(testConfig);
 
-      for (const adapter of adapters) {
-        const sage = new SageCore(adapter);
-        await sage.initialize(testConfig);
+      const result = await sage.analyzeFromText('');
 
-        const result = await sage.analyzeFromText('');
-
-        expect(result.success).toBe(true);
-        expect(result.analyzedTasks).toHaveLength(0);
-      }
+      expect(result.success).toBe(true);
+      expect(result.analyzedTasks).toHaveLength(0);
     });
 
-    it('should handle whitespace-only input consistently', async () => {
-      const adapters = [new MCPAdapter(), new RemoteMCPAdapter()];
+    it('should handle whitespace-only input', async () => {
+      const sage = new SageCore(new MCPAdapter());
+      await sage.initialize(testConfig);
 
-      for (const adapter of adapters) {
-        const sage = new SageCore(adapter);
-        await sage.initialize(testConfig);
+      const result = await sage.analyzeFromText('   \n\t  ');
 
-        const result = await sage.analyzeFromText('   \n\t  ');
-
-        expect(result.success).toBe(true);
-        expect(result.analyzedTasks).toHaveLength(0);
-      }
+      expect(result.success).toBe(true);
+      expect(result.analyzedTasks).toHaveLength(0);
     });
   });
 });

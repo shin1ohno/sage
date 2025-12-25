@@ -2,34 +2,37 @@
 
 このガイドでは、iOS/iPadOS/Web クライアントから sage を使用するための Remote MCP Server のセットアップ手順を説明します。
 
+## 重要: macOS が必須
+
+**Remote MCP Server は macOS 上で実行する必要があります。**
+
+sage は AppleScript を使用して Apple Reminders や Calendar と統合しているため、Remote MCP Server も macOS でなければ動作しません。Docker や Linux サーバー、Cloudflare Workers では実行できません。
+
 ## アーキテクチャ概要
 
 ```
 ┌─────────────────────┐     HTTPS      ┌─────────────────────┐
 │   Claude iOS App    │ ──────────────→│  Remote MCP Server  │
-│   Claude Web        │                │  (macOS/Cloud)      │
+│   Claude Web        │                │  (macOS 上で実行)    │
 │   Other Clients     │                │                     │
 └─────────────────────┘                └──────────┬──────────┘
-                                                  │
+                                                  │ AppleScript
                                        ┌──────────▼──────────┐
-                                       │   sage Core Logic   │
-                                       │  ┌────────────────┐ │
-                                       │  │Apple Reminders │ │
-                                       │  │Calendar        │ │
-                                       │  │Notion          │ │
-                                       │  └────────────────┘ │
+                                       │   Apple Reminders   │
+                                       │   Calendar.app      │
+                                       │   Notion (MCP経由)   │
                                        └─────────────────────┘
 ```
 
-Remote MCP Server は HTTP/HTTPS 経由で MCP プロトコルを提供し、iOS/iPadOS/Web クライアントからのアクセスを可能にします。
+Remote MCP Server は HTTP/HTTPS 経由で MCP プロトコルを提供し、iOS/iPadOS/Web クライアントからの macOS 上の sage へのアクセスを可能にします。
 
 ---
 
 ## 前提条件
 
-### サーバー要件
+### サーバー要件（Remote MCP Server を実行する Mac）
 
-- **OS**: macOS（Apple Reminders/Calendar統合に必要）または Linux（Notion のみ）
+- **OS**: **macOS** （必須 - AppleScript のため）
 - **Node.js**: 18.0.0 以上
 - **ポート**: 3000（デフォルト、変更可能）
 - **ネットワーク**: クライアントからアクセス可能（ローカルネットワークまたはインターネット）
@@ -41,21 +44,11 @@ Remote MCP Server は HTTP/HTTPS 経由で MCP プロトコルを提供し、iOS
 
 ---
 
-## デプロイメント方法の選択
-
-| 方法 | 難易度 | ユースケース |
-|------|--------|-------------|
-| [ローカル Mac](#ローカル-mac-でのセットアップ) | 簡単 | 自宅内での使用 |
-| [Docker](#docker-でのセットアップ) | 中程度 | サーバーでの運用 |
-| [Cloudflare Workers](#cloudflare-workers-でのセットアップ) | 中程度 | グローバルアクセス |
-
----
-
-## ローカル Mac でのセットアップ
-
-自宅の Mac で Remote MCP Server を実行し、同じネットワーク内の iOS/iPadOS デバイスからアクセスする方法です。
+## セットアップ手順
 
 ### Step 1: sage をインストール
+
+Remote MCP Server を実行する Mac で:
 
 ```bash
 npm install -g @shin1ohno/sage
@@ -66,7 +59,7 @@ npm install -g @shin1ohno/sage
 ```bash
 # 環境変数を設定して起動
 export SAGE_REMOTE_MODE=true
-export SAGE_AUTH_SECRET="your-secure-secret-key"
+export SAGE_AUTH_SECRET="your-secure-secret-key-at-least-32-chars"
 export SAGE_PORT=3000
 
 npx @shin1ohno/sage --remote
@@ -111,9 +104,9 @@ ipconfig getifaddr en0
 
 macOS のファイアウォールでポート 3000 を許可:
 
-1. 「システム環境設定」→「セキュリティとプライバシー」→「ファイアウォール」
-2. 「ファイアウォールオプション...」をクリック
-3. 「+」ボタンでアプリケーションを追加するか、「外部からの接続をすべてブロック」のチェックを外す
+1. 「システム設定」→「ネットワーク」→「ファイアウォール」
+2. 「オプション...」をクリック
+3. 必要に応じて設定を調整
 
 ### Step 5: 認証トークンを取得
 
@@ -123,7 +116,7 @@ macOS のファイアウォールでポート 3000 を許可:
 # トークン生成（サーバーが起動している状態で）
 curl -X POST http://localhost:3000/auth/token \
   -H "Content-Type: application/json" \
-  -d '{"secret": "your-secure-secret-key"}'
+  -d '{"secret": "your-secure-secret-key-at-least-32-chars"}'
 ```
 
 レスポンス例:
@@ -141,174 +134,85 @@ iOS/iPadOS の Claude App で Remote MCP Server を設定:
 **URL**: `http://192.168.1.100:3000/mcp`
 **Authorization**: `Bearer eyJhbGciOiJIUzI1NiIs...`
 
-### Step 7: バックグラウンド実行（任意）
+---
 
-Mac を閉じても実行を継続する場合:
+## バックグラウンド実行
+
+Mac を閉じても Remote MCP Server の実行を継続する場合:
+
+### 方法1: nohup を使用
 
 ```bash
-# nohup を使用
 nohup npx @shin1ohno/sage --remote > ~/.sage/server.log 2>&1 &
 
-# または pm2 を使用
+# ログを確認
+tail -f ~/.sage/server.log
+```
+
+### 方法2: pm2 を使用（推奨）
+
+```bash
+# pm2 をインストール
 npm install -g pm2
+
+# sage を起動
 pm2 start "npx @shin1ohno/sage --remote" --name sage-remote
+
+# 自動起動を設定
 pm2 save
 pm2 startup
+
+# ログを確認
+pm2 logs sage-remote
+
+# 停止
+pm2 stop sage-remote
+
+# 再起動
+pm2 restart sage-remote
 ```
 
----
-
-## Docker でのセットアップ
-
-Docker を使用してサーバー環境で実行する方法です。
-
-### Step 1: リポジトリをクローン
+### 方法3: launchd を使用（macOS ネイティブ）
 
 ```bash
-git clone https://github.com/shin1ohno/sage.git
-cd sage
-```
-
-### Step 2: 環境変数ファイルを作成
-
-```bash
-cat > .env << 'EOF'
-# Authentication
-SAGE_AUTH_SECRET=your-secure-secret-key-at-least-32-characters
-SAGE_AUTH_TYPE=jwt
-
-# Server
-SAGE_PORT=3000
-SAGE_HOST=0.0.0.0
-
-# Notion (optional)
-NOTION_API_KEY=your-notion-api-key
-NOTION_DATABASE_ID=your-database-id
-
-# CORS
-SAGE_CORS_ORIGINS=*
+# plist ファイルを作成
+cat > ~/Library/LaunchAgents/com.sage.remote.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sage.remote</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/npx</string>
+        <string>@shin1ohno/sage</string>
+        <string>--remote</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>SAGE_AUTH_SECRET</key>
+        <string>your-secure-secret-key</string>
+        <key>SAGE_PORT</key>
+        <string>3000</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/sage-remote.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/sage-remote.error.log</string>
+</dict>
+</plist>
 EOF
-```
 
-### Step 3: Docker イメージをビルド
+# 読み込んで起動
+launchctl load ~/Library/LaunchAgents/com.sage.remote.plist
 
-```bash
-docker build -t sage-mcp-server .
-```
-
-### Step 4: コンテナを起動
-
-```bash
-docker run -d \
-  --name sage-remote \
-  --env-file .env \
-  -p 3000:3000 \
-  --restart unless-stopped \
-  sage-mcp-server
-```
-
-### Step 5: ログを確認
-
-```bash
-docker logs -f sage-remote
-```
-
-### Step 6: 動作確認
-
-```bash
-curl http://localhost:3000/health
-# {"status":"ok","version":"0.1.0"}
-```
-
----
-
-## docker-compose でのセットアップ
-
-複数のサービスを一緒に管理する場合に便利です。
-
-### Step 1: docker-compose.yml を確認
-
-```yaml
-version: '3.8'
-
-services:
-  sage-remote:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - SAGE_AUTH_SECRET=${SAGE_AUTH_SECRET}
-      - SAGE_AUTH_TYPE=jwt
-      - SAGE_PORT=3000
-      - NOTION_API_KEY=${NOTION_API_KEY}
-    restart: unless-stopped
-    volumes:
-      - sage-config:/root/.sage
-
-volumes:
-  sage-config:
-```
-
-### Step 2: 起動
-
-```bash
-# 環境変数を設定
-export SAGE_AUTH_SECRET="your-secure-secret-key"
-export NOTION_API_KEY="your-notion-api-key"
-
-# 起動
-docker-compose up -d
-
-# ログ確認
-docker-compose logs -f
-```
-
----
-
-## Cloudflare Workers でのセットアップ
-
-グローバルにアクセス可能な環境で実行する方法です。
-
-### 注意事項
-
-Cloudflare Workers では以下の制限があります:
-
-- **Apple Reminders/Calendar は使用不可**（AppleScript が実行できないため）
-- **Notion 統合のみ利用可能**
-- ファイルシステムへのアクセス不可
-
-### Step 1: Wrangler をインストール
-
-```bash
-npm install -g wrangler
-```
-
-### Step 2: Cloudflare にログイン
-
-```bash
-wrangler login
-```
-
-### Step 3: シークレットを設定
-
-```bash
-wrangler secret put SAGE_AUTH_SECRET
-# プロンプトでシークレットキーを入力
-
-wrangler secret put NOTION_API_KEY
-# プロンプトで Notion API Key を入力
-```
-
-### Step 4: デプロイ
-
-```bash
-wrangler deploy
-```
-
-### Step 5: 動作確認
-
-```bash
-curl https://sage-remote.<your-subdomain>.workers.dev/health
+# 停止
+launchctl unload ~/Library/LaunchAgents/com.sage.remote.plist
 ```
 
 ---
@@ -379,38 +283,35 @@ X-API-Key: key1-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ---
 
-## HTTPS の設定
+## HTTPS の設定（推奨）
 
-本番環境では HTTPS を使用することを強く推奨します。
+インターネット経由でアクセスする場合は HTTPS を使用してください。
 
-### 方法1: リバースプロキシ（推奨）
-
-Nginx や Caddy をリバースプロキシとして使用:
-
-**Caddy の例:**
+### 方法1: Caddy をリバースプロキシとして使用
 
 ```bash
-# Caddyfile
+# Caddy をインストール
+brew install caddy
+
+# Caddyfile を作成
+cat > ~/Caddyfile << 'EOF'
 your-domain.com {
     reverse_proxy localhost:3000
 }
+EOF
+
+# Caddy を起動
+caddy run --config ~/Caddyfile
 ```
 
-```bash
-caddy run
-```
-
-### 方法2: Let's Encrypt 証明書を直接使用
+### 方法2: ngrok を使用（開発・テスト用）
 
 ```bash
-# certbot で証明書を取得
-sudo certbot certonly --standalone -d your-domain.com
+# ngrok をインストール
+brew install ngrok
 
-# 環境変数で設定
-export SAGE_SSL_CERT=/etc/letsencrypt/live/your-domain.com/fullchain.pem
-export SAGE_SSL_KEY=/etc/letsencrypt/live/your-domain.com/privkey.pem
-
-npx @shin1ohno/sage --remote
+# トンネルを作成
+ngrok http 3000
 ```
 
 ---
@@ -424,20 +325,10 @@ npx @shin1ohno/sage --remote
 3. 「Add Server」をタップ
 4. 以下を入力:
    - **Name**: sage
-   - **URL**: `https://your-domain.com/mcp`
+   - **URL**: `https://your-domain.com/mcp` または `http://192.168.1.100:3000/mcp`
    - **Authorization**: `Bearer <your-token>`
 5. 「Save」をタップ
 6. 「Test Connection」で接続を確認
-
-### Claude Web での設定
-
-（Claude Web の MCP サポートが利用可能になった場合）
-
-1. Claude Web を開く
-2. Settings → Integrations → MCP Servers
-3. 「Add Server」をクリック
-4. サーバー情報を入力
-5. 保存して接続テスト
 
 ---
 
@@ -450,9 +341,9 @@ npx @shin1ohno/sage --remote
 openssl rand -base64 32
 ```
 
-### 2. HTTPS を必須にする
+### 2. HTTPS を使用
 
-本番環境では常に HTTPS を使用してください。
+ローカルネットワーク外からアクセスする場合は必ず HTTPS を使用してください。
 
 ### 3. IP ホワイトリストを設定
 
@@ -462,12 +353,11 @@ openssl rand -base64 32
 
 JWT トークンには適切な有効期限を設定してください。
 
-### 5. ログを監視
+### 5. Mac のスリープを防止
 
-```bash
-# ログを確認
-docker logs -f sage-remote | grep -E "(error|warn|auth)"
-```
+Remote MCP Server を実行している Mac がスリープすると接続が切れます:
+- システム設定 → バッテリー → 電源アダプタ
+- 「ディスプレイがオフのときにコンピュータを自動的にスリープさせない」を有効に
 
 ---
 
@@ -498,12 +388,15 @@ docker logs -f sage-remote | grep -E "(error|warn|auth)"
 
 ### Apple Reminders が動作しない
 
-Remote MCP Server が macOS 以外で実行されている場合、Apple Reminders は使用できません。macOS で実行してください。
+1. Remote MCP Server が macOS 上で実行されているか確認
+2. AppleScript の権限が付与されているか確認:
+   - システム設定 → プライバシーとセキュリティ → オートメーション
+   - Terminal（または使用しているターミナル）の Reminders/Calendar へのアクセスを許可
 
 ---
 
 ## 次のステップ
 
-- [設定ガイド](CONFIGURATION.md) - 詳細な設定オプション
-- [アーキテクチャ](ARCHITECTURE.md) - システム設計の詳細
-- [トラブルシューティング](TROUBLESHOOTING.md) - 問題解決ガイド
+- [Local MCP Setup](SETUP-LOCAL.md) - Claude Desktop/Code での直接使用
+- [Configuration Guide](CONFIGURATION.md) - 詳細な設定オプション
+- [Troubleshooting](TROUBLESHOOTING.md) - 問題解決ガイド
