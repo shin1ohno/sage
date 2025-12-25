@@ -26,8 +26,9 @@ jest.mock('../../src/integrations/notion-mcp.js', () => ({
       pageUrl: 'https://notion.so/page-123',
     }),
     isAvailable: jest.fn().mockResolvedValue(true),
-    shouldSyncToNotion: jest.fn().mockImplementation((deadline: string, threshold: number) => {
-      if (!deadline) return false;
+    shouldSyncToNotion: jest.fn().mockImplementation((deadline: string | undefined, threshold: number) => {
+      // Tasks without deadline go to Notion (assumed infinite future)
+      if (!deadline) return true;
       const deadlineDate = new Date(deadline);
       const now = new Date();
       const diffDays = (deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
@@ -69,9 +70,9 @@ describe('ReminderManager', () => {
       expect(destination).toBe('notion');
     });
 
-    it('should return apple for tasks without deadline', () => {
+    it('should return notion for tasks without deadline (assumed infinite future)', () => {
       const destination = manager.determineDestination(undefined);
-      expect(destination).toBe('apple');
+      expect(destination).toBe('notion');
     });
   });
 

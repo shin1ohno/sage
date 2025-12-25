@@ -71,11 +71,13 @@ export class ReminderManager {
 
   /**
    * Determine destination based on deadline
-   * Requirement: 5.2, 5.3
+   * Requirement: 5.2, 5.3, 5.4
+   * Tasks without deadline are assumed to have infinite future deadline → Notion
    */
   determineDestination(deadline: string | undefined): 'apple' | 'notion' {
+    // No deadline = infinite future = Notion (Requirement 5.4)
     if (!deadline) {
-      return 'apple';
+      return 'notion';
     }
 
     const deadlineDate = new Date(deadline);

@@ -146,9 +146,9 @@ describe('NotionMCPService', () => {
       expect(shouldSync).toBe(false);
     });
 
-    it('should return false for tasks without deadline', () => {
+    it('should return true for tasks without deadline (assumed infinite future)', () => {
       const shouldSync = service.shouldSyncToNotion(undefined, 8, 'valid-db-id');
-      expect(shouldSync).toBe(false);
+      expect(shouldSync).toBe(true);
     });
 
     it('should return false when database ID is not configured', () => {

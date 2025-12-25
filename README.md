@@ -67,6 +67,7 @@ Tasks are automatically routed to the appropriate system:
 |----------|-------------|--------|
 | ≤ 7 days | Apple Reminders | Short-term, actionable |
 | 8+ days | Notion | Long-term planning |
+| No deadline | Notion | Assumed infinite future, long-term planning |
 
 ### Platform Support
 

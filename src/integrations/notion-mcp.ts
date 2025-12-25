@@ -922,8 +922,9 @@ export class NotionMCPService {
 
   /**
    * Determine if a task should be synced to Notion based on deadline
-   * Requirement: 8.1 (8日以上先のタスク)
+   * Requirement: 8.1 (8日以上先のタスク、または期限なし)
    * Now also validates that database ID is configured
+   * Tasks without deadline are assumed to have infinite future → sync to Notion
    */
   shouldSyncToNotion(
     deadline: string | undefined,
@@ -935,8 +936,9 @@ export class NotionMCPService {
       return false;
     }
 
+    // No deadline = infinite future = sync to Notion
     if (!deadline) {
-      return false;
+      return true;
     }
 
     const deadlineDate = new Date(deadline);
