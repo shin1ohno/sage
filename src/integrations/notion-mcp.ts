@@ -4,6 +4,18 @@
  * Requirements: 8.1-8.5
  */
 
+import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
+
+/**
+ * Default retry options for Notion MCP operations
+ */
+const RETRY_OPTIONS = {
+  maxAttempts: 3,
+  initialDelay: 1000,
+  maxDelay: 10000,
+  shouldRetry: isRetryableError,
+};
+
 /**
  * Notion page request
  */
@@ -81,17 +93,39 @@ export class NotionMCPService {
     }
 
     try {
-      // In a real implementation, this would use MCP Client to call Notion MCP server
-      // For now, we return a placeholder that indicates MCP integration is needed
-      // Build request to validate format
+      // Build and validate request format (will be used when MCP is connected)
       this.buildMCPRequest(request);
 
-      // TODO: Actually call MCP server
-      // const result = await this.mcpClient.request(mcpRequest);
+      // Use retry with exponential backoff for MCP calls
+      const result = await retryWithBackoff<{ pageId: string; pageUrl: string }>(
+        async () => {
+          // In a real implementation, this would use MCP Client to call Notion MCP server
+          // For now, we return a placeholder that indicates MCP integration is needed
+          // TODO: Actually call MCP server
+          // return await this.mcpClient.request(mcpRequest);
+
+          // Placeholder: throw error to indicate not yet implemented
+          throw new Error('MCP統合は実装中です。MCPクライアント接続が必要です。');
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            console.error(`Notion MCP retry attempt ${attempt}: ${error.message}`);
+          },
+          // Don't retry "not implemented" errors
+          shouldRetry: (error) => {
+            if (error.message.includes('実装中')) {
+              return false;
+            }
+            return isRetryableError(error);
+          },
+        }
+      );
 
       return {
-        success: false,
-        error: 'MCP統合は実装中です。MCPクライアント接続が必要です。',
+        success: true,
+        pageId: result.pageId,
+        pageUrl: result.pageUrl,
       };
     } catch (error) {
       return {

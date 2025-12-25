@@ -4,8 +4,20 @@
  * Requirements: 9.1-9.6
  */
 
+import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
+
 // Declare window for browser environment detection
 declare const window: any;
+
+/**
+ * Default retry options for Apple Reminders operations
+ */
+const RETRY_OPTIONS = {
+  maxAttempts: 3,
+  initialDelay: 500,
+  maxDelay: 5000,
+  shouldRetry: isRetryableError,
+};
 
 /**
  * Platform information for Reminders integration
@@ -155,13 +167,24 @@ export class AppleRemindersService {
         };
       }
 
-      const result = await claudeReminders.create({
-        title: request.title,
-        notes: request.notes,
-        dueDate: request.dueDate,
-        list: request.list || 'Reminders',
-        priority: this.mapPriority(request.priority),
-      });
+      // Use retry with exponential backoff for native API calls
+      const result = await retryWithBackoff(
+        async () => {
+          return await claudeReminders.create({
+            title: request.title,
+            notes: request.notes,
+            dueDate: request.dueDate,
+            list: request.list || 'Reminders',
+            priority: this.mapPriority(request.priority),
+          });
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            console.error(`Native Reminders retry attempt ${attempt}: ${error.message}`);
+          },
+        }
+      );
 
       return {
         success: true,
@@ -196,7 +219,19 @@ export class AppleRemindersService {
       }
 
       const script = this.buildAppleScript(request);
-      const result = await this.runAppleScript(script);
+
+      // Use retry with exponential backoff for AppleScript execution
+      const result = await retryWithBackoff(
+        async () => {
+          return await this.runAppleScript!(script);
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            console.error(`AppleScript retry attempt ${attempt}: ${error.message}`);
+          },
+        }
+      );
 
       return {
         success: true,

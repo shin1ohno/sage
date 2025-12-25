@@ -4,8 +4,20 @@
  * Requirements: 6.1-6.9
  */
 
+import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
+
 // Declare window for browser environment detection
 declare const window: any;
+
+/**
+ * Default retry options for calendar operations
+ */
+const RETRY_OPTIONS = {
+  maxAttempts: 3,
+  initialDelay: 500,
+  maxDelay: 5000,
+  shouldRetry: isRetryableError,
+};
 
 /**
  * Calendar platform information
@@ -180,11 +192,22 @@ export class CalendarService {
         return [];
       }
 
-      const events = await claudeCalendar.getEvents({
-        startDate,
-        endDate,
-        includeAllDayEvents: false,
-      });
+      // Use retry with exponential backoff for native API calls
+      const events = await retryWithBackoff(
+        async () => {
+          return await claudeCalendar.getEvents({
+            startDate,
+            endDate,
+            includeAllDayEvents: false,
+          });
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            console.error(`Native Calendar retry attempt ${attempt}: ${error.message}`);
+          },
+        }
+      );
 
       return events.map((event: any) => ({
         id: event.id,
@@ -213,7 +236,19 @@ export class CalendarService {
       }
 
       const script = this.buildFetchEventsScript(startDate, endDate);
-      const result = await this.runAppleScript(script);
+
+      // Use retry with exponential backoff for AppleScript execution
+      const result = await retryWithBackoff(
+        async () => {
+          return await this.runAppleScript!(script);
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            console.error(`AppleScript Calendar retry attempt ${attempt}: ${error.message}`);
+          },
+        }
+      );
 
       return this.parseAppleScriptResult(result);
     } catch (error) {
