@@ -278,5 +278,51 @@ describe('StakeholderExtractor', () => {
       const aliceCount = result.stakeholders.filter((s) => s === 'alice').length;
       expect(aliceCount).toBeLessThanOrEqual(1);
     });
+
+    it('should add manager to stakeholders when detected via keyword', () => {
+      const task: Task = { title: 'Report to manager about progress' };
+      const result = StakeholderExtractor.extractStakeholders(task, teamConfig);
+
+      expect(result.managerInvolved).toBe(true);
+      expect(result.stakeholders).toContain('Tanaka');
+      expect(result.matchedTeamMembers.some((m) => m.name === 'Tanaka')).toBe(true);
+    });
+
+    it('should detect manager via configured keywords', () => {
+      const task: Task = { title: 'Meeting with 田中 tomorrow' };
+      const result = StakeholderExtractor.extractStakeholders(task, teamConfig);
+
+      expect(result.managerInvolved).toBe(true);
+    });
+
+    it('should include team member count in reason when not manager', () => {
+      const task: Task = { title: 'Work with Suzuki and Yamada' };
+      const result = StakeholderExtractor.extractStakeholders(task, teamConfig);
+
+      // When team members are detected but manager is not involved
+      expect(result.stakeholders.length).toBeGreaterThan(0);
+      expect(result.reason).toBeTruthy();
+    });
+
+    it('should add manager when detected via generic keyword not in config', () => {
+      // Use a keyword that triggers manager detection but isn't in the manager's config
+      const task: Task = { title: 'Report to 上司 about progress' };
+      const configWithDifferentKeywords: TeamConfig = {
+        manager: {
+          name: 'Boss Person',
+          role: 'manager',
+          keywords: ['boss person'], // Does NOT include 上司
+        },
+        frequentCollaborators: [],
+        departments: [],
+      };
+
+      const result = StakeholderExtractor.extractStakeholders(task, configWithDifferentKeywords);
+
+      // 上司 triggers managerInvolved but manager wasn't matched by matchTeamMembers
+      expect(result.managerInvolved).toBe(true);
+      expect(result.stakeholders).toContain('Boss Person');
+      expect(result.matchedTeamMembers.some((m) => m.name === 'Boss Person')).toBe(true);
+    });
   });
 });

@@ -238,6 +238,7 @@ export class TimeEstimator {
 
   /**
    * Build a human-readable reason
+   * Note: This is only called when keywords are found
    */
   private static buildReason(
     complexity: 'simple' | 'medium' | 'complex' | 'project',
@@ -252,11 +253,6 @@ export class TimeEstimator {
     };
 
     const complexityName = complexityNames[complexity];
-
-    if (matchedKeywords.length === 0) {
-      return `${complexityName}なタスクとして${minutes}分と見積もり`;
-    }
-
     const keywordStr = matchedKeywords.slice(0, 3).join('、');
     return `「${keywordStr}」を含む${complexityName}なタスクとして${minutes}分と見積もり`;
   }

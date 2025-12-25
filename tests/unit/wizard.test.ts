@@ -160,6 +160,33 @@ describe('SetupWizard', () => {
       const invalidResult = SetupWizard.validateAnswer(daysQuestion, ['InvalidDay']);
       expect(invalidResult.valid).toBe(false);
     });
+
+    it('should validate multiselect with valid options', () => {
+      const multiselectQuestion = {
+        id: 'test_multiselect',
+        text: 'Test multiselect',
+        type: 'multiselect' as const,
+        options: ['option1', 'option2', 'option3'],
+        essential: false,
+      };
+
+      const validResult = SetupWizard.validateAnswer(multiselectQuestion, ['option1', 'option2']);
+      expect(validResult.valid).toBe(true);
+    });
+
+    it('should reject multiselect with invalid options', () => {
+      const multiselectQuestion = {
+        id: 'test_multiselect',
+        text: 'Test multiselect',
+        type: 'multiselect' as const,
+        options: ['option1', 'option2', 'option3'],
+        essential: false,
+      };
+
+      const invalidResult = SetupWizard.validateAnswer(multiselectQuestion, ['option1', 'invalid_option']);
+      expect(invalidResult.valid).toBe(false);
+      expect(invalidResult.error).toContain('invalid_option');
+    });
   });
 
   describe('buildConfig', () => {
@@ -195,6 +222,30 @@ describe('SetupWizard', () => {
 
       expect(config.calendar.workingHours.start).toBe('09:00');
       expect(config.preferences.language).toBe('ja');
+    });
+
+    it('should configure manager when manager_name is provided', () => {
+      const session = SetupWizard.createSession('full');
+      session.answers = {
+        user_name: 'Test User',
+        manager_name: 'John Boss',
+      };
+
+      const config = SetupWizard.buildConfig(session);
+
+      expect(config.team.manager).toBeDefined();
+      expect(config.team.manager!.name).toBe('John Boss');
+      expect(config.team.manager!.role).toBe('manager');
+      expect(config.team.manager!.keywords).toContain('john boss');
+    });
+
+    it('should handle empty user_name with fallback', () => {
+      const session = SetupWizard.createSession('quick');
+      session.answers = {};
+
+      const config = SetupWizard.buildConfig(session);
+
+      expect(config.user.name).toBe('');
     });
   });
 });

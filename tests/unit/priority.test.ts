@@ -445,5 +445,39 @@ describe('PriorityEngine', () => {
       const result = PriorityEngine.determinePriority(task, rulesWithNoUnit);
       expect(result.priority).toBe('P0');
     });
+
+    it('should return false for unknown operator in custom condition', () => {
+      const task: Task = { title: 'Custom task with special-marker' };
+      const rulesWithUnknownOp: PriorityRules = {
+        p0Conditions: [
+          {
+            type: 'custom',
+            operator: '!=' as any,
+            value: 'special-marker',
+            description: 'Unknown operator',
+          },
+        ],
+        p1Conditions: [],
+        p2Conditions: [],
+        defaultPriority: 'P3',
+      };
+
+      const result = PriorityEngine.determinePriority(task, rulesWithUnknownOp);
+      expect(result.priority).toBe('P3');
+    });
+
+    it('should provide default reason when no conditions match', () => {
+      const task: Task = { title: 'Plain simple task' };
+      const emptyRules: PriorityRules = {
+        p0Conditions: [],
+        p1Conditions: [],
+        p2Conditions: [],
+        defaultPriority: 'P3',
+      };
+
+      const result = PriorityEngine.determinePriority(task, emptyRules);
+      expect(result.priority).toBe('P3');
+      expect(result.reason).toContain('P3');
+    });
   });
 });

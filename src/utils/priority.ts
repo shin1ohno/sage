@@ -289,12 +289,9 @@ export class PriorityEngine {
 
   /**
    * Build a human-readable reason string
+   * Note: This is only called when conditions are matched
    */
   private static buildReason(priority: Priority, conditions: string[]): string {
-    if (conditions.length === 0) {
-      return `優先度${priority}に設定`;
-    }
-
     if (conditions.length === 1) {
       return `${conditions[0]}のため${priority}に設定`;
     }

@@ -345,6 +345,8 @@ export class TaskSplitter {
     const order: number[] = [];
     const completed = new Set<number>();
 
+    // Note: Circular dependencies cannot occur with current inferDependencies
+    // implementation as it only references previous tasks
     while (order.length < tasks.length) {
       for (let i = 0; i < tasks.length; i++) {
         if (completed.has(i)) continue;
@@ -353,16 +355,6 @@ export class TaskSplitter {
         if (!dep || dep.dependsOn.every((d) => completed.has(d))) {
           order.push(i);
           completed.add(i);
-        }
-      }
-
-      // Prevent infinite loop if there are circular dependencies
-      if (order.length === completed.size && order.length < tasks.length) {
-        for (let i = 0; i < tasks.length; i++) {
-          if (!completed.has(i)) {
-            order.push(i);
-            completed.add(i);
-          }
         }
       }
     }

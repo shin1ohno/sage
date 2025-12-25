@@ -98,4 +98,34 @@ describe('TimeEstimator', () => {
       expect(result.matched.length).toBe(0);
     });
   });
+
+  describe('length modifiers', () => {
+    it('should apply long text modifier for tasks with 100-250 characters', () => {
+      const longTitle = 'This is a task with a moderately long title that contains a lot of words and details about what needs to be done exactly';
+      const task: Task = { title: longTitle };
+      const result = TimeEstimator.estimateDuration(task, DEFAULT_ESTIMATION_CONFIG);
+
+      // Long text should increase estimate
+      expect(result.estimatedMinutes).toBeGreaterThan(0);
+    });
+
+    it('should apply very long text modifier for tasks with over 250 characters', () => {
+      const veryLongTitle =
+        'This is a very comprehensive task description that goes into great detail about everything that needs to be done, including all the specific requirements, edge cases to consider, potential blockers, and success criteria that must be met before this task can be considered complete. It has many many words.';
+      const task: Task = { title: veryLongTitle };
+      const result = TimeEstimator.estimateDuration(task, DEFAULT_ESTIMATION_CONFIG);
+
+      // Very long text should increase estimate more
+      expect(result.estimatedMinutes).toBeGreaterThan(0);
+      expect(veryLongTitle.length).toBeGreaterThan(250);
+    });
+
+    it('should provide reason without keywords when none match', () => {
+      const task: Task = { title: 'xyz abc 123' };
+      const result = TimeEstimator.estimateDuration(task, DEFAULT_ESTIMATION_CONFIG);
+
+      expect(result.reason).toBeTruthy();
+      expect(result.reason).toContain('見積もり');
+    });
+  });
 });

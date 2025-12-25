@@ -54,6 +54,20 @@ describe('ConfigLoader', () => {
 
       ConfigLoader.getConfigPath = originalGetConfigPath;
     });
+
+    it('should return true when config file exists', async () => {
+      const existingConfigPath = join(testDir, 'existing-config.json');
+      await writeFile(existingConfigPath, JSON.stringify({ test: true }));
+
+      const originalGetConfigPath = ConfigLoader.getConfigPath;
+      ConfigLoader.getConfigPath = () => existingConfigPath;
+
+      const exists = await ConfigLoader.exists();
+
+      expect(exists).toBe(true);
+
+      ConfigLoader.getConfigPath = originalGetConfigPath;
+    });
   });
 
   describe('getDefaultConfig', () => {

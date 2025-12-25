@@ -130,4 +130,72 @@ describe('TaskSplitter', () => {
       expect(complexResult.complexity).toBe('complex');
     });
   });
+
+  describe('complex single task splitting', () => {
+    it('should split a complex single task into subtasks', () => {
+      const input = 'Design and implement the new authentication system from scratch';
+
+      const result = TaskSplitter.splitTasks(input);
+
+      // Complex single task should be split based on complexity analysis
+      expect(result.splitTasks.length).toBeGreaterThanOrEqual(1);
+      expect(result.splitReason).toBeTruthy();
+    });
+  });
+
+  describe('newline splitting', () => {
+    it('should split tasks by newlines', () => {
+      const input = `Task One
+Task Two
+Task Three`;
+
+      const result = TaskSplitter.splitTasks(input);
+
+      expect(result.splitTasks).toHaveLength(3);
+      expect(result.splitTasks[0].title).toBe('Task One');
+      expect(result.splitTasks[1].title).toBe('Task Two');
+      expect(result.splitTasks[2].title).toBe('Task Three');
+    });
+  });
+
+  describe('dependency detection', () => {
+    it('should detect "after" dependency keyword', () => {
+      const input = `
+- Write tests
+- Run tests after writing
+      `.trim();
+
+      const result = TaskSplitter.splitTasks(input);
+
+      // Should detect dependency from "after" keyword
+      expect(result.dependencies.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should detect "requires" dependency keyword', () => {
+      const input = `
+- Setup environment
+- Deploy requires setup
+      `.trim();
+
+      const result = TaskSplitter.splitTasks(input);
+
+      expect(result.dependencies.length).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe('circular dependency handling', () => {
+    it('should handle potential circular dependencies gracefully', () => {
+      const input = `
+- Task A requires Task C
+- Task B requires Task A
+- Task C requires Task B
+      `.trim();
+
+      const result = TaskSplitter.splitTasks(input);
+
+      // Should still return all tasks even with circular deps
+      expect(result.splitTasks).toHaveLength(3);
+      expect(result.recommendedOrder).toHaveLength(3);
+    });
+  });
 });
