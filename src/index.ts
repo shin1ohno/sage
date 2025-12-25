@@ -13,7 +13,11 @@ import { z } from 'zod';
 import { ConfigLoader } from './config/loader.js';
 import { SetupWizard } from './setup/wizard.js';
 import { TaskAnalyzer } from './tools/analyze-tasks.js';
+import { ReminderManager } from './integrations/reminder-manager.js';
+import { CalendarService } from './integrations/calendar-service.js';
+import { NotionMCPService } from './integrations/notion-mcp.js';
 import type { UserConfig } from './types/index.js';
+import type { Priority } from './types/index.js';
 
 // Server metadata
 const SERVER_NAME = 'sage';
@@ -22,6 +26,145 @@ const SERVER_VERSION = '0.1.0';
 // Global state
 let config: UserConfig | null = null;
 let wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
+let reminderManager: ReminderManager | null = null;
+let calendarService: CalendarService | null = null;
+let notionService: NotionMCPService | null = null;
+
+/**
+ * Validation result type
+ */
+interface ValidationResult {
+  valid: boolean;
+  error?: string;
+  invalidFields?: string[];
+}
+
+/**
+ * Validate config updates for a specific section
+ */
+function validateConfigUpdate(
+  section: string,
+  updates: Record<string, unknown>
+): ValidationResult {
+  const invalidFields: string[] = [];
+
+  switch (section) {
+    case 'user':
+      if (updates.name !== undefined && typeof updates.name !== 'string') {
+        invalidFields.push('name');
+      }
+      if (updates.timezone !== undefined && typeof updates.timezone !== 'string') {
+        invalidFields.push('timezone');
+      }
+      break;
+
+    case 'calendar':
+      if (updates.workingHours !== undefined) {
+        const wh = updates.workingHours as { start?: string; end?: string };
+        if (!wh.start || !wh.end) {
+          invalidFields.push('workingHours');
+        }
+      }
+      if (updates.deepWorkDays !== undefined && !Array.isArray(updates.deepWorkDays)) {
+        invalidFields.push('deepWorkDays');
+      }
+      if (updates.meetingHeavyDays !== undefined && !Array.isArray(updates.meetingHeavyDays)) {
+        invalidFields.push('meetingHeavyDays');
+      }
+      break;
+
+    case 'integrations':
+      if (updates.notion !== undefined) {
+        const notion = updates.notion as { enabled?: boolean; databaseId?: string };
+        if (notion.enabled === true && !notion.databaseId) {
+          invalidFields.push('notion.databaseId');
+        }
+      }
+      break;
+
+    case 'team':
+      if (updates.members !== undefined && !Array.isArray(updates.members)) {
+        invalidFields.push('members');
+      }
+      if (updates.managers !== undefined && !Array.isArray(updates.managers)) {
+        invalidFields.push('managers');
+      }
+      break;
+  }
+
+  if (invalidFields.length > 0) {
+    return {
+      valid: false,
+      error: `無効なフィールド: ${invalidFields.join(', ')}`,
+      invalidFields,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Apply config updates to a specific section
+ */
+function applyConfigUpdates(
+  currentConfig: UserConfig,
+  section: string,
+  updates: Record<string, unknown>
+): UserConfig {
+  const newConfig = { ...currentConfig };
+
+  switch (section) {
+    case 'user':
+      newConfig.user = { ...newConfig.user, ...updates } as UserConfig['user'];
+      break;
+    case 'calendar':
+      newConfig.calendar = { ...newConfig.calendar, ...updates } as UserConfig['calendar'];
+      break;
+    case 'priorityRules':
+      newConfig.priorityRules = {
+        ...newConfig.priorityRules,
+        ...updates,
+      } as UserConfig['priorityRules'];
+      break;
+    case 'integrations':
+      // Deep merge for integrations
+      if (updates.appleReminders) {
+        newConfig.integrations.appleReminders = {
+          ...newConfig.integrations.appleReminders,
+          ...(updates.appleReminders as object),
+        };
+      }
+      if (updates.notion) {
+        newConfig.integrations.notion = {
+          ...newConfig.integrations.notion,
+          ...(updates.notion as object),
+        };
+      }
+      break;
+    case 'team':
+      newConfig.team = { ...newConfig.team, ...updates } as UserConfig['team'];
+      break;
+    case 'preferences':
+      newConfig.preferences = { ...newConfig.preferences, ...updates } as UserConfig['preferences'];
+      break;
+  }
+
+  return newConfig;
+}
+
+/**
+ * Initialize services with config
+ */
+function initializeServices(userConfig: UserConfig): void {
+  reminderManager = new ReminderManager({
+    appleRemindersThreshold: 7,
+    notionThreshold: userConfig.integrations.notion.threshold,
+    defaultList: userConfig.integrations.appleReminders.defaultList,
+    notionDatabaseId: userConfig.integrations.notion.databaseId,
+  });
+  calendarService = new CalendarService();
+  notionService = new NotionMCPService();
+}
 
 /**
  * Initialize the MCP server with all tools
@@ -35,6 +178,9 @@ async function createServer(): Promise<McpServer> {
   // Try to load existing config
   try {
     config = await ConfigLoader.load();
+    if (config) {
+      initializeServices(config);
+    }
   } catch {
     config = null;
   }
@@ -473,12 +619,14 @@ async function createServer(): Promise<McpServer> {
       taskTitle: z.string().describe('Title of the task'),
       dueDate: z.string().optional().describe('Due date for the reminder (ISO 8601 format)'),
       reminderType: z
-        .enum(['1_hour_before', '1_day_before', '1_week_before', 'custom'])
+        .enum(['1_hour_before', '3_hours_before', '1_day_before', '3_days_before', '1_week_before'])
         .optional()
         .describe('Type of reminder'),
       list: z.string().optional().describe('Reminder list name (for Apple Reminders)'),
+      priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional().describe('Task priority'),
+      notes: z.string().optional().describe('Additional notes for the reminder'),
     },
-    async ({ taskTitle, dueDate, reminderType, list }) => {
+    async ({ taskTitle, dueDate, reminderType, list, priority, notes }) => {
       if (!config) {
         return {
           content: [
@@ -497,28 +645,82 @@ async function createServer(): Promise<McpServer> {
         };
       }
 
-      // TODO: Implement full reminder functionality in Task 12
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
+      if (!reminderManager) {
+        initializeServices(config);
+      }
+
+      try {
+        const result = await reminderManager!.setReminder({
+          taskTitle,
+          targetDate: dueDate,
+          reminderType,
+          list: list ?? config.integrations.appleReminders.defaultList,
+          priority: priority as Priority | undefined,
+          notes,
+        });
+
+        if (result.success) {
+          return {
+            content: [
               {
-                success: true,
-                message: 'リマインド機能は実装中です。',
-                reminder: {
-                  taskTitle,
-                  dueDate,
-                  reminderType: reminderType ?? 'default',
-                  list: list ?? config.integrations.appleReminders.defaultList,
-                },
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    destination: result.destination,
+                    method: result.method,
+                    reminderId: result.reminderId,
+                    reminderUrl: result.reminderUrl ?? result.pageUrl,
+                    message:
+                      result.destination === 'apple_reminders'
+                        ? `Apple Remindersにリマインダーを作成しました: ${taskTitle}`
+                        : `Notionにタスクを作成しました: ${taskTitle}`,
+                  },
+                  null,
+                  2
+                ),
               },
-              null,
-              2
-            ),
-          },
-        ],
-      };
+            ],
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: false,
+                  destination: result.destination,
+                  error: result.error,
+                  fallbackText: result.fallbackText,
+                  message: result.fallbackText
+                    ? '自動作成に失敗しました。以下のテキストを手動でコピーしてください。'
+                    : `リマインダー作成に失敗しました: ${result.error}`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `リマインダー設定に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
     }
   );
 
@@ -554,29 +756,129 @@ async function createServer(): Promise<McpServer> {
         };
       }
 
-      // TODO: Implement calendar integration in Task 11
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
+      if (!calendarService) {
+        initializeServices(config);
+      }
+
+      try {
+        // Check platform availability
+        const platformInfo = await calendarService!.detectPlatform();
+        const isAvailable = await calendarService!.isAvailable();
+
+        if (!isAvailable) {
+          // Return manual input prompt for unsupported platforms
+          const manualPrompt = calendarService!.generateManualInputPrompt(
+            startDate ?? new Date().toISOString().split('T')[0],
+            endDate ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+          );
+
+          return {
+            content: [
               {
-                success: true,
-                message: 'カレンダー統合機能は実装中です。',
-                request: {
-                  durationMinutes,
-                  startDate,
-                  endDate,
-                  preferDeepWork: preferDeepWork ?? false,
-                },
-                slots: [],
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    platform: platformInfo.platform,
+                    method: platformInfo.recommendedMethod,
+                    message:
+                      'カレンダー統合がこのプラットフォームで利用できません。手動で予定を入力してください。',
+                    manualPrompt,
+                  },
+                  null,
+                  2
+                ),
               },
-              null,
-              2
-            ),
-          },
-        ],
-      };
+            ],
+          };
+        }
+
+        // Fetch events from calendar
+        const searchStart = startDate ?? new Date().toISOString().split('T')[0];
+        const searchEnd =
+          endDate ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        const events = await calendarService!.fetchEvents(searchStart, searchEnd);
+
+        // Find available slots
+        const workingHours = {
+          start: config.calendar.workingHours.start,
+          end: config.calendar.workingHours.end,
+        };
+
+        const slots = calendarService!.findAvailableSlotsFromEvents(
+          events,
+          durationMinutes,
+          workingHours,
+          searchStart
+        );
+
+        // Apply suitability scoring
+        const suitabilityConfig = {
+          deepWorkDays: config.calendar.deepWorkDays,
+          meetingHeavyDays: config.calendar.meetingHeavyDays,
+        };
+
+        const scoredSlots = slots.map((slot) =>
+          calendarService!.calculateSuitability(slot, suitabilityConfig)
+        );
+
+        // Filter for deep work preference if requested
+        const filteredSlots = preferDeepWork
+          ? scoredSlots.filter((s) => s.dayType === 'deep-work')
+          : scoredSlots;
+
+        // Sort by suitability (excellent > good > acceptable)
+        const suitabilityOrder = { excellent: 0, good: 1, acceptable: 2 };
+        filteredSlots.sort((a, b) => suitabilityOrder[a.suitability] - suitabilityOrder[b.suitability]);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  platform: platformInfo.platform,
+                  method: platformInfo.recommendedMethod,
+                  searchRange: { start: searchStart, end: searchEnd },
+                  eventsFound: events.length,
+                  slots: filteredSlots.slice(0, 10).map((slot) => ({
+                    start: slot.start,
+                    end: slot.end,
+                    durationMinutes: slot.durationMinutes,
+                    suitability: slot.suitability,
+                    dayType: slot.dayType,
+                    reason: slot.reason,
+                  })),
+                  message:
+                    filteredSlots.length > 0
+                      ? `${filteredSlots.length}件の空き時間が見つかりました。`
+                      : '指定した条件に合う空き時間が見つかりませんでした。',
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `カレンダー検索に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
     }
   );
 
@@ -593,8 +895,9 @@ async function createServer(): Promise<McpServer> {
       priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional().describe('Task priority'),
       dueDate: z.string().optional().describe('Due date (ISO 8601 format)'),
       stakeholders: z.array(z.string()).optional().describe('List of stakeholders'),
+      estimatedMinutes: z.number().optional().describe('Estimated duration in minutes'),
     },
-    async ({ taskTitle, description, priority, dueDate, stakeholders }) => {
+    async ({ taskTitle, description, priority, dueDate, stakeholders, estimatedMinutes }) => {
       if (!config) {
         return {
           content: [
@@ -632,29 +935,136 @@ async function createServer(): Promise<McpServer> {
         };
       }
 
-      // TODO: Implement Notion sync in Task 13
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
+      if (!notionService) {
+        initializeServices(config);
+      }
+
+      try {
+        // Check if Notion MCP is available
+        const isAvailable = await notionService!.isAvailable();
+
+        // Build properties for Notion page
+        const properties = notionService!.buildNotionProperties({
+          title: taskTitle,
+          priority,
+          deadline: dueDate,
+          stakeholders,
+          estimatedMinutes,
+          description,
+        });
+
+        if (!isAvailable) {
+          // Generate fallback template for manual copy
+          const fallbackText = notionService!.generateFallbackTemplate({
+            title: taskTitle,
+            priority,
+            deadline: dueDate,
+            stakeholders,
+            estimatedMinutes,
+            description,
+          });
+
+          return {
+            content: [
               {
-                success: true,
-                message: 'Notion同期機能は実装中です。',
-                task: {
-                  taskTitle,
-                  description,
-                  priority: priority ?? 'P3',
-                  dueDate,
-                  stakeholders: stakeholders ?? [],
-                },
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    method: 'fallback',
+                    message:
+                      'Notion MCP統合が利用できません。以下のテンプレートを手動でNotionにコピーしてください。',
+                    fallbackText,
+                    task: {
+                      taskTitle,
+                      priority: priority ?? 'P3',
+                      dueDate,
+                      stakeholders: stakeholders ?? [],
+                      estimatedMinutes,
+                    },
+                  },
+                  null,
+                  2
+                ),
               },
-              null,
-              2
-            ),
-          },
-        ],
-      };
+            ],
+          };
+        }
+
+        // Create page in Notion via MCP
+        const result = await notionService!.createPage({
+          databaseId: config.integrations.notion.databaseId,
+          title: taskTitle,
+          properties,
+        });
+
+        if (result.success) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    method: 'mcp',
+                    pageId: result.pageId,
+                    pageUrl: result.pageUrl,
+                    message: `Notionにタスクを同期しました: ${taskTitle}`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        // MCP call failed, provide fallback
+        const fallbackText = notionService!.generateFallbackTemplate({
+          title: taskTitle,
+          priority,
+          deadline: dueDate,
+          stakeholders,
+          estimatedMinutes,
+          description,
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: false,
+                  method: 'fallback',
+                  error: result.error,
+                  message:
+                    'Notion MCP呼び出しに失敗しました。以下のテンプレートを手動でコピーしてください。',
+                  fallbackText,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `Notion同期に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
     }
   );
 
@@ -690,24 +1100,74 @@ async function createServer(): Promise<McpServer> {
         };
       }
 
-      // TODO: Implement config update in Task 14
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
+      try {
+        // Validate section-specific updates
+        const validationResult = validateConfigUpdate(section, updates);
+        if (!validationResult.valid) {
+          return {
+            content: [
               {
-                success: true,
-                message: '設定更新機能は実装中です。',
-                section,
-                updates,
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message: `設定の検証に失敗しました: ${validationResult.error}`,
+                    invalidFields: validationResult.invalidFields,
+                  },
+                  null,
+                  2
+                ),
               },
-              null,
-              2
-            ),
-          },
-        ],
-      };
+            ],
+          };
+        }
+
+        // Apply updates to config
+        const updatedConfig = applyConfigUpdates(config, section, updates);
+
+        // Save the updated config
+        await ConfigLoader.save(updatedConfig);
+        config = updatedConfig;
+
+        // Re-initialize services if integrations changed
+        if (section === 'integrations') {
+          initializeServices(config);
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  section,
+                  updatedFields: Object.keys(updates),
+                  message: `設定を更新しました: ${section}`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `設定の更新に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
     }
   );
 
