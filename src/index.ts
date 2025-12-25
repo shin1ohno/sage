@@ -16,6 +16,8 @@ import { TaskAnalyzer } from './tools/analyze-tasks.js';
 import { ReminderManager } from './integrations/reminder-manager.js';
 import { CalendarService } from './integrations/calendar-service.js';
 import { NotionMCPService } from './integrations/notion-mcp.js';
+import { TodoListManager } from './integrations/todo-list-manager.js';
+import { TaskSynchronizer } from './integrations/task-synchronizer.js';
 import type { UserConfig } from './types/index.js';
 import type { Priority } from './types/index.js';
 
@@ -29,6 +31,8 @@ let wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
 let reminderManager: ReminderManager | null = null;
 let calendarService: CalendarService | null = null;
 let notionService: NotionMCPService | null = null;
+let todoListManager: TodoListManager | null = null;
+let taskSynchronizer: TaskSynchronizer | null = null;
 
 /**
  * Validation result type
@@ -164,6 +168,8 @@ function initializeServices(userConfig: UserConfig): void {
   });
   calendarService = new CalendarService();
   notionService = new NotionMCPService();
+  todoListManager = new TodoListManager();
+  taskSynchronizer = new TaskSynchronizer();
 }
 
 /**
@@ -1160,6 +1166,428 @@ async function createServer(): Promise<McpServer> {
                 {
                   error: true,
                   message: `設定の更新に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // ============================================
+  // TODO List Management Tools
+  // ============================================
+
+  /**
+   * list_todos - List all TODO items with optional filtering
+   * Requirement: 12.1, 12.2, 12.3, 12.4, 12.7, 12.8
+   */
+  server.tool(
+    'list_todos',
+    'List TODO items from Apple Reminders and Notion with optional filtering.',
+    {
+      priority: z
+        .array(z.enum(['P0', 'P1', 'P2', 'P3']))
+        .optional()
+        .describe('Filter by priority levels'),
+      status: z
+        .array(z.enum(['not_started', 'in_progress', 'completed', 'cancelled']))
+        .optional()
+        .describe('Filter by status'),
+      source: z
+        .array(z.enum(['apple_reminders', 'notion', 'manual']))
+        .optional()
+        .describe('Filter by source'),
+      todayOnly: z.boolean().optional().describe('Show only tasks due today'),
+      tags: z.array(z.string()).optional().describe('Filter by tags'),
+    },
+    async ({ priority, status, source, todayOnly, tags }) => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: 'sageが設定されていません。check_setup_statusを実行してください。',
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!todoListManager) {
+        initializeServices(config);
+      }
+
+      try {
+        let todos;
+
+        if (todayOnly) {
+          todos = await todoListManager!.getTodaysTasks();
+        } else {
+          todos = await todoListManager!.listTodos({
+            priority: priority as Priority[] | undefined,
+            status,
+            source,
+            tags,
+          });
+        }
+
+        // Format todos for display
+        const formattedTodos = todos.map((todo) => ({
+          id: todo.id,
+          title: todo.title,
+          priority: todo.priority,
+          status: todo.status,
+          dueDate: todo.dueDate,
+          source: todo.source,
+          tags: todo.tags,
+          estimatedMinutes: todo.estimatedMinutes,
+          stakeholders: todo.stakeholders,
+        }));
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  totalCount: todos.length,
+                  todos: formattedTodos,
+                  message:
+                    todos.length > 0
+                      ? `${todos.length}件のタスクが見つかりました。`
+                      : 'タスクが見つかりませんでした。',
+                  filters: {
+                    priority,
+                    status,
+                    source,
+                    todayOnly,
+                    tags,
+                  },
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `TODOリストの取得に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  /**
+   * update_task_status - Update the status of a task
+   * Requirement: 12.5, 12.6
+   */
+  server.tool(
+    'update_task_status',
+    'Update the status of a task in Apple Reminders or Notion.',
+    {
+      taskId: z.string().describe('ID of the task to update'),
+      status: z
+        .enum(['not_started', 'in_progress', 'completed', 'cancelled'])
+        .describe('New status for the task'),
+      source: z
+        .enum(['apple_reminders', 'notion', 'manual'])
+        .describe('Source of the task'),
+      syncAcrossSources: z
+        .boolean()
+        .optional()
+        .describe('Whether to sync the status across all sources'),
+    },
+    async ({ taskId, status, source, syncAcrossSources }) => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: 'sageが設定されていません。check_setup_statusを実行してください。',
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!todoListManager) {
+        initializeServices(config);
+      }
+
+      try {
+        // Update the task status
+        const result = await todoListManager!.updateTaskStatus(taskId, status, source);
+
+        if (!result.success) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    taskId,
+                    error: result.error,
+                    message: `タスクステータスの更新に失敗しました: ${result.error}`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        // Optionally sync across sources
+        let syncResult;
+        if (syncAcrossSources) {
+          syncResult = await todoListManager!.syncTaskAcrossSources(taskId);
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  taskId,
+                  newStatus: status,
+                  updatedFields: result.updatedFields,
+                  syncedSources: result.syncedSources,
+                  syncResult: syncAcrossSources ? syncResult : undefined,
+                  message: `タスクのステータスを「${status}」に更新しました。`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `タスクステータスの更新に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  /**
+   * sync_tasks - Sync tasks across all sources
+   * Requirement: 14.1, 12.6
+   */
+  server.tool(
+    'sync_tasks',
+    'Synchronize tasks between Apple Reminders and Notion, detecting and resolving conflicts.',
+    {},
+    async () => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: 'sageが設定されていません。check_setup_statusを実行してください。',
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!taskSynchronizer) {
+        initializeServices(config);
+      }
+
+      try {
+        const result = await taskSynchronizer!.syncAllTasks();
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  totalTasks: result.totalTasks,
+                  syncedTasks: result.syncedTasks,
+                  conflicts: result.conflicts,
+                  errors: result.errors,
+                  durationMs: result.duration,
+                  message:
+                    result.conflicts.length > 0
+                      ? `${result.syncedTasks}件のタスクを同期しました。${result.conflicts.length}件の競合が検出されました。`
+                      : `${result.syncedTasks}件のタスクを同期しました。`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `タスク同期に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  /**
+   * detect_duplicates - Detect duplicate tasks across sources
+   * Requirement: 14.2
+   */
+  server.tool(
+    'detect_duplicates',
+    'Detect duplicate tasks between Apple Reminders and Notion.',
+    {
+      autoMerge: z
+        .boolean()
+        .optional()
+        .describe('Whether to automatically merge high-confidence duplicates'),
+    },
+    async ({ autoMerge }) => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: 'sageが設定されていません。check_setup_statusを実行してください。',
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!taskSynchronizer) {
+        initializeServices(config);
+      }
+
+      try {
+        const duplicates = await taskSynchronizer!.detectDuplicates();
+
+        // Format duplicates for display
+        const formattedDuplicates = duplicates.map((d) => ({
+          tasks: d.tasks.map((t) => ({
+            id: t.id,
+            title: t.title,
+            source: t.source,
+            status: t.status,
+            priority: t.priority,
+          })),
+          similarity: Math.round(d.similarity * 100),
+          confidence: d.confidence,
+          suggestedMerge: {
+            title: d.suggestedMerge.title,
+            priority: d.suggestedMerge.priority,
+            status: d.suggestedMerge.status,
+            tags: d.suggestedMerge.tags,
+          },
+        }));
+
+        // Auto-merge high-confidence duplicates if requested
+        let mergeResults;
+        if (autoMerge) {
+          const highConfidenceDuplicates = duplicates.filter((d) => d.confidence === 'high');
+          if (highConfidenceDuplicates.length > 0) {
+            mergeResults = await taskSynchronizer!.mergeDuplicates(highConfidenceDuplicates);
+          }
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  duplicatesFound: duplicates.length,
+                  duplicates: formattedDuplicates,
+                  mergeResults: autoMerge ? mergeResults : undefined,
+                  message:
+                    duplicates.length > 0
+                      ? `${duplicates.length}件の重複タスクが検出されました。`
+                      : '重複タスクは見つかりませんでした。',
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `重複検出に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 },
                 null,
                 2

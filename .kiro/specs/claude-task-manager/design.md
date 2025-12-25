@@ -2,17 +2,30 @@
 
 ## 概要
 
-sageは、Claude DesktopおよびClaude Code向けのAIタスク管理アシスタントです。MCPサーバーとして実装され、個人の作業パターンを学習し、タスクの分析、優先順位付け、スケジューリング、リマインド管理を自動化します。
+sageは、Claude Desktop、Claude Code、およびClaude iOS/iPadOS向けのAIタスク管理アシスタントです。個人の作業パターンを学習し、タスクの分析、優先順位付け、スケジューリング、リマインド管理を自動化します。
 
 ### プラットフォーム実装状況
 
-| プラットフォーム | 状態 | 実装方式 |
-|----------------|------|---------|
-| **Claude Desktop/Code** | ✅ 実装済み | MCPサーバー（完全機能） |
-| **Claude iOS/iPadOS** | 🔮 将来対応予定 | Claude Skills（プレースホルダー） |
-| **Claude Web** | 🔮 将来対応予定 | Claude Skills（プレースホルダー） |
+| プラットフォーム | 状態 | 実装方式 | 機能レベル |
+|----------------|------|---------|-----------|
+| **Claude Desktop/Code** | ✅ 実装済み | Local MCPサーバー | 完全機能 |
+| **Claude iOS/iPadOS** | ✅ **Remote MCP対応** | Remote MCPサーバー | 完全機能 |
+| **Claude Web** | ✅ **Remote MCP対応** | Remote MCPサーバー | 完全機能 |
 
-> **重要**: Claude Skills APIは現在サーバーサイドのサンドボックスで実行され、iOSのネイティブフレームワーク（EventKit、Reminders等）にはアクセスできません。iOS/iPadOS対応は、AnthropicがSkillsからデバイスAPIへのアクセスを提供した時点で実装予定です。
+### Remote MCP対応の利点
+
+**iOS/iPadOS/Web版での完全機能提供:**
+- ✅ すべてのsage機能にアクセス可能
+- ✅ 外部統合（Apple Reminders、Notion、Calendar）
+- ✅ 永続的な設定管理
+- ✅ 高度なタスク分析とTODOリスト管理
+- ✅ OAuth認証とセキュリティ
+
+**アーキテクチャの利点:**
+- 単一のサーバー実装で全プラットフォーム対応
+- クラウドベースの設定同期
+- スケーラブルな展開
+- 統一されたユーザー体験
 
 システムは以下の主要コンポーネントで構成されます：
 - セットアップウィザード（初回設定）
@@ -31,23 +44,63 @@ sageは、Claude DesktopおよびClaude Code向けのAIタスク管理アシス�
 │                Claude Client                    │
 │  ┌─────────────┬─────────────┬─────────────────┐ │
 │  │Desktop/Code │iOS/iPadOS   │Web              │ │
-│  │(MCP Server) │(Skills)     │(Skills)         │ │
+│  │(Local MCP)  │(Remote MCP) │(Remote MCP)     │ │
 │  └─────────────┴─────────────┴─────────────────┘ │
 └──────┬──────────────┬──────────────┬─────────────┘
        │              │              │
-       ↓              ↓              ↓
-┌─────────────────────────────────────────────────┐
-│            sage Core Architecture               │
-│  ┌───────────────────────────────────────────┐  │
-│  │      Platform Adaptation Layer            │  │
-│  │  - MCPAdapter (Desktop/Code)              │  │
-│  │  - SkillsAdapter (iOS/iPadOS/Web)         │  │
-│  │  - PlatformDetector                       │  │
-│  └───────────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────────┐  │
-│  │         Setup & Config Layer              │  │
-│  │  - SetupWizard                            │  │
-│  │  - ConfigManager (File/Session/Cloud)     │  │
+       │              └──────┬───────┘
+       │                     │ HTTPS/WSS
+       ↓                     ↓
+┌─────────────────┐  ┌─────────────────────────────┐
+│  Local MCP      │  │     Remote MCP Server       │
+│  sage Server    │  │     (Cloud Hosted)          │
+│                 │  │  ┌─────────────────────────┐ │
+│  - File Config  │  │  │    HTTP/WebSocket       │ │
+│  - AppleScript  │  │  │    Transport Layer      │ │
+│  - Direct APIs  │  │  │  - OAuth Authentication │ │
+│                 │  │  │  - Rate Limiting        │ │
+│                 │  │  │  - Request Validation   │ │
+│                 │  │  └─────────────────────────┘ │
+│                 │  │  ┌─────────────────────────┐ │
+│                 │  │  │   sage Core Engine      │ │
+│                 │  │  │  - Task Analysis        │ │
+│                 │  │  │  - TODO Management      │ │
+│                 │  │  │  - External Integrations│ │
+│                 │  │  │  - User Config Storage  │ │
+│                 │  │  └─────────────────────────┘ │
+└─────────────────┘  └─────────────────────────────┘
+                                    │
+                                    ↓
+                     ┌─────────────────────────────┐
+                     │    External Services        │
+                     │  ┌─────────────────────────┐ │
+                     │  │  Apple Reminders API    │ │
+                     │  │  (via iCloud Web API)   │ │
+                     │  └─────────────────────────┘ │
+                     │  ┌─────────────────────────┐ │
+                     │  │     Notion API          │ │
+                     │  │  (Direct Integration)   │ │
+                     │  └─────────────────────────┘ │
+                     │  ┌─────────────────────────┐ │
+                     │  │   Calendar APIs         │ │
+                     │  │  (Google/Outlook/iCloud)│ │
+                     │  └─────────────────────────┘ │
+                     └─────────────────────────────┘
+```
+
+### プラットフォーム別機能比較
+
+| 機能 | Desktop/Code (Local MCP) | iOS/iPadOS (Remote MCP) | Web (Remote MCP) |
+|------|-------------------------|------------------------|------------------|
+| タスク分析 | ✅ 完全版 | ✅ 完全版 | ✅ 完全版 |
+| 優先順位付け | ✅ カスタムルール | ✅ カスタムルール | ✅ カスタムルール |
+| 時間見積もり | ✅ 学習機能付き | ✅ 学習機能付き | ✅ 学習機能付き |
+| タスク分割 | ✅ 複雑な分割 | ✅ 複雑な分割 | ✅ 複雑な分割 |
+| TODOリスト管理 | ✅ 完全版 | ✅ 完全版 | ✅ 完全版 |
+| 設定管理 | ✅ ローカルファイル | ✅ クラウド同期 | ✅ クラウド同期 |
+| Apple Reminders | ✅ AppleScript | ✅ iCloud Web API | ✅ iCloud Web API |
+| Calendar統合 | ✅ AppleScript | ✅ Web APIs | ✅ Web APIs |
+| Notion統合 | ✅ MCP経由 | ✅ Direct API | ✅ Direct API |
 │  │  - ConfigValidator                        │  │
 │  └───────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────┐  │
@@ -530,9 +583,332 @@ interface ReminderResult {
 }
 ```
 
-### 11. NotionMCPService
+### 15. RemoteMCPServer
 
-**責任:** Notion MCP経由でのNotion統合（Desktop/Code専用）
+**責任:** Remote MCP Server実装とHTTP/WebSocket通信
+
+```typescript
+interface RemoteMCPServer {
+  startServer(port: number, config: RemoteMCPConfig): Promise<void>;
+  handleMCPRequest(request: MCPRequest): Promise<MCPResponse>;
+  authenticateUser(token: string): Promise<AuthResult>;
+  validateRequest(request: MCPRequest): Promise<ValidationResult>;
+}
+
+interface RemoteMCPConfig {
+  port: number;
+  host: string;
+  httpsEnabled: boolean;
+  corsOrigins: string[];
+  oauth: OAuthConfig;
+  rateLimit: RateLimitConfig;
+  logging: LoggingConfig;
+}
+
+interface OAuthConfig {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  scopes: string[];
+  provider: 'claude' | 'custom';
+}
+
+interface RateLimitConfig {
+  requestsPerMinute: number;
+  requestsPerHour: number;
+  burstLimit: number;
+  whitelistedIPs: string[];
+}
+
+interface MCPRequest {
+  method: string;
+  params: any;
+  id: string | number;
+  jsonrpc: '2.0';
+  headers: Record<string, string>;
+  userId?: string;
+}
+
+interface MCPResponse {
+  result?: any;
+  error?: MCPError;
+  id: string | number;
+  jsonrpc: '2.0';
+}
+
+interface MCPError {
+  code: number;
+  message: string;
+  data?: any;
+}
+
+interface AuthResult {
+  success: boolean;
+  userId?: string;
+  permissions: string[];
+  error?: string;
+}
+```
+
+### 16. CloudConfigManager
+
+**責任:** クラウドベースの設定管理とユーザーデータ同期
+
+```typescript
+interface CloudConfigManager {
+  saveUserConfig(userId: string, config: UserConfig): Promise<SaveResult>;
+  loadUserConfig(userId: string): Promise<UserConfig>;
+  syncUserData(userId: string): Promise<SyncResult>;
+  migrateFromLocal(localConfig: UserConfig, userId: string): Promise<MigrationResult>;
+}
+
+interface SaveResult {
+  success: boolean;
+  version: string;
+  lastModified: string;
+  error?: string;
+}
+
+interface SyncResult {
+  success: boolean;
+  conflictsResolved: number;
+  lastSyncTime: string;
+  error?: string;
+}
+
+interface MigrationResult {
+  success: boolean;
+  migratedSettings: string[];
+  warnings: string[];
+  error?: string;
+}
+
+// クラウドストレージ実装例
+class CloudConfigManagerImpl implements CloudConfigManager {
+  private storage: CloudStorage; // AWS S3, Google Cloud Storage, etc.
+  private encryption: EncryptionService;
+  
+  async saveUserConfig(userId: string, config: UserConfig): Promise<SaveResult> {
+    try {
+      const encryptedConfig = await this.encryption.encrypt(JSON.stringify(config));
+      const key = `users/${userId}/config.json`;
+      
+      await this.storage.put(key, encryptedConfig, {
+        metadata: {
+          version: config.version,
+          lastModified: new Date().toISOString(),
+          userId
+        }
+      });
+      
+      return {
+        success: true,
+        version: config.version,
+        lastModified: new Date().toISOString()
+      };
+    } catch (error) {
+      return {
+        success: false,
+        version: config.version,
+        lastModified: new Date().toISOString(),
+        error: error.message
+      };
+    }
+  }
+}
+```
+
+### 17. WebAPIIntegrationService
+
+**責任:** Web API経由での外部サービス統合（Remote MCP専用）
+
+```typescript
+interface WebAPIIntegrationService {
+  // Apple Services (iCloud Web API)
+  createAppleReminder(userId: string, request: ReminderRequest): Promise<ReminderResult>;
+  getAppleCalendarEvents(userId: string, dateRange: DateRange): Promise<CalendarEvent[]>;
+  
+  // Notion Direct API
+  createNotionPage(userId: string, request: NotionPageRequest): Promise<NotionPageResult>;
+  getNotionTasks(userId: string, filter?: NotionFilter): Promise<NotionTask[]>;
+  
+  // Google Calendar API
+  getGoogleCalendarEvents(userId: string, dateRange: DateRange): Promise<CalendarEvent[]>;
+  
+  // Microsoft Outlook API
+  getOutlookCalendarEvents(userId: string, dateRange: DateRange): Promise<CalendarEvent[]>;
+}
+
+interface AppleWebAPIConfig {
+  iCloudBaseUrl: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+}
+
+interface NotionDirectAPIConfig {
+  apiKey: string;
+  version: string;
+  baseUrl: string;
+}
+
+// Apple iCloud Web API統合例
+class AppleWebAPIService {
+  private config: AppleWebAPIConfig;
+  private tokenManager: TokenManager;
+  
+  async createReminder(userId: string, request: ReminderRequest): Promise<ReminderResult> {
+    try {
+      const token = await this.tokenManager.getAppleToken(userId);
+      
+      const response = await fetch(`${this.config.iCloudBaseUrl}/reminders/api/v1/reminders`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: request.title,
+          notes: request.notes,
+          dueDate: request.dueDate,
+          list: request.list,
+          priority: this.mapPriority(request.priority)
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Apple API error: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      return {
+        success: true,
+        method: 'web_api',
+        reminderId: result.id,
+        reminderUrl: result.url
+      };
+    } catch (error) {
+      return {
+        success: false,
+        method: 'web_api',
+        error: `Apple Web API統合エラー: ${error.message}`
+      };
+    }
+  }
+}
+```
+
+### 18. TodoListManager
+
+```typescript
+interface TodoListManager {
+  listTodos(filter?: TodoFilter): Promise<TodoItem[]>;
+  updateTaskStatus(taskId: string, status: TaskStatus, source: TaskSource): Promise<UpdateResult>;
+  getTodaysTasks(): Promise<TodoItem[]>;
+  syncTaskAcrossSources(taskId: string): Promise<SyncResult>;
+}
+
+interface TodoFilter {
+  priority?: Priority[];
+  status?: TaskStatus[];
+  dueDate?: DateRange;
+  source?: TaskSource[];
+  tags?: string[];
+}
+
+interface TodoItem {
+  id: string;
+  title: string;
+  description?: string;
+  priority: Priority;
+  status: TaskStatus;
+  dueDate?: string;
+  createdDate: string;
+  updatedDate: string;
+  source: TaskSource;
+  sourceId: string; // Apple Reminders ID or Notion Page ID
+  tags: string[];
+  estimatedMinutes?: number;
+  stakeholders?: string[];
+}
+
+type TaskSource = 'apple_reminders' | 'notion' | 'manual';
+type TaskStatus = 'not_started' | 'in_progress' | 'completed' | 'cancelled';
+
+interface UpdateResult {
+  success: boolean;
+  taskId: string;
+  updatedFields: string[];
+  syncedSources: TaskSource[];
+  error?: string;
+}
+
+interface SyncResult {
+  success: boolean;
+  taskId: string;
+  syncedSources: TaskSource[];
+  conflicts?: TaskConflict[];
+  error?: string;
+}
+
+interface TaskConflict {
+  field: string;
+  appleRemindersValue: any;
+  notionValue: any;
+  resolvedValue: any;
+  resolution: 'apple_reminders' | 'notion' | 'manual';
+}
+
+interface DateRange {
+  start?: string;
+  end?: string;
+}
+```
+
+### 19. TaskSynchronizer
+
+**責任:** 複数ソース間でのタスク同期と競合解決
+
+```typescript
+interface TaskSynchronizer {
+  syncAllTasks(): Promise<SyncAllResult>;
+  resolveConflicts(conflicts: TaskConflict[]): Promise<ConflictResolution>;
+  detectDuplicates(): Promise<DuplicateTask[]>;
+  mergeDuplicates(duplicates: DuplicateTask[]): Promise<MergeResult>;
+}
+
+interface SyncAllResult {
+  totalTasks: number;
+  syncedTasks: number;
+  conflicts: TaskConflict[];
+  errors: SyncError[];
+  duration: number;
+}
+
+interface DuplicateTask {
+  tasks: TodoItem[];
+  similarity: number;
+  suggestedMerge: TodoItem;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+interface MergeResult {
+  success: boolean;
+  mergedTask: TodoItem;
+  removedTasks: string[];
+  error?: string;
+}
+
+interface SyncError {
+  taskId: string;
+  source: TaskSource;
+  error: string;
+  recoverable: boolean;
+}
+```
+
+### 20. NotionMCPService
 
 ```typescript
 interface NotionMCPService {
