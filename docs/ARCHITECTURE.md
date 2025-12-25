@@ -2,194 +2,409 @@
 
 ## Overview
 
-Sage (賢者) is a multi-platform AI task management assistant that integrates with Apple Reminders, Notion, and Calendar services. It is designed to work across:
+sage (賢者) は、マルチプラットフォーム対応の AI タスク管理アシスタントです。Apple Reminders、Notion、Calendar サービスと連携し、以下の環境で動作します:
 
-- **Desktop/Code MCP**: Full-featured MCP server for Claude Desktop and Claude Code
-- **iOS/iPadOS Skills**: Native integration via Claude Skills (future)
-- **Web Skills**: Lightweight web-compatible version (future)
-- **Remote MCP**: HTTP-based MCP server for remote access
+| 環境 | 実行方式 | 統合方法 |
+|------|----------|----------|
+| **Desktop MCP** | Claude Desktop/Code | Local MCP Server |
+| **Remote MCP** | iOS/iPadOS/Web | HTTP-based MCP Server |
 
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Claude Client                           │
-│  (Desktop / Code / iOS / Web)                               │
-└─────────────────────┬───────────────────────────────────────┘
-                      │ MCP Protocol
-                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   Platform Adapter Layer                     │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────────┐│
-│  │ MCP Adapter │ │ iOS Skills  │ │ Web Skills Adapter     ││
-│  │  (Desktop)  │ │   Adapter   │ │                        ││
-│  └──────┬──────┘ └──────┬──────┘ └───────────┬────────────┘│
-└─────────┼───────────────┼───────────────────┼──────────────┘
-          │               │                   │
-          ▼               ▼                   ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Sage Core                               │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │                 Task Analyzer                           ││
-│  │  - Priority Engine                                      ││
-│  │  - Time Estimator                                       ││
-│  │  - Stakeholder Extractor                               ││
-│  └─────────────────────────────────────────────────────────┘│
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │              TODO List Manager                          ││
-│  │  - Multi-source sync                                    ││
-│  │  - Conflict resolution                                  ││
-│  └─────────────────────────────────────────────────────────┘│
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  Integration Layer                           │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐│
-│  │    Apple     │ │    Notion    │ │     Calendar         ││
-│  │  Reminders   │ │   MCP        │ │   Service            ││
-│  │  Service     │ │   Service    │ │                      ││
-│  └──────────────┘ └──────────────┘ └──────────────────────┘│
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Claude Clients                                   │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐│
+│  │Claude Desktop│  │ Claude Code  │  │  Claude iOS  │  │  Claude Web  ││
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘│
+└─────────┼─────────────────┼─────────────────┼─────────────────┼─────────┘
+          │ stdio           │ stdio           │ HTTPS           │ HTTPS
+          ▼                 ▼                 ▼                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Transport Layer                                  │
+│  ┌────────────────────────────┐  ┌────────────────────────────────────┐│
+│  │    Local MCP Transport     │  │      Remote MCP Transport          ││
+│  │    (stdio)                 │  │      (HTTP/HTTPS + JSON-RPC)       ││
+│  └────────────┬───────────────┘  └──────────────────┬─────────────────┘│
+└───────────────┼──────────────────────────────────────┼──────────────────┘
+                │                                      │
+                ▼                                      ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Platform Adapter Layer                            │
+│  ┌────────────────────────────┐  ┌────────────────────────────────────┐│
+│  │       MCPAdapter           │  │      RemoteMCPAdapter              ││
+│  │   - File system access     │  │   - Cloud storage                  ││
+│  │   - AppleScript execution  │  │   - Remote service calls           ││
+│  │   - Local config storage   │  │   - Session management             ││
+│  └────────────┬───────────────┘  └──────────────────┬─────────────────┘│
+└───────────────┼──────────────────────────────────────┼──────────────────┘
+                │                                      │
+                └──────────────────┬───────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Sage Core                                      │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │                      Task Analyzer                                 │ │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐               │ │
+│  │  │  Priority   │  │    Time     │  │ Stakeholder │               │ │
+│  │  │   Engine    │  │  Estimator  │  │  Extractor  │               │ │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘               │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │                   TODO List Manager                                │ │
+│  │  - Multi-source aggregation                                       │ │
+│  │  - Task synchronization                                           │ │
+│  │  - Conflict resolution                                            │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │                    Task Splitter                                   │ │
+│  │  - Complex task detection                                         │ │
+│  │  - Subtask generation                                             │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Integration Layer                                 │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────┐  │
+│  │  Apple Reminders │  │   Notion MCP     │  │  Calendar Service    │  │
+│  │  Service         │  │   Service        │  │                      │  │
+│  │                  │  │                  │  │                      │  │
+│  │  - AppleScript   │  │  - MCP Client    │  │  - AppleScript       │  │
+│  │  - Remote proxy  │  │  - DB operations │  │  - iCal parsing      │  │
+│  └──────────────────┘  └──────────────────┘  └──────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Core Components
+## Component Details
 
-### 1. Platform Adapter Layer
+### 1. Transport Layer
 
-The adapter layer provides platform abstraction, allowing the same core logic to work across different environments.
+#### Local MCP Transport (stdio)
 
-**Files:**
-- `src/platform/adapters/mcp-adapter.ts` - Desktop/Code MCP adapter
-- `src/platform/adapters/skills-adapter-ios.ts` - iOS/iPadOS Skills adapter
-- `src/platform/adapters/skills-adapter-web.ts` - Web Skills adapter
-- `src/platform/adapter-factory.ts` - Factory for creating adapters
+Claude Desktop/Code との通信に使用される標準的な MCP トランスポート。
 
-### 2. Sage Core
+```typescript
+// src/index.ts
+const transport = new StdioServerTransport();
+await server.connect(transport);
+```
 
-The core business logic for task management, independent of platform.
+#### Remote MCP Transport (HTTP)
 
-**Files:**
-- `src/core/sage-core.ts` - Main entry point
-- `src/tools/analyze-tasks.ts` - Task analysis tool
-- `src/utils/priority.ts` - Priority calculation engine
-- `src/utils/estimation.ts` - Time estimation system
-- `src/utils/stakeholders.ts` - Stakeholder extraction
+iOS/iPadOS/Web クライアントとの通信に使用される HTTP ベースのトランスポート。
 
-### 3. Integration Layer
+```typescript
+// src/remote/remote-mcp-server.ts
+class RemoteMCPServer {
+  // JSON-RPC over HTTP
+  async handleRequest(req: JSONRPCRequest): Promise<JSONRPCResponse>;
 
-Platform-specific integrations for external services.
+  // Authentication
+  async validateAuth(token: string): Promise<boolean>;
 
-**Files:**
-- `src/integrations/apple-reminders.ts` - Apple Reminders (AppleScript)
-- `src/integrations/notion-mcp.ts` - Notion via MCP
-- `src/integrations/calendar-service.ts` - Calendar integration
-- `src/integrations/todo-list-manager.ts` - Unified TODO management
+  // Session management
+  async getSession(sessionId: string): Promise<Session>;
+}
+```
 
-### 4. Remote MCP Server
+### 2. Platform Adapter Layer
 
-HTTP-based MCP server for remote access scenarios.
+プラットフォーム固有の機能を抽象化し、統一されたインターフェースを提供します。
 
-**Files:**
-- `src/remote/remote-mcp-server.ts` - HTTP server implementation
+```
+src/platform/
+├── types.ts              # PlatformAdapter interface
+├── detector.ts           # Platform detection logic
+├── adapter-factory.ts    # Adapter factory
+└── adapters/
+    ├── mcp-adapter.ts        # Desktop/Code adapter
+    └── remote-mcp-adapter.ts # Remote client adapter
+```
 
-## Data Flow
+#### PlatformType
 
-### Task Analysis Flow
+```typescript
+type PlatformType = 'desktop_mcp' | 'remote_mcp';
+```
 
-1. User provides text input (email, meeting notes, etc.)
-2. `TaskAnalyzer.analyzeFromText()` is called
-3. Text is parsed to extract individual tasks
-4. For each task:
-   - `PriorityEngine.determinePriority()` calculates priority
-   - `TimeEstimator.estimateDuration()` estimates time
-   - `StakeholderExtractor.extractStakeholders()` finds stakeholders
-5. Results are compiled and returned
+#### Capabilities
 
-### Reminder Creation Flow
+| Capability | desktop_mcp | remote_mcp |
+|------------|-------------|------------|
+| file_system | Yes | No |
+| external_process | Yes | No |
+| mcp_integration | Yes | No |
+| remote_access | No | Yes |
+| cloud_storage | No | Yes |
 
-1. Analyzed task is passed to reminder system
-2. `ReminderManager.setReminder()` determines best reminder times
-3. Based on deadline proximity:
-   - < 7 days: Apple Reminders
-   - >= 8 days: Notion (optional)
-4. Platform-specific service creates the reminder
+### 3. Sage Core
 
-## Configuration
+プラットフォーム非依存のビジネスロジック。
 
-Configuration is stored in `~/.sage/config.json` and follows the schema defined in `src/types/config.ts`.
+```
+src/core/
+└── sage-core.ts          # Main entry point
 
-Key configuration sections:
-- `user` - User profile and timezone
-- `priorityRules` - Custom priority conditions
-- `estimation` - Time estimation keywords
-- `integrations` - Service-specific settings
+src/tools/
+└── analyze-tasks.ts      # Task analysis tool
 
-## Security Considerations
+src/utils/
+├── priority.ts           # Priority calculation
+├── estimation.ts         # Time estimation
+├── stakeholders.ts       # Stakeholder extraction
+└── task-splitter.ts      # Task splitting
+```
 
-### Notion Integration
-- Database IDs are strictly validated
-- Only configured databases can be accessed
-- API keys are never stored in config files
+#### Task Analysis Flow
 
-### Remote MCP Server
-- JWT token authentication
-- API key authentication
-- IP whitelist support
-- CORS configuration
+```
+Input Text
+    │
+    ▼
+┌─────────────────┐
+│  Text Parser    │  Extract individual tasks
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Priority Engine │  P0-P3 based on rules
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Time Estimator  │  Minutes estimation
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Stakeholder     │  Extract mentions
+│ Extractor       │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Task Splitter   │  Break complex tasks
+└────────┬────────┘
+         │
+         ▼
+    Analysis Result
+```
 
-### AppleScript
-- Sandboxed execution
-- Permission prompts for Reminders/Calendar access
+### 4. Integration Layer
+
+外部サービスとの連携を担当します。
+
+```
+src/integrations/
+├── apple-reminders.ts    # Apple Reminders via AppleScript
+├── notion-mcp.ts         # Notion via MCP protocol
+├── calendar-service.ts   # Calendar integration
+├── todo-list-manager.ts  # Unified TODO management
+└── task-synchronizer.ts  # Multi-source sync
+```
+
+#### Notion MCP Integration
+
+sage は Notion MCP Server のクライアントとして動作します。
+
+```
+┌─────────────┐     MCP Client      ┌─────────────────┐
+│    sage     │ ──────────────────→ │  Notion MCP     │
+│             │                     │  Server         │
+└─────────────┘                     └────────┬────────┘
+                                             │
+                                             ▼
+                                    ┌─────────────────┐
+                                    │   Notion API    │
+                                    └─────────────────┘
+```
+
+### 5. Remote Infrastructure
+
+```
+src/remote/
+├── remote-mcp-server.ts  # HTTP server
+├── cloud-config.ts       # Cloud configuration sync
+└── hybrid-integration.ts # Multi-platform coordination
+```
+
+#### Hybrid Integration
+
+複数プラットフォーム間での設定・データ同期を管理します。
+
+```typescript
+class HybridIntegrationManager {
+  // Platform-specific capabilities
+  detectCapabilities(platform: Platform): Capabilities;
+
+  // Coordination planning
+  planCoordination(platforms: Platform[]): CoordinationPlan;
+
+  // Conflict resolution
+  resolveConflict(local: Task, remote: Task): Task;
+}
+```
+
+## Data Models
+
+### Task
+
+```typescript
+interface Task {
+  title: string;
+  description?: string;
+  deadline?: string;
+  priority?: Priority;
+  estimatedMinutes?: number;
+  stakeholders?: string[];
+  source?: 'reminders' | 'notion' | 'manual';
+  status?: 'pending' | 'in_progress' | 'completed';
+}
+
+type Priority = 'P0' | 'P1' | 'P2' | 'P3';
+```
+
+### UserConfig
+
+```typescript
+interface UserConfig {
+  user: UserProfile;
+  calendar: CalendarConfig;
+  priorityRules: PriorityRules;
+  estimation: EstimationConfig;
+  integrations: IntegrationsConfig;
+  // ... see src/types/config.ts
+}
+```
+
+## Security
+
+### Authentication
+
+Remote MCP Server は複数の認証方式をサポート:
+
+| 方式 | 用途 |
+|------|------|
+| JWT | 推奨。有効期限付きトークン |
+| API Key | シンプルな認証 |
+| IP Whitelist | ネットワーク制限 |
+
+### Notion Database Restrictions
+
+セキュリティのため、Notion 統合では以下の制限を実施:
+
+1. **設定された database ID のみアクセス可能**
+2. **database ID 形式の検証**
+3. **不正アクセス時のエラーハンドリング**
+
+### AppleScript Sandboxing
+
+AppleScript 実行は macOS のセキュリティ機構により保護:
+
+- ユーザー承認が必要
+- Reminders/Calendar へのアクセス権限を明示的に要求
+
+## File Structure
+
+```
+sage/
+├── src/
+│   ├── index.ts                    # MCP Server entry point
+│   ├── core/
+│   │   └── sage-core.ts            # Core business logic
+│   ├── config/
+│   │   ├── loader.ts               # Config loading
+│   │   ├── validator.ts            # Config validation
+│   │   └── storage/                # Platform-specific storage
+│   ├── platform/
+│   │   ├── types.ts                # Platform interfaces
+│   │   ├── detector.ts             # Platform detection
+│   │   └── adapters/               # Platform adapters
+│   ├── tools/
+│   │   └── analyze-tasks.ts        # Task analysis
+│   ├── integrations/
+│   │   ├── apple-reminders.ts      # Apple Reminders
+│   │   ├── notion-mcp.ts           # Notion MCP
+│   │   ├── calendar-service.ts     # Calendar
+│   │   └── todo-list-manager.ts    # TODO management
+│   ├── remote/
+│   │   ├── remote-mcp-server.ts    # HTTP server
+│   │   ├── cloud-config.ts         # Cloud sync
+│   │   └── hybrid-integration.ts   # Multi-platform
+│   ├── utils/
+│   │   ├── priority.ts             # Priority logic
+│   │   ├── estimation.ts           # Time estimation
+│   │   ├── stakeholders.ts         # Stakeholder extraction
+│   │   └── task-splitter.ts        # Task splitting
+│   └── types/
+│       ├── task.ts                 # Task types
+│       └── config.ts               # Config types
+├── tests/
+│   ├── unit/                       # Unit tests
+│   ├── integration/                # Integration tests
+│   └── e2e/                        # End-to-end tests
+├── docs/                           # Documentation
+├── Dockerfile                      # Docker build
+├── docker-compose.yml              # Docker compose
+├── wrangler.toml                   # Cloudflare Workers
+└── manifest.json                   # MCP manifest
+```
 
 ## Extending Sage
 
 ### Adding a New Integration
 
-1. Create service file in `src/integrations/`
-2. Implement the integration interface
-3. Add configuration schema to `src/types/config.ts`
-4. Update `TodoListManager` to use new source
-5. Add tests in `tests/unit/`
+1. `src/integrations/` にサービスファイルを作成
+2. 統合インターフェースを実装
+3. `src/types/config.ts` に設定スキーマを追加
+4. `TodoListManager` を更新
+5. テストを追加
 
-### Adding a New Platform Adapter
+### Adding a New Platform
 
-1. Create adapter in `src/platform/adapters/`
-2. Implement `PlatformAdapter` interface
-3. Register in `AdapterFactory`
-4. Add platform-specific tests
+1. `src/platform/adapters/` にアダプターを作成
+2. `PlatformAdapter` インターフェースを実装
+3. `src/platform/types.ts` の `PlatformType` を更新
+4. `src/platform/detector.ts` に検出ロジックを追加
+5. テストを追加
 
 ## Testing
 
 ```bash
-# Run all tests
+# All tests
 npm test
 
-# Run specific test file
-npm test -- --testPathPattern="priority"
+# Unit tests only
+npm test -- --testPathPattern="unit"
 
-# Run with coverage
+# Integration tests
+npm test -- --testPathPattern="integration"
+
+# E2E tests
+npm test -- --testPathPattern="e2e"
+
+# Coverage report
 npm test -- --coverage
 ```
 
-## Deployment
+## Performance Considerations
 
-### Docker
+### Local MCP
 
-```bash
-# Build image
-docker build -t sage-mcp-server .
+- stdio 通信は低レイテンシ
+- AppleScript 実行は数百ミリ秒かかる場合がある
 
-# Run container
-docker run -p 3000:3000 sage-mcp-server
-```
+### Remote MCP
 
-### MCP Installation
+- HTTP オーバーヘッドを考慮
+- 接続プーリングで効率化
+- リトライ機構でネットワーク障害に対応
 
-```bash
-# Install globally
-npm install -g @shin1ohno/sage
+## Related Documentation
 
-# Or use npx
-npx @shin1ohno/sage
-```
+- [Local MCP Setup](SETUP-LOCAL.md)
+- [Remote MCP Setup](SETUP-REMOTE.md)
+- [Configuration Guide](CONFIGURATION.md)
+- [Troubleshooting](TROUBLESHOOTING.md)
