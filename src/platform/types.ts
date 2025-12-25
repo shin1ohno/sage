@@ -47,6 +47,7 @@ export interface FeatureSet {
 export interface PermissionStatus {
   reminders: 'granted' | 'denied' | 'not_determined';
   calendar: 'granted' | 'denied' | 'not_determined';
+  notion: 'granted' | 'denied' | 'not_determined';
   canRequestPermission: boolean;
 }
 
@@ -128,6 +129,11 @@ export interface NativeIntegrationService {
   fetchCalendarEvents(startDate: string, endDate: string): Promise<NativeCalendarEvent[]>;
 
   /**
+   * Create a Notion page using Connector API
+   */
+  createNotionPage(request: NativeNotionRequest): Promise<NativeNotionResult>;
+
+  /**
    * Check permission status
    */
   checkPermissions(): Promise<PermissionStatus>;
@@ -173,6 +179,28 @@ export interface NativeCalendarEvent {
 }
 
 /**
+ * Native Notion page request
+ */
+export interface NativeNotionRequest {
+  databaseId: string;
+  title: string;
+  properties?: Record<string, unknown>;
+  content?: string;
+}
+
+/**
+ * Native Notion page result
+ */
+export interface NativeNotionResult {
+  success: boolean;
+  method: 'connector' | 'mcp' | 'fallback';
+  pageId?: string;
+  pageUrl?: string;
+  error?: string;
+  fallbackText?: string;
+}
+
+/**
  * Capability names
  */
 export const CAPABILITY_NAMES = {
@@ -183,6 +211,7 @@ export const CAPABILITY_NAMES = {
   ICLOUD_SYNC: 'icloud_sync',
   NATIVE_REMINDERS: 'native_reminders',
   NATIVE_CALENDAR: 'native_calendar',
+  NOTION_CONNECTOR: 'notion_connector',
 } as const;
 
 /**
@@ -191,6 +220,7 @@ export const CAPABILITY_NAMES = {
 export const INTEGRATION_NAMES = {
   APPLESCRIPT: 'applescript',
   NOTION_MCP: 'notion_mcp',
+  NOTION_CONNECTOR: 'notion_connector',
   REMINDERS: 'reminders',
   CALENDAR: 'calendar',
 } as const;

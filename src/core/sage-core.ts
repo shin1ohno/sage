@@ -20,7 +20,7 @@ import { DEFAULT_CONFIG } from '../types/config.js';
 export interface IntegrationRecommendation {
   integration: 'reminders' | 'calendar' | 'notion';
   available: boolean;
-  method: 'native' | 'applescript' | 'mcp' | 'manual_copy';
+  method: 'native' | 'applescript' | 'mcp' | 'connector' | 'manual_copy';
   fallback?: string;
   description: string;
 }
@@ -174,12 +174,21 @@ export class SageCore {
 
     // Notion integration
     if (features.notionIntegration) {
-      recommendations.push({
-        integration: 'notion',
-        available: true,
-        method: 'mcp',
-        description: 'MCP経由でNotionデータベースに連携',
-      });
+      if (platformType === 'desktop_mcp') {
+        recommendations.push({
+          integration: 'notion',
+          available: true,
+          method: 'mcp',
+          description: 'MCP経由でNotionデータベースに連携',
+        });
+      } else if (platformType === 'ios_skills' || platformType === 'ipados_skills') {
+        recommendations.push({
+          integration: 'notion',
+          available: true,
+          method: 'connector',
+          description: 'Notion Connector経由でNotionデータベースに連携',
+        });
+      }
     } else {
       recommendations.push({
         integration: 'notion',

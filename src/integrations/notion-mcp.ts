@@ -1,13 +1,19 @@
 /**
  * Notion MCP Service
- * MCP-based Notion integration (Desktop/Code only)
+ * Platform-adaptive Notion integration
+ * - Desktop/Code: MCP経由
+ * - iOS/iPadOS: Notion Connector経由
+ * - Web: フォールバック（手動コピー）
  * Requirements: 8.1-8.5
  */
 
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
 
+// Declare window for browser environment detection
+declare const window: any;
+
 /**
- * Default retry options for Notion MCP operations
+ * Default retry options for Notion operations
  */
 const RETRY_OPTIONS = {
   maxAttempts: 3,
@@ -15,6 +21,15 @@ const RETRY_OPTIONS = {
   maxDelay: 10000,
   shouldRetry: isRetryableError,
 };
+
+/**
+ * Notion platform info
+ */
+export interface NotionPlatformInfo {
+  platform: 'mcp' | 'connector' | 'web' | 'unknown';
+  method: 'mcp' | 'connector' | 'fallback';
+  available: boolean;
+}
 
 /**
  * Notion page request
@@ -39,9 +54,11 @@ export interface NotionBlock {
  */
 export interface NotionPageResult {
   success: boolean;
+  method?: 'mcp' | 'connector' | 'fallback';
   pageId?: string;
   pageUrl?: string;
   error?: string;
+  fallbackText?: string;
 }
 
 /**
@@ -69,42 +86,90 @@ export interface MCPRequest {
 
 /**
  * Notion MCP Service
- * Provides Notion integration via MCP for Desktop/Code environments
+ * Provides platform-adaptive Notion integration
+ * - Desktop/Code: MCP経由
+ * - iOS/iPadOS: Notion Connector経由
+ * - Web: フォールバック
  */
 export class NotionMCPService {
   /**
-   * Check if Notion MCP is available
-   * Only available in MCP server environment
+   * Detect the current platform for Notion integration
+   */
+  async detectPlatform(): Promise<NotionPlatformInfo> {
+    // Check for MCP environment (Desktop/Code)
+    if (typeof process !== 'undefined' && process.env?.MCP_SERVER === 'true') {
+      return {
+        platform: 'mcp',
+        method: 'mcp',
+        available: true,
+      };
+    }
+
+    // Check for Notion Connector (iOS/iPadOS Skills)
+    if (typeof window !== 'undefined' && window.claude?.notion) {
+      return {
+        platform: 'connector',
+        method: 'connector',
+        available: true,
+      };
+    }
+
+    // Web or unknown - fallback only
+    return {
+      platform: 'web',
+      method: 'fallback',
+      available: false,
+    };
+  }
+
+  /**
+   * Check if Notion integration is available
    */
   async isAvailable(): Promise<boolean> {
-    return typeof process !== 'undefined' && process.env?.MCP_SERVER === 'true';
+    const platform = await this.detectPlatform();
+    return platform.available;
   }
 
   /**
    * Create a page in Notion
+   * Routes to appropriate integration based on platform
    * Requirement: 8.1, 8.2, 8.3
    */
   async createPage(request: NotionPageRequest): Promise<NotionPageResult> {
-    if (!(await this.isAvailable())) {
-      return {
-        success: false,
-        error: 'Notion MCP統合は現在利用できません。Desktop/Code環境でのみ利用可能です。',
-      };
-    }
+    const platform = await this.detectPlatform();
 
+    switch (platform.method) {
+      case 'mcp':
+        return this.createPageViaMCP(request);
+      case 'connector':
+        return this.createPageViaConnector(request);
+      case 'fallback':
+      default:
+        return {
+          success: false,
+          method: 'fallback',
+          error: 'Notion統合が利用できません。',
+          fallbackText: this.generateFallbackTemplate({
+            title: request.title,
+            ...request.properties,
+          }),
+        };
+    }
+  }
+
+  /**
+   * Create page via MCP (Desktop/Code)
+   */
+  private async createPageViaMCP(request: NotionPageRequest): Promise<NotionPageResult> {
     try {
-      // Build and validate request format (will be used when MCP is connected)
+      // Build and validate request format
       this.buildMCPRequest(request);
 
       // Use retry with exponential backoff for MCP calls
       const result = await retryWithBackoff<{ pageId: string; pageUrl: string }>(
         async () => {
-          // In a real implementation, this would use MCP Client to call Notion MCP server
-          // For now, we return a placeholder that indicates MCP integration is needed
-          // TODO: Actually call MCP server
+          // TODO: Actually call MCP server when connected
           // return await this.mcpClient.request(mcpRequest);
-
-          // Placeholder: throw error to indicate not yet implemented
           throw new Error('MCP統合は実装中です。MCPクライアント接続が必要です。');
         },
         {
@@ -112,7 +177,6 @@ export class NotionMCPService {
           onRetry: (error, attempt) => {
             console.error(`Notion MCP retry attempt ${attempt}: ${error.message}`);
           },
-          // Don't retry "not implemented" errors
           shouldRetry: (error) => {
             if (error.message.includes('実装中')) {
               return false;
@@ -124,13 +188,64 @@ export class NotionMCPService {
 
       return {
         success: true,
+        method: 'mcp',
         pageId: result.pageId,
         pageUrl: result.pageUrl,
       };
     } catch (error) {
       return {
         success: false,
+        method: 'mcp',
         error: `Notion MCP エラー: ${(error as Error).message}`,
+      };
+    }
+  }
+
+  /**
+   * Create page via Notion Connector (iOS/iPadOS Skills)
+   * Requirement: 8.1, 8.2
+   */
+  private async createPageViaConnector(request: NotionPageRequest): Promise<NotionPageResult> {
+    try {
+      const notionConnector = window.claude?.notion;
+
+      if (!notionConnector) {
+        return {
+          success: false,
+          method: 'connector',
+          error: 'Notion Connectorが利用できません',
+        };
+      }
+
+      // Use retry with exponential backoff
+      const result = await retryWithBackoff(
+        async () => {
+          return await notionConnector.createPage({
+            databaseId: request.databaseId,
+            title: request.title,
+            properties: request.properties,
+            content: request.content,
+          });
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            console.error(`Notion Connector retry attempt ${attempt}: ${error.message}`);
+          },
+        }
+      );
+
+      return {
+        success: true,
+        method: 'connector',
+        pageId: result.id,
+        pageUrl: result.url,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        method: 'connector',
+        error: `Notion Connector エラー: ${(error as Error).message}`,
       };
     }
   }

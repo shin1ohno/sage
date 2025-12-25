@@ -167,14 +167,16 @@ describe('PlatformDetector', () => {
       expect(integrations).toContain('notion_mcp');
     });
 
-    it('should return reminders and calendar for iOS/iPadOS Skills', () => {
+    it('should return reminders, calendar, and notion_connector for iOS/iPadOS Skills', () => {
       const iOSIntegrations = PlatformDetector.getNativeIntegrations('ios_skills');
       const iPadOSIntegrations = PlatformDetector.getNativeIntegrations('ipados_skills');
 
       expect(iOSIntegrations).toContain('reminders');
       expect(iOSIntegrations).toContain('calendar');
+      expect(iOSIntegrations).toContain('notion_connector');
       expect(iPadOSIntegrations).toContain('reminders');
       expect(iPadOSIntegrations).toContain('calendar');
+      expect(iPadOSIntegrations).toContain('notion_connector');
     });
 
     it('should return empty array for Web Skills', () => {
@@ -203,7 +205,7 @@ describe('PlatformDetector', () => {
       expect(features.persistentConfig).toBe(true); // iCloud sync
       expect(features.appleReminders).toBe(true); // Native
       expect(features.calendarIntegration).toBe(true); // Native
-      expect(features.notionIntegration).toBe(false); // Manual only
+      expect(features.notionIntegration).toBe(true); // Notion Connector
       expect(features.fileSystemAccess).toBe(false);
     });
 

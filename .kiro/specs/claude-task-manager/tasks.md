@@ -185,21 +185,27 @@
   - _要件: 9.6_
 
 - [ ] 10. Notion統合の実装
-- [ ] 10.1 Notion MCP統合を実装（Desktop/Code専用）
+- [ ] 10.1 Desktop/Code MCP版Notion統合を実装
   - **テスト**: `tests/integration/notion-mcp.test.ts`を先に作成（モック使用）
   - MCP経由でのNotion統合基盤
   - Notion MCPサーバーとの通信とエラーハンドリング
   - _要件: 8.2_
 
-- [ ] 10.2 Notion MCP経由でのページ作成機能を実装
+- [ ] 10.2 iOS/iPadOS Skills版Notion Connector統合を実装
+  - **テスト**: `tests/integration/notion-connector.test.ts`を先に作成（モック使用）
+  - Claude Skills環境でのNotion Connector使用
+  - `window.claude?.notion?.createPage()`等のネイティブ統合
+  - _要件: 8.1, 8.2_
+
+- [ ] 10.3 プラットフォーム適応型Notionページ作成機能を実装
   - **テスト**: ページ作成のテストケースを先に作成
+  - Desktop: MCP経由、iOS/iPadOS: Connector経由でのページ作成
   - 8日以上先のタスクのNotionページ作成
-  - MCP toolsを使用したタイトル、優先度、期限、関係者の設定
   - _要件: 8.1, 8.3_
 
-- [ ] 10.3 Skills版Notionフォールバック機能を実装
+- [ ] 10.4 Web版Notionフォールバック機能を実装
   - **テスト**: フォールバック機能のテストケースを先に作成
-  - iOS/iPadOS/Web版での手動Notion追加推奨
+  - Web版での手動Notion追加推奨
   - フォーマット済みNotionページテンプレートの生成
   - _要件: 8.4, 8.5_
 

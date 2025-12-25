@@ -111,7 +111,7 @@ describe('SageCore', () => {
       expect(features.taskAnalysis).toBe(true);
       expect(features.appleReminders).toBe(true);
       expect(features.calendarIntegration).toBe(true);
-      expect(features.notionIntegration).toBe(false);
+      expect(features.notionIntegration).toBe(true); // Notion Connector
     });
 
     it('should analyze tasks', async () => {
@@ -136,8 +136,8 @@ describe('SageCore', () => {
       expect(recommendations).toContainEqual(
         expect.objectContaining({
           integration: 'notion',
-          available: false,
-          fallback: 'manual_copy',
+          available: true,
+          method: 'connector',
         })
       );
     });

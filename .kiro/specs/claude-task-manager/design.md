@@ -85,7 +85,7 @@ sageは、Claude Desktop、Claude Code、およびClaude iOS/iPadOSアプリ向�
 | 設定管理 | ✅ 永続化ファイル | ✅ セッション+iCloud | ⚠️ セッションのみ |
 | Apple Reminders | ✅ AppleScript | ✅ **ネイティブ統合** | ❌ 手動コピー推奨 |
 | Calendar統合 | ✅ AppleScript | ✅ **ネイティブ統合** | ❌ 手動入力 |
-| Notion統合 | ✅ MCP経由 | ❌ 手動コピー推奨 | ❌ 手動コピー推奨 |
+| Notion統合 | ✅ MCP経由 | ✅ **Connector経由** | ❌ 手動コピー推奨 |
 
 ### レイヤー構成
 
@@ -392,12 +392,14 @@ interface NativeIntegrationService {
   createReminder(request: ReminderRequest): Promise<ReminderResult>;
   fetchCalendarEvents(startDate: string, endDate: string): Promise<CalendarEvent[]>;
   findAvailableSlots(request: SlotRequest): Promise<AvailableSlot[]>;
+  createNotionPage(request: NotionPageRequest): Promise<NotionPageResult>; // 追加
   checkPermissions(): Promise<PermissionStatus>;
 }
 
 interface PermissionStatus {
   reminders: 'granted' | 'denied' | 'not_determined';
   calendar: 'granted' | 'denied' | 'not_determined';
+  notion: 'granted' | 'denied' | 'not_determined'; // 追加
   canRequestPermission: boolean;
 }
 
@@ -459,6 +461,29 @@ class NativeIntegrationServiceiOS implements NativeIntegrationService {
     );
     
     return this.calculateAvailableSlots(events, request.taskDuration);
+  }
+  
+  async createNotionPage(request: NotionPageRequest): Promise<NotionPageResult> {
+    try {
+      // Claude iOSアプリのNotion Connector統合を使用
+      const result = await window.claude?.notion?.createPage({
+        databaseId: request.databaseId,
+        title: request.title,
+        properties: request.properties,
+        content: request.content
+      });
+      
+      return {
+        success: true,
+        pageId: result.id,
+        pageUrl: result.url
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Notion Connector統合エラー: ${error.message}`
+      };
+    }
   }
   
   private mapPriority(priority?: Priority): number {
@@ -860,12 +885,46 @@ class SageSkillsiOS {
       )
     );
     
+    // 4. Notion Connector経由でのページ作成（長期タスク）
+    const notionPages = await Promise.all(
+      analysis.tasks
+        .filter(task => this.isLongTermTask(task))
+        .map(task => this.createNotionPage(task))
+    );
+    
     return {
       ...analysis,
       availableSlots,
       remindersCreated: reminders,
+      notionPagesCreated: notionPages,
       integrationMethod: 'native'
     };
+  }
+  
+  private async createNotionPage(task: AnalyzedTask): Promise<NotionPageResult> {
+    try {
+      // Claude iOSアプリのNotion Connector統合を使用
+      const result = await window.claude?.notion?.createPage({
+        databaseId: this.sessionConfig.notion?.databaseId,
+        title: task.original.title,
+        properties: {
+          Priority: { select: { name: task.priority } },
+          'Due Date': { date: { start: task.original.deadline } },
+          Stakeholders: { multi_select: task.stakeholders.map(s => ({ name: s })) }
+        }
+      });
+      
+      return {
+        success: true,
+        pageId: result.id,
+        pageUrl: result.url
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Notion Connector統合エラー: ${error.message}`
+      };
+    }
   }
 }
 ```

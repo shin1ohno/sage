@@ -35,6 +35,7 @@ const PLATFORM_CAPABILITIES: Record<PlatformType, PlatformCapability[]> = {
     { name: CAPABILITY_NAMES.ICLOUD_SYNC, available: true, requiresPermission: false, fallbackAvailable: true },
     { name: CAPABILITY_NAMES.NATIVE_REMINDERS, available: true, requiresPermission: true, fallbackAvailable: true },
     { name: CAPABILITY_NAMES.NATIVE_CALENDAR, available: true, requiresPermission: true, fallbackAvailable: true },
+    { name: CAPABILITY_NAMES.NOTION_CONNECTOR, available: true, requiresPermission: true, fallbackAvailable: true },
   ],
   ipados_skills: [
     { name: CAPABILITY_NAMES.FILE_SYSTEM, available: false, requiresPermission: false, fallbackAvailable: false },
@@ -44,6 +45,7 @@ const PLATFORM_CAPABILITIES: Record<PlatformType, PlatformCapability[]> = {
     { name: CAPABILITY_NAMES.ICLOUD_SYNC, available: true, requiresPermission: false, fallbackAvailable: true },
     { name: CAPABILITY_NAMES.NATIVE_REMINDERS, available: true, requiresPermission: true, fallbackAvailable: true },
     { name: CAPABILITY_NAMES.NATIVE_CALENDAR, available: true, requiresPermission: true, fallbackAvailable: true },
+    { name: CAPABILITY_NAMES.NOTION_CONNECTOR, available: true, requiresPermission: true, fallbackAvailable: true },
   ],
   web_skills: [
     { name: CAPABILITY_NAMES.FILE_SYSTEM, available: false, requiresPermission: false, fallbackAvailable: false },
@@ -61,8 +63,8 @@ const PLATFORM_CAPABILITIES: Record<PlatformType, PlatformCapability[]> = {
  */
 const PLATFORM_INTEGRATIONS: Record<PlatformType, string[]> = {
   desktop_mcp: [INTEGRATION_NAMES.APPLESCRIPT, INTEGRATION_NAMES.NOTION_MCP],
-  ios_skills: [INTEGRATION_NAMES.REMINDERS, INTEGRATION_NAMES.CALENDAR],
-  ipados_skills: [INTEGRATION_NAMES.REMINDERS, INTEGRATION_NAMES.CALENDAR],
+  ios_skills: [INTEGRATION_NAMES.REMINDERS, INTEGRATION_NAMES.CALENDAR, INTEGRATION_NAMES.NOTION_CONNECTOR],
+  ipados_skills: [INTEGRATION_NAMES.REMINDERS, INTEGRATION_NAMES.CALENDAR, INTEGRATION_NAMES.NOTION_CONNECTOR],
   web_skills: [],
 };
 
@@ -83,7 +85,7 @@ const PLATFORM_FEATURES: Record<PlatformType, FeatureSet> = {
     persistentConfig: true, // via iCloud
     appleReminders: true, // native
     calendarIntegration: true, // native
-    notionIntegration: false, // manual only
+    notionIntegration: true, // via Notion Connector
     fileSystemAccess: false,
   },
   ipados_skills: {
@@ -91,7 +93,7 @@ const PLATFORM_FEATURES: Record<PlatformType, FeatureSet> = {
     persistentConfig: true, // via iCloud
     appleReminders: true, // native
     calendarIntegration: true, // native
-    notionIntegration: false, // manual only
+    notionIntegration: true, // via Notion Connector
     fileSystemAccess: false,
   },
   web_skills: {

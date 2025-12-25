@@ -112,7 +112,7 @@ describe('SkillsAdapteriOS', () => {
       expect(features.persistentConfig).toBe(true);
       expect(features.appleReminders).toBe(true);
       expect(features.calendarIntegration).toBe(true);
-      expect(features.notionIntegration).toBe(false);
+      expect(features.notionIntegration).toBe(true); // Notion Connector
       expect(features.fileSystemAccess).toBe(false);
     });
   });
