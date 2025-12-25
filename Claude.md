@@ -57,9 +57,14 @@
 - **ユニットテスト**を含めてください
 
 #### 外部統合
-- **Apple Reminders**: `node-applescript`を使用
-- **Notion API**: `@notionhq/client`を使用  
-- **Google Calendar**: `googleapis`を使用
+- **Apple Reminders**: プラットフォーム適応型統合
+  - iOS/iPadOS: ネイティブ統合を優先
+  - macOS: `node-applescript`を使用
+- **カレンダー統合**: プラットフォーム適応型統合
+  - iOS/iPadOS: ネイティブCalendar統合を優先
+  - macOS: AppleScript経由でCalendar.app読み取り
+  - Web: 代替手段（iCal URL、手動入力）
+- **Notion統合**: Notion MCPサーバー経由で統合
 
 ### 🎯 推奨実装順序
 
@@ -76,11 +81,11 @@
 - タスク8: タスク分析統合システム
 
 **Phase 3: 外部統合**
-- タスク9: Apple Reminders統合
-- タスク10: Notion統合
-- タスク11: Google Calendar統合
+- タスク9: Apple Reminders統合（プラットフォーム適応型）
+- タスク10: Notion MCP統合
+- タスク11: カレンダー統合（プラットフォーム適応型）
 - タスク12: リマインド管理システム
-- タスク13: sync_to_notionツール
+- タスク13: sync_to_notionツール（MCP経由）
 
 **Phase 4: 完成**
 - タスク14: 設定更新システム
@@ -91,12 +96,13 @@
 
 ### 🔧 技術スタック
 
+#### MCP Client依存関係
+Notion MCPサーバーとの通信のため、MCP Client機能も必要です：
+
 ```json
 {
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "@notionhq/client": "^2.2.15",
-    "googleapis": "^144.0.0",
     "node-applescript": "^5.0.0"
   },
   "devDependencies": {
@@ -108,6 +114,11 @@
   }
 }
 ```
+
+**注意**: 
+- Notion統合はMCP経由で行うため、`@notionhq/client`は不要です
+- Google Calendar APIも使用しないため、`googleapis`は不要です
+- `@modelcontextprotocol/sdk`にはClient機能も含まれています
 
 ### 📁 推奨プロジェクト構造
 
@@ -129,9 +140,9 @@ sage/
 │   │   ├── calendar-check.ts       # カレンダー空き時間
 │   │   └── notion-sync.ts          # Notion同期
 │   ├── integrations/
-│   │   ├── apple-reminders.ts      # Apple Reminders連携
-│   │   ├── notion.ts               # Notion API
-│   │   └── google-calendar.ts      # Google Calendar API
+│   │   ├── apple-reminders.ts      # プラットフォーム適応型Apple Reminders連携
+│   │   ├── calendar-service.ts     # プラットフォーム適応型カレンダー連携
+│   │   └── notion-mcp.ts           # Notion MCP連携
 │   ├── utils/
 │   │   ├── priority.ts             # 優先度判定ロジック
 │   │   ├── estimation.ts           # 所要時間見積もり
@@ -162,9 +173,9 @@ sage/
 - [ ] 時間見積もりが妥当な値を返す
 
 **Phase 3完了基準:**
-- [ ] Apple Remindersにタスクが作成される
-- [ ] Notionにページが作成される
-- [ ] カレンダーから空き時間が検出される
+- [ ] Apple Remindersにタスクが作成される（プラットフォーム適応型）
+- [ ] Notion MCP経由でNotionにページが作成される
+- [ ] カレンダーから空き時間が検出される（プラットフォーム適応型）
 
 **Phase 4完了基準:**
 - [ ] 全機能が統合されて動作する
@@ -173,15 +184,430 @@ sage/
 
 ### 💡 実装のコツ
 
-1. **段階的実装**: 一度に全てを実装せず、タスク単位で進める
-2. **テスト駆動**: 各機能にユニットテストを書く
+1. **TDD（テスト駆動開発）**: 必ずテストを先に書いてから実装する
+2. **段階的実装**: 一度に全てを実装せず、タスク単位で進める
 3. **エラーファースト**: エラーハンドリングを最初から考慮する
 4. **設定ファースト**: ハードコードせず、設定ファイルを活用する
 5. **ログ出力**: デバッグ用のログを適切に出力する
 
+### 🧪 TDD開発プロセス
+
+各機能の実装は以下のサイクルで進めてください：
+
+```
+1. RED: 失敗するテストを書く
+2. GREEN: テストが通る最小限のコードを書く
+3. REFACTOR: コードを改善する（テストは通ったまま）
+```
+
+#### TDDの実践手順
+
+1. **テストファイルを先に作成**
+   - `tests/unit/[component].test.ts`を作成
+   - 期待する動作をテストケースとして記述
+
+2. **テストを実行して失敗を確認**
+   - `npm test`で失敗することを確認
+
+3. **最小限の実装**
+   - テストが通る最小限のコードを実装
+
+4. **リファクタリング**
+   - テストが通ることを確認しながらコードを改善
+
+#### テストファイル構成
+
+```
+tests/
+├── unit/                    # ユニットテスト
+│   ├── priority.test.ts
+│   ├── estimation.test.ts
+│   ├── stakeholders.test.ts
+│   ├── task-splitter.test.ts
+│   ├── config-loader.test.ts
+│   └── wizard.test.ts
+├── integration/             # 統合テスト
+│   ├── apple-reminders.test.ts
+│   ├── notion-mcp.test.ts
+│   └── google-calendar.test.ts
+└── e2e/                     # E2Eテスト
+    └── full-workflow.test.ts
+```
+
+### 📅 カレンダー プラットフォーム適応型統合
+
+#### プラットフォーム検出とカレンダー統合方式選択
+
+```typescript
+// src/integrations/calendar-service.ts
+class CalendarService {
+  async detectCalendarPlatform(): Promise<CalendarPlatformInfo> {
+    const userAgent = navigator?.userAgent || process.platform;
+    
+    if (userAgent.includes('iPhone') || userAgent.includes('iPad')) {
+      return {
+        platform: userAgent.includes('iPad') ? 'ipados' : 'ios',
+        availableMethods: ['native'],
+        recommendedMethod: 'native',
+        requiresPermission: true,
+        hasNativeAccess: true
+      };
+    } else if (process.platform === 'darwin') {
+      return {
+        platform: 'macos',
+        availableMethods: ['applescript', 'caldav'],
+        recommendedMethod: 'applescript',
+        requiresPermission: true,
+        hasNativeAccess: true
+      };
+    } else {
+      return {
+        platform: 'web',
+        availableMethods: ['ical_url', 'manual_input', 'outlook'],
+        recommendedMethod: 'manual_input',
+        requiresPermission: false,
+        hasNativeAccess: false
+      };
+    }
+  }
+  
+  async fetchEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
+    const platform = await this.detectCalendarPlatform();
+    
+    switch (platform.recommendedMethod) {
+      case 'native':
+        return await this.fetchNativeEvents(startDate, endDate);
+      case 'applescript':
+        return await this.fetchAppleScriptEvents(startDate, endDate);
+      case 'ical_url':
+        return await this.fetchICalEvents(startDate, endDate);
+      case 'manual_input':
+        return await this.requestManualInput(startDate, endDate);
+      default:
+        return [];
+    }
+  }
+}
+```
+
+#### iOS/iPadOS ネイティブカレンダー統合
+```typescript
+async fetchNativeEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
+  try {
+    // Claude iOSアプリのネイティブCalendar統合を使用
+    const events = await window.claude?.calendar?.getEvents({
+      startDate,
+      endDate,
+      includeAllDayEvents: false
+    });
+    
+    return events.map(event => ({
+      id: event.id,
+      title: event.title,
+      start: event.startDate,
+      end: event.endDate,
+      isAllDay: event.isAllDay,
+      source: 'native'
+    }));
+  } catch (error) {
+    console.error('ネイティブカレンダー統合エラー:', error);
+    return [];
+  }
+}
+```
+
+#### macOS AppleScriptカレンダー統合
+```typescript
+async fetchAppleScriptEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
+  const applescript = require('node-applescript');
+  
+  const script = `
+    tell application "Calendar"
+      set startDate to date "${startDate}"
+      set endDate to date "${endDate}"
+      set eventList to {}
+      
+      repeat with cal in calendars
+        set calEvents to (every event of cal whose start date ≥ startDate and start date ≤ endDate)
+        repeat with evt in calEvents
+          set eventInfo to {summary of evt, start date of evt, end date of evt, uid of evt}
+          set end of eventList to eventInfo
+        end repeat
+      end repeat
+      
+      return eventList
+    end tell
+  `;
+  
+  return new Promise((resolve) => {
+    applescript.execString(script, (error: any, result: any) => {
+      if (error) {
+        console.error('AppleScript カレンダーエラー:', error);
+        resolve([]);
+      } else {
+        const events = result.map((eventData: any) => ({
+          id: eventData[3],
+          title: eventData[0],
+          start: eventData[1],
+          end: eventData[2],
+          isAllDay: false,
+          source: 'applescript'
+        }));
+        resolve(events);
+      }
+    });
+  });
+}
+```
+
+#### 代替統合方法
+```typescript
+async fetchICalEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
+  // iCal URL統合（会社のカレンダーがiCal URLを提供している場合）
+  const config = await this.loadConfig();
+  if (!config.integrations.googleCalendar.icalUrl) {
+    return [];
+  }
+  
+  try {
+    const response = await fetch(config.integrations.googleCalendar.icalUrl);
+    const icalData = await response.text();
+    // iCalデータをパースしてイベントを抽出
+    return this.parseICalData(icalData, startDate, endDate);
+  } catch (error) {
+    console.error('iCal統合エラー:', error);
+    return [];
+  }
+}
+
+async requestManualInput(startDate: string, endDate: string): Promise<CalendarEvent[]> {
+  // 手動入力フォールバック
+  return [{
+    id: 'manual-input-prompt',
+    title: '⚠️ カレンダー統合が利用できません。手動で予定を入力してください。',
+    start: startDate,
+    end: startDate,
+    isAllDay: true,
+    source: 'manual_input'
+  }];
+}
+```
+
+### 🍎 Apple Reminders プラットフォーム適応型統合
+
+#### プラットフォーム検出と統合方式選択
+
+```typescript
+// src/integrations/apple-reminders.ts
+class AppleRemindersService {
+  async detectPlatform(): Promise<PlatformInfo> {
+    // User-Agentやその他の情報からプラットフォームを検出
+    const userAgent = navigator?.userAgent || process.platform;
+    
+    if (userAgent.includes('iPhone') || userAgent.includes('iPad')) {
+      return {
+        platform: userAgent.includes('iPad') ? 'ipados' : 'ios',
+        hasNativeIntegration: true,
+        supportsAppleScript: false,
+        recommendedMethod: 'native'
+      };
+    } else if (process.platform === 'darwin') {
+      return {
+        platform: 'macos',
+        hasNativeIntegration: false,
+        supportsAppleScript: true,
+        recommendedMethod: 'applescript'
+      };
+    }
+    
+    return {
+      platform: 'unknown',
+      hasNativeIntegration: false,
+      supportsAppleScript: false,
+      recommendedMethod: 'fallback'
+    };
+  }
+  
+  async createReminder(request: ReminderRequest): Promise<ReminderResult> {
+    const platform = await this.detectPlatform();
+    
+    switch (platform.recommendedMethod) {
+      case 'native':
+        return await this.createNativeReminder(request);
+      case 'applescript':
+        return await this.createAppleScriptReminder(request);
+      default:
+        return await this.createFallbackReminder(request);
+    }
+  }
+}
+```
+
+#### iOS/iPadOS ネイティブ統合
+```typescript
+async createNativeReminder(request: ReminderRequest): Promise<ReminderResult> {
+  try {
+    // Claude iOSアプリのネイティブReminders統合を使用
+    // 具体的な実装はClaude iOSアプリのAPIに依存
+    const result = await window.claude?.reminders?.create({
+      title: request.title,
+      notes: request.notes,
+      dueDate: request.dueDate,
+      list: request.list || 'Today'
+    });
+    
+    return {
+      success: true,
+      method: 'native',
+      reminderId: result.id,
+      platformInfo: await this.detectPlatform()
+    };
+  } catch (error) {
+    return {
+      success: false,
+      method: 'native',
+      error: `ネイティブ統合エラー: ${error.message}`,
+      platformInfo: await this.detectPlatform()
+    };
+  }
+}
+```
+
+#### macOS AppleScript統合
+```typescript
+async createAppleScriptReminder(request: ReminderRequest): Promise<ReminderResult> {
+  const applescript = require('node-applescript');
+  
+  const script = `
+    tell application "Reminders"
+      set myList to list "${request.list || 'Today'}"
+      set newReminder to make new reminder at end of myList
+      set name of newReminder to "${request.title}"
+      ${request.notes ? `set body of newReminder to "${request.notes}"` : ''}
+      ${request.dueDate ? `set due date of newReminder to date "${request.dueDate}"` : ''}
+      return id of newReminder
+    end tell
+  `;
+  
+  return new Promise((resolve) => {
+    applescript.execString(script, (error: any, result: any) => {
+      if (error) {
+        resolve({
+          success: false,
+          method: 'applescript',
+          error: `AppleScript エラー: ${error.message}`,
+          platformInfo: await this.detectPlatform()
+        });
+      } else {
+        resolve({
+          success: true,
+          method: 'applescript',
+          reminderId: result,
+          platformInfo: await this.detectPlatform()
+        });
+      }
+    });
+  });
+}
+```
+
+### 🔗 Notion MCP統合の詳細
+
+#### MCP接続方式
+sageは別のMCPサーバー（Notion MCP）と通信する必要があります。これは以下の方法で実現します：
+
+1. **MCP Client機能**: sageがMCPクライアントとしてNotion MCPサーバーに接続
+2. **Tool呼び出し**: Notion MCPのツールを呼び出してページ作成・更新
+3. **エラーハンドリング**: MCP通信エラーの適切な処理
+
+#### 実装例
+```typescript
+// src/integrations/notion-mcp.ts
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
+class NotionMCPService {
+  private client: Client;
+  private transport: StdioClientTransport;
+  
+  async connect() {
+    // Notion MCPサーバーに接続
+    this.transport = new StdioClientTransport({
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-notion']
+    });
+    
+    this.client = new Client({
+      name: 'sage-notion-client',
+      version: '1.0.0'
+    }, {
+      capabilities: {}
+    });
+    
+    await this.client.connect(this.transport);
+  }
+  
+  async createPage(request: NotionPageRequest) {
+    // Notion MCPのcreate_pageツールを呼び出し
+    const result = await this.client.request({
+      method: 'tools/call',
+      params: {
+        name: 'create_page',
+        arguments: {
+          database_id: request.databaseId,
+          properties: request.properties
+        }
+      }
+    });
+    return result;
+  }
+  
+  async disconnect() {
+    if (this.client) {
+      await this.client.close();
+    }
+  }
+}
+```
+
+#### 設定要件
+- Notion MCPサーバーが事前に設定・起動されている必要があります
+- sageの設定ファイルにNotion MCPサーバーの接続情報を含める必要があります
+- 環境変数`NOTION_API_KEY`がNotion MCPサーバー用に設定されている必要があります
+
+#### Notion MCP設定例
+```json
+// ~/.sage/config.json の integrations.notion セクション
+{
+  "integrations": {
+    "notion": {
+      "enabled": true,
+      "threshold": 8,
+      "unit": "days",
+      "databaseId": "your-database-id",
+      "mcpServerName": "notion",
+      "mcpCommand": "npx",
+      "mcpArgs": ["-y", "@modelcontextprotocol/server-notion"]
+    }
+  }
+}
+```
+
 ### 🚨 重要な注意事項
 
-- **APIキー**: 環境変数で管理し、ログに出力しない
+- **カレンダー統合**: プラットフォーム適応型統合
+  - iOS/iPadOS: ネイティブCalendar統合の利用可能性を確認
+  - macOS: AppleScriptのCalendar.app実行権限が必要
+  - Web: 代替手段（iCal URL、手動入力）の実装
+  - 会社のGoogle Calendar APIは使用不可の前提
+- **Apple Reminders**: プラットフォーム適応型統合
+  - iOS/iPadOS: ネイティブ統合の利用可能性を確認
+  - macOS: AppleScriptの実行権限が必要
+  - Web: フォールバック処理の実装
+- **Notion MCP**: 事前にNotion MCPサーバーの設定が必要
+  - `NOTION_API_KEY`環境変数の設定
+  - Notion MCPサーバーの動作確認
+- **MCP通信**: sageがサーバーとクライアント両方の役割を持つ
 - **ファイルパス**: `~/.sage/config.json`を使用
 - **エラーメッセージ**: ユーザーフレンドリーな日本語メッセージ
 - **タイムゾーン**: 日本時間 (Asia/Tokyo) を考慮
