@@ -1,6 +1,6 @@
 {
   "name": "@shin1ohno/sage",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI Task Management Assistant MCP Server for Claude Desktop and Claude Code",
   "main": "dist/index.js",
   "bin": {
