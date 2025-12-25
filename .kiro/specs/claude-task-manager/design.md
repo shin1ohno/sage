@@ -2,7 +2,12 @@
 
 ## 概要
 
-sageは、Claude DesktopとClaude Code向けのMCPサーバーとして実装されるAIタスク管理アシスタントです。個人の作業パターンを学習し、タスクの分析、優先順位付け、スケジューリング、リマインド管理を自動化します。
+sageは、Claude Desktop、Claude Code、およびClaude iOS/iPadOSアプリ向けのAIタスク管理アシスタントです。個人の作業パターンを学習し、タスクの分析、優先順位付け、スケジューリング、リマインド管理を自動化します。
+
+プラットフォーム別実装：
+- **Claude Desktop/Code**: MCPサーバーとして実装（完全機能）
+- **Claude iOS/iPadOS**: Claude Skillsとして実装（ネイティブ統合付き）
+- **Claude Web**: Claude Skillsとして実装（基本機能）
 
 システムは以下の主要コンポーネントで構成されます：
 - セットアップウィザード（初回設定）
@@ -10,24 +15,34 @@ sageは、Claude DesktopとClaude Code向けのMCPサーバーとして実装さ
 - タスク分割エンジン（複雑タスクの分解）
 - 外部統合（Apple Reminders、Notion、Google Calendar）
 - 設定管理システム
+- プラットフォーム適応レイヤー
 
 ## アーキテクチャ
 
-### システム構成図
+### マルチプラットフォーム構成図
 
 ```
 ┌─────────────────────────────────────────────────┐
 │                Claude Client                    │
-│         (Desktop / Code / claude.ai)            │
-└──────────────────┬──────────────────────────────┘
-                   │ MCP Protocol (stdio)
-                   ↓
+│  ┌─────────────┬─────────────┬─────────────────┐ │
+│  │Desktop/Code │iOS/iPadOS   │Web              │ │
+│  │(MCP Server) │(Skills)     │(Skills)         │ │
+│  └─────────────┴─────────────┴─────────────────┘ │
+└──────┬──────────────┬──────────────┬─────────────┘
+       │              │              │
+       ↓              ↓              ↓
 ┌─────────────────────────────────────────────────┐
-│              sage MCP Server                    │
+│            sage Core Architecture               │
+│  ┌───────────────────────────────────────────┐  │
+│  │      Platform Adaptation Layer            │  │
+│  │  - MCPAdapter (Desktop/Code)              │  │
+│  │  - SkillsAdapter (iOS/iPadOS/Web)         │  │
+│  │  - PlatformDetector                       │  │
+│  └───────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────┐  │
 │  │         Setup & Config Layer              │  │
 │  │  - SetupWizard                            │  │
-│  │  - ConfigManager                          │  │
+│  │  - ConfigManager (File/Session/Cloud)     │  │
 │  │  - ConfigValidator                        │  │
 │  └───────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────┐  │
@@ -42,52 +57,127 @@ sageは、Claude DesktopとClaude Code向けのMCPサーバーとして実装さ
 │  │        Integration Layer                  │  │
 │  │  - ReminderManager                        │  │
 │  │  - CalendarService                        │  │
-│  │  - NotionMCPService                       │  │
+│  │  - NotionMCPService (Desktop/Code only)   │  │
 │  │  - AppleRemindersService                  │  │
+│  │  - NativeIntegrationService (iOS/iPadOS)  │  │
 │  └───────────────────────────────────────────┘  │
-└──────────────────┬──────────────────────────────┘
+└─────────────────────────────────────────────────┘
                    │
                    ↓
 ┌─────────────────────────────────────────────────┐
-│         ~/.sage/config.json                     │
-│         (ユーザー設定ファイル)                    │
+│              Configuration Storage              │
+│  ┌─────────────┬─────────────┬─────────────────┐ │
+│  │Desktop/Code │iOS/iPadOS   │Web              │ │
+│  │~/.sage/     │Session +    │Session Only     │ │
+│  │config.json  │iCloud Sync  │                 │ │
+│  └─────────────┴─────────────┴─────────────────┘ │
 └─────────────────────────────────────────────────┘
 ```
 
+### プラットフォーム別機能比較
+
+| 機能 | Desktop/Code (MCP) | iOS/iPadOS (Skills) | Web (Skills) |
+|------|-------------------|-------------------|--------------|
+| タスク分析 | ✅ 完全版 | ✅ 完全版 | ✅ 基本版 |
+| 優先順位付け | ✅ カスタムルール | ✅ カスタムルール | ✅ 基本ルール |
+| 時間見積もり | ✅ 学習機能付き | ✅ 学習機能付き | ✅ 固定ルール |
+| タスク分割 | ✅ 複雑な分割 | ✅ 複雑な分割 | ✅ 基本分割 |
+| 設定管理 | ✅ 永続化ファイル | ✅ セッション+iCloud | ⚠️ セッションのみ |
+| Apple Reminders | ✅ AppleScript | ✅ **ネイティブ統合** | ❌ 手動コピー推奨 |
+| Calendar統合 | ✅ AppleScript | ✅ **ネイティブ統合** | ❌ 手動入力 |
+| Notion統合 | ✅ MCP経由 | ❌ 手動コピー推奨 | ❌ 手動コピー推奨 |
+
 ### レイヤー構成
 
-#### 1. MCP Interface Layer
+#### 1. Platform Adaptation Layer
+- プラットフォーム検出とアダプター選択
+- MCP/Skills間の統一インターフェース
+- プラットフォーム固有の最適化
+
+#### 2. MCP Interface Layer (Desktop/Code)
 - MCPプロトコルの実装
 - ツール定義とリクエストハンドリング
 - エラーハンドリングと応答フォーマット
 
-#### 2. Setup & Config Layer
+#### 3. Skills Interface Layer (iOS/iPadOS/Web)
+- Claude Skills APIの実装
+- ネイティブ統合の活用
+- セッション管理とステート保持
+
+#### 4. Setup & Config Layer
 - 初回セットアップウィザード
-- 設定ファイルの読み書き
+- プラットフォーム別設定ストレージ
 - 設定値の検証とバリデーション
 
-#### 3. Core Analysis Layer
+#### 5. Core Analysis Layer
 - タスクの分割と整理
 - 優先度判定ロジック
 - 時間見積もりアルゴリズム
 - 関係者抽出エンジン
 
-#### 4. Integration Layer
+#### 6. Integration Layer
 - 外部サービスとの統合
-- MCP経由でのNotion連携
-- Apple RemindersとGoogle Calendarの直接API統合
+- プラットフォーム別統合方式の選択
 - データ変換とマッピング
 
 ## コンポーネントと インターフェース
 
+### 0. PlatformAdapter
+
+**責任:** プラットフォーム検出と適切なアダプターの選択
+
+```typescript
+interface PlatformAdapter {
+  detectPlatform(): Promise<PlatformInfo>;
+  createSageInstance(): Promise<SageCore>;
+  getAvailableFeatures(): FeatureSet;
+}
+
+interface PlatformInfo {
+  type: 'desktop_mcp' | 'ios_skills' | 'ipados_skills' | 'web_skills';
+  version: string;
+  capabilities: PlatformCapability[];
+  nativeIntegrations: string[];
+}
+
+interface PlatformCapability {
+  name: string;
+  available: boolean;
+  requiresPermission: boolean;
+  fallbackAvailable: boolean;
+}
+
+interface FeatureSet {
+  taskAnalysis: boolean;
+  persistentConfig: boolean;
+  appleReminders: boolean;
+  calendarIntegration: boolean;
+  notionIntegration: boolean;
+  fileSystemAccess: boolean;
+}
+
+// プラットフォーム別実装
+class MCPAdapter implements PlatformAdapter {
+  // Desktop/Code向けMCP実装
+}
+
+class SkillsAdapteriOS implements PlatformAdapter {
+  // iOS/iPadOS向けSkills実装（ネイティブ統合付き）
+}
+
+class SkillsAdapterWeb implements PlatformAdapter {
+  // Web向けSkills実装（基本機能のみ）
+}
+```
+
 ### 1. SetupWizard
 
-**責任:** 初回セットアップの対話的ウィザード
+**責任:** プラットフォーム適応型の初回セットアップウィザード
 
 ```typescript
 interface SetupWizard {
   checkStatus(): Promise<SetupStatus>;
-  startWizard(mode?: 'full' | 'quick'): Promise<WizardSession>;
+  startWizard(mode?: 'full' | 'quick', platform?: PlatformInfo): Promise<WizardSession>;
   answerQuestion(sessionId: string, questionId: string, answer: any): Promise<AnswerResult>;
   saveConfig(sessionId: string, confirm: boolean): Promise<SaveResult>;
 }
@@ -99,6 +189,7 @@ interface WizardSession {
   question: Question;
   progress: number;
   answers: Record<string, any>;
+  platformOptimized: boolean; // プラットフォーム最適化フラグ
 }
 
 interface Question {
@@ -109,6 +200,15 @@ interface Question {
   defaultValue?: any;
   helpText?: string;
   validation?: ValidationRule[];
+  platformSpecific?: string[]; // 特定プラットフォームでのみ表示
+}
+
+// プラットフォーム別セットアップ
+interface SetupQuestionSet {
+  common: Question[]; // 全プラットフォーム共通
+  desktop: Question[]; // Desktop/Code専用
+  ios: Question[]; // iOS/iPadOS専用
+  web: Question[]; // Web専用
 }
 ```
 
@@ -282,9 +382,98 @@ interface ReminderResult {
   platformInfo?: PlatformInfo;
 }
 ```
+
+### 8. NativeIntegrationService (iOS/iPadOS Skills専用)
+
+**責任:** Claude Skills環境でのネイティブ統合
+
+```typescript
+interface NativeIntegrationService {
+  createReminder(request: ReminderRequest): Promise<ReminderResult>;
+  fetchCalendarEvents(startDate: string, endDate: string): Promise<CalendarEvent[]>;
+  findAvailableSlots(request: SlotRequest): Promise<AvailableSlot[]>;
+  checkPermissions(): Promise<PermissionStatus>;
+}
+
+interface PermissionStatus {
+  reminders: 'granted' | 'denied' | 'not_determined';
+  calendar: 'granted' | 'denied' | 'not_determined';
+  canRequestPermission: boolean;
+}
+
+// iOS/iPadOS Skills実装例
+class NativeIntegrationServiceiOS implements NativeIntegrationService {
+  async createReminder(request: ReminderRequest): Promise<ReminderResult> {
+    try {
+      // Claude iOSアプリのネイティブReminders統合を使用
+      const result = await window.claude?.reminders?.create({
+        title: request.title,
+        notes: request.notes,
+        dueDate: request.dueDate,
+        list: request.list || 'Today',
+        priority: this.mapPriority(request.priority)
+      });
+      
+      return {
+        success: true,
+        method: 'native',
+        reminderId: result.id,
+        reminderUrl: result.url
+      };
+    } catch (error) {
+      return {
+        success: false,
+        method: 'native',
+        error: `ネイティブ統合エラー: ${error.message}`
+      };
+    }
+  }
+  
+  async fetchCalendarEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
+    try {
+      // Claude iOSアプリのネイティブCalendar統合を使用
+      const events = await window.claude?.calendar?.getEvents({
+        startDate,
+        endDate,
+        includeAllDayEvents: false
+      });
+      
+      return events.map(event => ({
+        id: event.id,
+        title: event.title,
+        start: event.startDate,
+        end: event.endDate,
+        isAllDay: event.isAllDay,
+        source: 'native'
+      }));
+    } catch (error) {
+      console.error('ネイティブカレンダー統合エラー:', error);
+      return [];
+    }
+  }
+  
+  async findAvailableSlots(request: SlotRequest): Promise<AvailableSlot[]> {
+    const events = await this.fetchCalendarEvents(
+      request.startDate || new Date().toISOString(),
+      request.endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    );
+    
+    return this.calculateAvailableSlots(events, request.taskDuration);
+  }
+  
+  private mapPriority(priority?: Priority): number {
+    const priorityMap = { 'P0': 1, 'P1': 5, 'P2': 5, 'P3': 9 };
+    return priorityMap[priority] || 5;
+  }
+  
+  private calculateAvailableSlots(events: CalendarEvent[], duration: number): AvailableSlot[] {
+    // 空き時間計算ロジック（既存のCalendarServiceと同様）
+    // ネイティブデータを使用してより正確な計算が可能
+  }
+}
 ```
 
-### 8. CalendarService
+### 9. CalendarService
 
 **責任:** プラットフォーム適応型カレンダー統合と空き時間検出
 
@@ -362,7 +551,7 @@ interface ReminderResult {
   error?: string;
 }
 
-### 9. ReminderManager
+### 10. ReminderManager
 
 **責任:** リマインド設定と管理
 
@@ -391,7 +580,9 @@ interface ReminderResult {
 }
 ```
 
-**責任:** Notion MCP経由でのNotion統合
+### 11. NotionMCPService
+
+**責任:** Notion MCP経由でのNotion統合（Desktop/Code専用）
 
 ```typescript
 interface NotionMCPService {
@@ -515,6 +706,14 @@ interface IntegrationsConfig {
   appleReminders: AppleRemindersConfig;
   notion: NotionConfig;
   googleCalendar: GoogleCalendarConfig;
+  platform: PlatformSpecificConfig; // プラットフォーム固有設定
+}
+
+interface PlatformSpecificConfig {
+  type: 'desktop_mcp' | 'ios_skills' | 'ipados_skills' | 'web_skills';
+  nativeIntegrationsEnabled: boolean;
+  fallbackMethods: string[];
+  permissionsGranted: Record<string, boolean>;
 }
 
 interface AppleRemindersConfig {
@@ -526,6 +725,14 @@ interface AppleRemindersConfig {
   platformAdaptive: boolean; // プラットフォーム適応型統合
   preferNativeIntegration: boolean; // iOS/iPadOSでネイティブ統合を優先
   appleScriptFallback: boolean; // macOSでAppleScript使用
+  skillsIntegration?: SkillsIntegrationConfig; // Skills版専用設定
+}
+
+interface SkillsIntegrationConfig {
+  useNativeAPI: boolean;
+  requestPermissionOnStartup: boolean;
+  fallbackToManualCopy: boolean;
+  sessionPersistence: boolean;
 }
 
 interface NotionConfig {
@@ -534,17 +741,19 @@ interface NotionConfig {
   unit: 'days' | 'hours';
   databaseId: string;
   databaseUrl?: string;
-  mcpServerName: string; // MCP経由でのNotion接続用
+  mcpServerName: string; // MCP経由でのNotion接続用（Desktop/Code専用）
   propertyMappings?: Record<string, string>;
+  skillsFallback?: boolean; // Skills版での手動コピー推奨フラグ
 }
 
 interface GoogleCalendarConfig {
   enabled: boolean;
   method: CalendarMethod;
   platformAdaptive: boolean;
-  // ネイティブ統合用
+  // ネイティブ統合用（iOS/iPadOS Skills）
   preferNativeAccess: boolean;
-  // AppleScript用
+  nativeCalendarPermission?: boolean;
+  // AppleScript用（macOS MCP）
   appleScriptFallback: boolean;
   // 代替手段用
   icalUrl?: string;
@@ -554,6 +763,207 @@ interface GoogleCalendarConfig {
   defaultCalendar?: string;
   conflictDetection: boolean;
   lookAheadDays: number;
+  // Skills版専用設定
+  skillsCalendarIntegration?: SkillsCalendarConfig;
+}
+
+interface SkillsCalendarConfig {
+  useNativeCalendarAPI: boolean;
+  cacheEvents: boolean;
+  cacheDurationMinutes: number;
+  requestPermissionFlow: boolean;
+}
+```
+
+## プラットフォーム別実装戦略
+
+### 1. Desktop/Code (MCP Server)
+
+**特徴:**
+- 完全機能の実装
+- ファイルシステムアクセス
+- 外部プロセス実行（AppleScript）
+- MCP経由でのNotion統合
+
+**実装アプローチ:**
+```typescript
+// MCP Server Entry Point
+class SageMCPServer {
+  private setupWizard: SetupWizard;
+  private taskAnalyzer: TaskAnalyzer;
+  private configManager: ConfigManager;
+  private integrations: {
+    appleReminders: AppleRemindersService;
+    calendar: CalendarService;
+    notion: NotionMCPService;
+  };
+  
+  async initialize(): Promise<void> {
+    // ファイルベース設定の読み込み
+    await this.configManager.loadFromFile('~/.sage/config.json');
+    
+    // 統合サービスの初期化
+    await this.initializeIntegrations();
+  }
+  
+  // MCPツールの実装
+  async handleAnalyzeTasks(params: any): Promise<any> {
+    const tasks = await this.taskAnalyzer.analyzeTasks(params.tasks, this.config);
+    return this.formatMCPResponse(tasks);
+  }
+}
+```
+
+### 2. iOS/iPadOS (Claude Skills)
+
+**特徴:**
+- ネイティブ統合の活用
+- セッションベース設定
+- 権限管理の考慮
+- 制限された外部統合
+
+**実装アプローチ:**
+```typescript
+// Skills Entry Point
+class SageSkillsiOS {
+  private nativeIntegration: NativeIntegrationService;
+  private sessionConfig: Partial<UserConfig>;
+  
+  async initialize(): Promise<void> {
+    // セッション設定の初期化
+    this.sessionConfig = await this.loadSessionConfig();
+    
+    // 権限状態の確認
+    const permissions = await this.nativeIntegration.checkPermissions();
+    if (!permissions.reminders || !permissions.calendar) {
+      await this.requestPermissions();
+    }
+  }
+  
+  async analyzeTasksWithNativeIntegration(input: string): Promise<TaskAnalysisResult> {
+    // 1. タスク分析（共通ロジック）
+    const analysis = await this.analyzeCore(input);
+    
+    // 2. ネイティブカレンダーから空き時間取得
+    const availableSlots = await this.nativeIntegration.findAvailableSlots({
+      taskDuration: analysis.totalEstimatedMinutes
+    });
+    
+    // 3. ネイティブRemindersに直接作成
+    const reminders = await Promise.all(
+      analysis.tasks.map(task => 
+        this.nativeIntegration.createReminder({
+          title: task.title,
+          dueDate: task.suggestedTimeSlot?.start,
+          priority: task.priority
+        })
+      )
+    );
+    
+    return {
+      ...analysis,
+      availableSlots,
+      remindersCreated: reminders,
+      integrationMethod: 'native'
+    };
+  }
+}
+```
+
+### 3. Web (Claude Skills - Limited)
+
+**特徴:**
+- 基本機能のみ
+- セッション限定設定
+- 手動統合推奨
+- 軽量実装
+
+**実装アプローチ:**
+```typescript
+// Web Skills Entry Point
+class SageSkillsWeb {
+  private sessionConfig: BasicConfig;
+  
+  async analyzeTasksBasic(input: string): Promise<BasicTaskAnalysis> {
+    // 基本的なタスク分析のみ
+    const tasks = await this.splitAndAnalyzeTasks(input);
+    
+    return {
+      tasks,
+      recommendations: this.generateBasicRecommendations(tasks),
+      manualSteps: this.generateManualIntegrationSteps(tasks),
+      upgradePrompt: "より高度な機能はClaude DesktopまたはiOS/iPadOSアプリをご利用ください"
+    };
+  }
+  
+  private generateManualIntegrationSteps(tasks: Task[]): ManualStep[] {
+    return tasks.map(task => ({
+      task: task.title,
+      steps: [
+        `Apple Remindersに手動で追加: "${task.title}"`,
+        `期限: ${task.deadline}`,
+        `優先度: ${task.priority}`,
+        `見積時間: ${task.estimatedMinutes}分`
+      ]
+    }));
+  }
+}
+```
+
+### 4. プラットフォーム検出とアダプター選択
+
+```typescript
+class PlatformDetector {
+  static async detect(): Promise<PlatformInfo> {
+    // MCP環境の検出
+    if (typeof process !== 'undefined' && process.env.MCP_SERVER) {
+      return {
+        type: 'desktop_mcp',
+        capabilities: ['file_system', 'external_process', 'mcp_integration'],
+        nativeIntegrations: ['applescript', 'notion_mcp']
+      };
+    }
+    
+    // Claude Skills環境の検出
+    if (typeof window !== 'undefined' && window.claude) {
+      const userAgent = navigator.userAgent;
+      
+      if (userAgent.includes('iPhone') || userAgent.includes('iPad')) {
+        return {
+          type: userAgent.includes('iPad') ? 'ipados_skills' : 'ios_skills',
+          capabilities: ['native_reminders', 'native_calendar', 'session_storage'],
+          nativeIntegrations: ['reminders', 'calendar']
+        };
+      }
+      
+      return {
+        type: 'web_skills',
+        capabilities: ['session_storage'],
+        nativeIntegrations: []
+      };
+    }
+    
+    throw new Error('Unsupported platform');
+  }
+}
+
+// ファクトリーパターンでの実装選択
+class SageFactory {
+  static async create(): Promise<SageCore> {
+    const platform = await PlatformDetector.detect();
+    
+    switch (platform.type) {
+      case 'desktop_mcp':
+        return new SageMCPServer();
+      case 'ios_skills':
+      case 'ipados_skills':
+        return new SageSkillsiOS();
+      case 'web_skills':
+        return new SageSkillsWeb();
+      default:
+        throw new Error(`Unsupported platform: ${platform.type}`);
+    }
+  }
 }
 ```
 

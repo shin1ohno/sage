@@ -17,7 +17,7 @@ import { PriorityEngine } from '../utils/priority.js';
 import { TimeEstimator } from '../utils/estimation.js';
 import { StakeholderExtractor } from '../utils/stakeholders.js';
 
-interface AnalysisResult {
+export interface AnalysisResult {
   success: boolean;
   originalInput?: string;
   analyzedTasks: AnalyzedTask[];
