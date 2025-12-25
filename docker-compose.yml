@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  sage:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sage-mcp-server
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - MCP_SERVER=true
+      - PORT=3000
+      - AUTH_ENABLED=${AUTH_ENABLED:-false}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - API_KEYS=${API_KEYS:-}
+      - IP_WHITELIST=${IP_WHITELIST:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Reverse proxy for HTTPS
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: sage-nginx
+  #   ports:
+  #     - "443:443"
+  #     - "80:80"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./certs:/etc/nginx/certs:ro
+  #   depends_on:
+  #     - sage
+  #   restart: unless-stopped

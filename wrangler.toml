@@ -1,0 +1,46 @@
+# Cloudflare Workers Configuration for Sage Remote MCP Server
+# Requirements: 12.7, 12.8
+
+name = "sage-mcp-server"
+main = "dist/remote/remote-mcp-server.js"
+compatibility_date = "2024-01-01"
+
+# Production environment
+[env.production]
+workers_dev = false
+route = { pattern = "mcp.example.com/*", zone_name = "example.com" }
+
+# Development environment
+[env.development]
+workers_dev = true
+
+# Variables (non-sensitive)
+[vars]
+MCP_SERVER = "true"
+NODE_ENV = "production"
+
+# Secrets (set via wrangler secret put)
+# - JWT_SECRET
+# - API_KEYS
+# - ENCRYPTION_KEY
+
+# Scheduled tasks for session cleanup
+# [[triggers.crons]]
+# cron = "*/5 * * * *"
+
+# Durable Objects for session state (optional)
+# [[durable_objects.bindings]]
+# name = "SESSIONS"
+# class_name = "SessionStore"
+
+# KV namespace for config storage (optional)
+# [[kv_namespaces]]
+# binding = "CONFIG_STORE"
+# id = "your-kv-namespace-id"
+
+[build]
+command = "npm run build"
+
+# Observability
+[observability]
+enabled = true

@@ -3,23 +3,12 @@
  * Detects the running platform and provides capability information
  * Requirements: 7.1, 7.2, 7.3
  *
- * 現行実装: desktop_mcp（macOS, Claude Desktop/Code）
- * 将来対応予定: ios_skills, ipados_skills, web_skills
- *
- * 注意: iOS/iPadOS/Web Skillsの検出ロジックはプレースホルダーです。
- * 現時点では Claude Skills APIはサーバーサイドのサンドボックスで実行され、
- * iOSのネイティブフレームワーク（EventKit等）にはアクセスできません。
+ * 実装:
+ * - desktop_mcp: macOS, Claude Desktop/Code（AppleScript統合）
+ * - remote_mcp: iOS/iPadOS/Web（Remote MCPサーバー経由）
  */
 
-// Declare window for browser environment detection
-declare const window: any;
-
-import type {
-  PlatformType,
-  PlatformInfo,
-  PlatformCapability,
-  FeatureSet,
-} from './types.js';
+import type { PlatformType, PlatformInfo, PlatformCapability, FeatureSet } from './types.js';
 import { CAPABILITY_NAMES, INTEGRATION_NAMES } from './types.js';
 
 /**
@@ -27,52 +16,47 @@ import { CAPABILITY_NAMES, INTEGRATION_NAMES } from './types.js';
  */
 const PLATFORM_CAPABILITIES: Record<PlatformType, PlatformCapability[]> = {
   desktop_mcp: [
-    { name: CAPABILITY_NAMES.FILE_SYSTEM, available: true, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.EXTERNAL_PROCESS, available: true, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.MCP_INTEGRATION, available: true, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.SESSION_STORAGE, available: true, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.NATIVE_REMINDERS, available: false, requiresPermission: false, fallbackAvailable: true },
-    { name: CAPABILITY_NAMES.NATIVE_CALENDAR, available: false, requiresPermission: false, fallbackAvailable: true },
+    {
+      name: CAPABILITY_NAMES.FILE_SYSTEM,
+      available: true,
+      requiresPermission: false,
+      fallbackAvailable: false,
+    },
+    {
+      name: CAPABILITY_NAMES.EXTERNAL_PROCESS,
+      available: true,
+      requiresPermission: false,
+      fallbackAvailable: false,
+    },
+    {
+      name: CAPABILITY_NAMES.MCP_INTEGRATION,
+      available: true,
+      requiresPermission: false,
+      fallbackAvailable: false,
+    },
   ],
-  ios_skills: [
-    { name: CAPABILITY_NAMES.FILE_SYSTEM, available: false, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.EXTERNAL_PROCESS, available: false, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.MCP_INTEGRATION, available: false, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.SESSION_STORAGE, available: true, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.ICLOUD_SYNC, available: true, requiresPermission: false, fallbackAvailable: true },
-    { name: CAPABILITY_NAMES.NATIVE_REMINDERS, available: true, requiresPermission: true, fallbackAvailable: true },
-    { name: CAPABILITY_NAMES.NATIVE_CALENDAR, available: true, requiresPermission: true, fallbackAvailable: true },
-    { name: CAPABILITY_NAMES.NOTION_CONNECTOR, available: true, requiresPermission: true, fallbackAvailable: true },
-  ],
-  ipados_skills: [
-    { name: CAPABILITY_NAMES.FILE_SYSTEM, available: false, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.EXTERNAL_PROCESS, available: false, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.MCP_INTEGRATION, available: false, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.SESSION_STORAGE, available: true, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.ICLOUD_SYNC, available: true, requiresPermission: false, fallbackAvailable: true },
-    { name: CAPABILITY_NAMES.NATIVE_REMINDERS, available: true, requiresPermission: true, fallbackAvailable: true },
-    { name: CAPABILITY_NAMES.NATIVE_CALENDAR, available: true, requiresPermission: true, fallbackAvailable: true },
-    { name: CAPABILITY_NAMES.NOTION_CONNECTOR, available: true, requiresPermission: true, fallbackAvailable: true },
-  ],
-  web_skills: [
-    { name: CAPABILITY_NAMES.FILE_SYSTEM, available: false, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.EXTERNAL_PROCESS, available: false, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.MCP_INTEGRATION, available: false, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.SESSION_STORAGE, available: true, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.ICLOUD_SYNC, available: false, requiresPermission: false, fallbackAvailable: false },
-    { name: CAPABILITY_NAMES.NATIVE_REMINDERS, available: false, requiresPermission: false, fallbackAvailable: true },
-    { name: CAPABILITY_NAMES.NATIVE_CALENDAR, available: false, requiresPermission: false, fallbackAvailable: true },
+  remote_mcp: [
+    {
+      name: CAPABILITY_NAMES.REMOTE_ACCESS,
+      available: true,
+      requiresPermission: true,
+      fallbackAvailable: false,
+    },
+    {
+      name: CAPABILITY_NAMES.CLOUD_STORAGE,
+      available: true,
+      requiresPermission: false,
+      fallbackAvailable: false,
+    },
   ],
 };
 
 /**
- * Native integrations available on each platform
+ * Integrations available on each platform
  */
 const PLATFORM_INTEGRATIONS: Record<PlatformType, string[]> = {
   desktop_mcp: [INTEGRATION_NAMES.APPLESCRIPT, INTEGRATION_NAMES.NOTION_MCP],
-  ios_skills: [INTEGRATION_NAMES.REMINDERS, INTEGRATION_NAMES.CALENDAR, INTEGRATION_NAMES.NOTION_CONNECTOR],
-  ipados_skills: [INTEGRATION_NAMES.REMINDERS, INTEGRATION_NAMES.CALENDAR, INTEGRATION_NAMES.NOTION_CONNECTOR],
-  web_skills: [],
+  remote_mcp: [INTEGRATION_NAMES.REMOTE_MCP_SERVER],
 };
 
 /**
@@ -87,28 +71,12 @@ const PLATFORM_FEATURES: Record<PlatformType, FeatureSet> = {
     notionIntegration: true,
     fileSystemAccess: true,
   },
-  ios_skills: {
+  remote_mcp: {
     taskAnalysis: true,
-    persistentConfig: true, // via iCloud
-    appleReminders: true, // native
-    calendarIntegration: true, // native
-    notionIntegration: true, // via Notion Connector
-    fileSystemAccess: false,
-  },
-  ipados_skills: {
-    taskAnalysis: true,
-    persistentConfig: true, // via iCloud
-    appleReminders: true, // native
-    calendarIntegration: true, // native
-    notionIntegration: true, // via Notion Connector
-    fileSystemAccess: false,
-  },
-  web_skills: {
-    taskAnalysis: true,
-    persistentConfig: false, // session only
-    appleReminders: false, // manual copy
-    calendarIntegration: false, // manual input
-    notionIntegration: false,
+    persistentConfig: true, // via cloud storage
+    appleReminders: true, // via Remote MCP Server
+    calendarIntegration: true, // via Remote MCP Server
+    notionIntegration: true, // via Remote MCP Server
     fileSystemAccess: false,
   },
 };
@@ -127,22 +95,18 @@ export class PlatformDetector {
         type: 'desktop_mcp',
         version: this.VERSION,
         capabilities: this.getCapabilities('desktop_mcp'),
-        nativeIntegrations: this.getNativeIntegrations('desktop_mcp'),
+        integrations: this.getIntegrations('desktop_mcp'),
       };
     }
 
-    // Check for browser/Skills environment
-    if (this.isSkillsEnvironment()) {
-      const platformType = this.detectSkillsPlatformType();
-      return {
-        type: platformType,
-        version: this.VERSION,
-        capabilities: this.getCapabilities(platformType),
-        nativeIntegrations: this.getNativeIntegrations(platformType),
-      };
-    }
-
-    throw new Error('Unsupported platform: Unable to detect running environment');
+    // Default to remote_mcp for non-MCP environments
+    // These clients connect via Remote MCP Server
+    return {
+      type: 'remote_mcp',
+      version: this.VERSION,
+      capabilities: this.getCapabilities('remote_mcp'),
+      integrations: this.getIntegrations('remote_mcp'),
+    };
   }
 
   /**
@@ -161,38 +125,6 @@ export class PlatformDetector {
   }
 
   /**
-   * Check if running in Claude Skills environment
-   */
-  private static isSkillsEnvironment(): boolean {
-    try {
-      return typeof window !== 'undefined' && (window as any).claude !== undefined;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Detect specific Skills platform type (iOS, iPadOS, or Web)
-   */
-  private static detectSkillsPlatformType(): PlatformType {
-    try {
-      const userAgent = (window as any).navigator?.userAgent || (global as any).navigator?.userAgent || '';
-
-      if (userAgent.includes('iPhone')) {
-        return 'ios_skills';
-      }
-
-      if (userAgent.includes('iPad')) {
-        return 'ipados_skills';
-      }
-
-      return 'web_skills';
-    } catch {
-      return 'web_skills';
-    }
-  }
-
-  /**
    * Get capabilities for a platform
    * Requirement: 7.3
    */
@@ -201,9 +133,9 @@ export class PlatformDetector {
   }
 
   /**
-   * Get native integrations for a platform
+   * Get integrations for a platform
    */
-  static getNativeIntegrations(platformType: PlatformType): string[] {
+  static getIntegrations(platformType: PlatformType): string[] {
     return [...PLATFORM_INTEGRATIONS[platformType]];
   }
 

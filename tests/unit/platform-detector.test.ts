@@ -1,9 +1,14 @@
 /**
  * Platform Detector Unit Tests
  * Requirements: 7.1, 7.2, 7.3
+ *
+ * 実装:
+ * - desktop_mcp: Claude Desktop/Code（AppleScript統合）
+ * - remote_mcp: iOS/iPadOS/Web（Remote MCPサーバー経由）
  */
 
 import { PlatformDetector } from '../../src/platform/detector.js';
+import { CAPABILITY_NAMES, INTEGRATION_NAMES } from '../../src/platform/types.js';
 
 // Extend global to include window for browser simulation
 declare global {
@@ -40,78 +45,32 @@ describe('PlatformDetector', () => {
 
       expect(result.type).toBe('desktop_mcp');
       expect(result.capabilities).toContainEqual(
-        expect.objectContaining({ name: 'file_system', available: true })
+        expect.objectContaining({ name: CAPABILITY_NAMES.FILE_SYSTEM, available: true })
       );
       expect(result.capabilities).toContainEqual(
-        expect.objectContaining({ name: 'external_process', available: true })
+        expect.objectContaining({ name: CAPABILITY_NAMES.EXTERNAL_PROCESS, available: true })
       );
     });
 
-    it('should detect iOS Skills environment', async () => {
-      // Mock iOS Skills environment
-      delete (global as any).process;
-      (global as any).window = {
-        claude: {
-          reminders: { create: jest.fn() },
-          calendar: { getEvents: jest.fn() },
-        },
-        navigator: {
-          userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
-        },
+    it('should detect remote MCP environment for non-MCP clients', async () => {
+      // Mock non-MCP environment (iOS/iPadOS/Web clients connect via Remote MCP)
+      const mockProcess = {
+        ...process,
+        env: { ...process.env, MCP_SERVER: undefined },
+        platform: 'darwin' as NodeJS.Platform,
       };
-      (global as any).navigator = (global as any).window.navigator;
+      global.process = mockProcess as NodeJS.Process;
+      delete global.process.env.MCP_SERVER;
 
       const result = await PlatformDetector.detect();
 
-      expect(result.type).toBe('ios_skills');
-      expect(result.nativeIntegrations).toContain('reminders');
-      expect(result.nativeIntegrations).toContain('calendar');
-    });
-
-    it('should detect iPadOS Skills environment', async () => {
-      // Mock iPadOS Skills environment
-      delete (global as any).process;
-      (global as any).window = {
-        claude: {
-          reminders: { create: jest.fn() },
-          calendar: { getEvents: jest.fn() },
-        },
-        navigator: {
-          userAgent: 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)',
-        },
-      };
-      (global as any).navigator = (global as any).window.navigator;
-
-      const result = await PlatformDetector.detect();
-
-      expect(result.type).toBe('ipados_skills');
-      expect(result.nativeIntegrations).toContain('reminders');
-      expect(result.nativeIntegrations).toContain('calendar');
-    });
-
-    it('should detect Web Skills environment', async () => {
-      // Mock Web Skills environment (no native integrations)
-      delete (global as any).process;
-      (global as any).window = {
-        claude: {},
-        navigator: {
-          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome',
-        },
-      };
-      (global as any).navigator = (global as any).window.navigator;
-
-      const result = await PlatformDetector.detect();
-
-      expect(result.type).toBe('web_skills');
-      expect(result.nativeIntegrations).toHaveLength(0);
-    });
-
-    it('should throw error for unsupported platform', async () => {
-      // Mock unsupported environment
-      delete (global as any).process;
-      delete (global as any).window;
-
-      await expect(PlatformDetector.detect()).rejects.toThrow('Unsupported platform');
+      expect(result.type).toBe('remote_mcp');
+      expect(result.capabilities).toContainEqual(
+        expect.objectContaining({ name: CAPABILITY_NAMES.REMOTE_ACCESS, available: true })
+      );
+      expect(result.capabilities).toContainEqual(
+        expect.objectContaining({ name: CAPABILITY_NAMES.CLOUD_STORAGE, available: true })
+      );
     });
   });
 
@@ -120,69 +79,40 @@ describe('PlatformDetector', () => {
       const capabilities = PlatformDetector.getCapabilities('desktop_mcp');
 
       expect(capabilities).toContainEqual(
-        expect.objectContaining({ name: 'file_system', available: true })
+        expect.objectContaining({ name: CAPABILITY_NAMES.FILE_SYSTEM, available: true })
       );
       expect(capabilities).toContainEqual(
-        expect.objectContaining({ name: 'mcp_integration', available: true })
+        expect.objectContaining({ name: CAPABILITY_NAMES.MCP_INTEGRATION, available: true })
       );
       expect(capabilities).toContainEqual(
-        expect.objectContaining({ name: 'external_process', available: true })
-      );
-    });
-
-    it('should return native integration capabilities for iOS Skills', () => {
-      const capabilities = PlatformDetector.getCapabilities('ios_skills');
-
-      expect(capabilities).toContainEqual(
-        expect.objectContaining({ name: 'native_reminders', available: true })
-      );
-      expect(capabilities).toContainEqual(
-        expect.objectContaining({ name: 'native_calendar', available: true })
-      );
-      expect(capabilities).toContainEqual(
-        expect.objectContaining({ name: 'file_system', available: false })
+        expect.objectContaining({ name: CAPABILITY_NAMES.EXTERNAL_PROCESS, available: true })
       );
     });
 
-    it('should return limited capabilities for Web Skills', () => {
-      const capabilities = PlatformDetector.getCapabilities('web_skills');
+    it('should return remote capabilities for remote_mcp platform', () => {
+      const capabilities = PlatformDetector.getCapabilities('remote_mcp');
 
       expect(capabilities).toContainEqual(
-        expect.objectContaining({ name: 'session_storage', available: true })
+        expect.objectContaining({ name: CAPABILITY_NAMES.REMOTE_ACCESS, available: true })
       );
       expect(capabilities).toContainEqual(
-        expect.objectContaining({ name: 'native_reminders', available: false })
-      );
-      expect(capabilities).toContainEqual(
-        expect.objectContaining({ name: 'native_calendar', available: false })
+        expect.objectContaining({ name: CAPABILITY_NAMES.CLOUD_STORAGE, available: true })
       );
     });
   });
 
-  describe('getNativeIntegrations', () => {
+  describe('getIntegrations', () => {
     it('should return applescript and notion_mcp for MCP platform', () => {
-      const integrations = PlatformDetector.getNativeIntegrations('desktop_mcp');
+      const integrations = PlatformDetector.getIntegrations('desktop_mcp');
 
-      expect(integrations).toContain('applescript');
-      expect(integrations).toContain('notion_mcp');
+      expect(integrations).toContain(INTEGRATION_NAMES.APPLESCRIPT);
+      expect(integrations).toContain(INTEGRATION_NAMES.NOTION_MCP);
     });
 
-    it('should return reminders, calendar, and notion_connector for iOS/iPadOS Skills', () => {
-      const iOSIntegrations = PlatformDetector.getNativeIntegrations('ios_skills');
-      const iPadOSIntegrations = PlatformDetector.getNativeIntegrations('ipados_skills');
+    it('should return remote_mcp_server for remote_mcp platform', () => {
+      const integrations = PlatformDetector.getIntegrations('remote_mcp');
 
-      expect(iOSIntegrations).toContain('reminders');
-      expect(iOSIntegrations).toContain('calendar');
-      expect(iOSIntegrations).toContain('notion_connector');
-      expect(iPadOSIntegrations).toContain('reminders');
-      expect(iPadOSIntegrations).toContain('calendar');
-      expect(iPadOSIntegrations).toContain('notion_connector');
-    });
-
-    it('should return empty array for Web Skills', () => {
-      const integrations = PlatformDetector.getNativeIntegrations('web_skills');
-
-      expect(integrations).toHaveLength(0);
+      expect(integrations).toContain(INTEGRATION_NAMES.REMOTE_MCP_SERVER);
     });
   });
 
@@ -198,82 +128,54 @@ describe('PlatformDetector', () => {
       expect(features.fileSystemAccess).toBe(true);
     });
 
-    it('should return iOS-specific feature set for iOS Skills', () => {
-      const features = PlatformDetector.getFeatureSet('ios_skills');
+    it('should return remote feature set for remote_mcp platform', () => {
+      const features = PlatformDetector.getFeatureSet('remote_mcp');
 
       expect(features.taskAnalysis).toBe(true);
-      expect(features.persistentConfig).toBe(true); // iCloud sync
-      expect(features.appleReminders).toBe(true); // Native
-      expect(features.calendarIntegration).toBe(true); // Native
-      expect(features.notionIntegration).toBe(true); // Notion Connector
-      expect(features.fileSystemAccess).toBe(false);
-    });
-
-    it('should return limited feature set for Web Skills', () => {
-      const features = PlatformDetector.getFeatureSet('web_skills');
-
-      expect(features.taskAnalysis).toBe(true);
-      expect(features.persistentConfig).toBe(false); // Session only
-      expect(features.appleReminders).toBe(false); // Manual copy
-      expect(features.calendarIntegration).toBe(false); // Manual input
-      expect(features.notionIntegration).toBe(false);
+      expect(features.persistentConfig).toBe(true); // via cloud storage
+      expect(features.appleReminders).toBe(true); // via Remote MCP Server
+      expect(features.calendarIntegration).toBe(true); // via Remote MCP Server
+      expect(features.notionIntegration).toBe(true); // via Remote MCP Server
       expect(features.fileSystemAccess).toBe(false);
     });
   });
 
   describe('isCapabilityAvailable', () => {
     it('should check capability availability correctly', () => {
-      expect(PlatformDetector.isCapabilityAvailable('desktop_mcp', 'file_system')).toBe(true);
-      expect(PlatformDetector.isCapabilityAvailable('ios_skills', 'file_system')).toBe(false);
-      expect(PlatformDetector.isCapabilityAvailable('ios_skills', 'native_reminders')).toBe(true);
-      expect(PlatformDetector.isCapabilityAvailable('web_skills', 'native_reminders')).toBe(false);
-    });
-  });
-
-  describe('requiresPermission', () => {
-    it('should identify capabilities requiring permission', () => {
-      const capabilities = PlatformDetector.getCapabilities('ios_skills');
-      const remindersCapability = capabilities.find((c) => c.name === 'native_reminders');
-      const calendarCapability = capabilities.find((c) => c.name === 'native_calendar');
-
-      expect(remindersCapability?.requiresPermission).toBe(true);
-      expect(calendarCapability?.requiresPermission).toBe(true);
+      expect(
+        PlatformDetector.isCapabilityAvailable('desktop_mcp', CAPABILITY_NAMES.FILE_SYSTEM)
+      ).toBe(true);
+      expect(
+        PlatformDetector.isCapabilityAvailable('remote_mcp', CAPABILITY_NAMES.FILE_SYSTEM)
+      ).toBe(false);
+      expect(
+        PlatformDetector.isCapabilityAvailable('remote_mcp', CAPABILITY_NAMES.REMOTE_ACCESS)
+      ).toBe(true);
+      expect(
+        PlatformDetector.isCapabilityAvailable('desktop_mcp', CAPABILITY_NAMES.REMOTE_ACCESS)
+      ).toBe(false);
     });
 
-    it('should identify capabilities not requiring permission', () => {
-      const capabilities = PlatformDetector.getCapabilities('desktop_mcp');
-      const fileSystemCapability = capabilities.find((c) => c.name === 'file_system');
-
-      expect(fileSystemCapability?.requiresPermission).toBe(false);
-    });
-  });
-
-  describe('hasFallback', () => {
-    it('should identify capabilities with fallback options', () => {
-      const capabilities = PlatformDetector.getCapabilities('web_skills');
-      const remindersCapability = capabilities.find((c) => c.name === 'native_reminders');
-
-      expect(remindersCapability?.fallbackAvailable).toBe(true); // Manual copy
-    });
-
-    it('should return true for capability with fallback', () => {
-      expect(PlatformDetector.hasFallback('web_skills', 'native_reminders')).toBe(true);
-      expect(PlatformDetector.hasFallback('desktop_mcp', 'native_reminders')).toBe(true);
-    });
-
-    it('should return false for unknown capability', () => {
-      expect(PlatformDetector.hasFallback('desktop_mcp', 'unknown_capability')).toBe(false);
+    it('should return false for unknown capability name', () => {
+      expect(PlatformDetector.isCapabilityAvailable('desktop_mcp', 'nonexistent')).toBe(false);
+      expect(PlatformDetector.isCapabilityAvailable('remote_mcp', 'nonexistent')).toBe(false);
     });
   });
 
   describe('requiresPermission', () => {
     it('should return true for capabilities requiring permission', () => {
-      expect(PlatformDetector.requiresPermission('ios_skills', 'native_reminders')).toBe(true);
-      expect(PlatformDetector.requiresPermission('ios_skills', 'native_calendar')).toBe(true);
+      expect(PlatformDetector.requiresPermission('remote_mcp', CAPABILITY_NAMES.REMOTE_ACCESS)).toBe(
+        true
+      );
     });
 
     it('should return false for capabilities not requiring permission', () => {
-      expect(PlatformDetector.requiresPermission('desktop_mcp', 'file_system')).toBe(false);
+      expect(PlatformDetector.requiresPermission('desktop_mcp', CAPABILITY_NAMES.FILE_SYSTEM)).toBe(
+        false
+      );
+      expect(PlatformDetector.requiresPermission('remote_mcp', CAPABILITY_NAMES.CLOUD_STORAGE)).toBe(
+        false
+      );
     });
 
     it('should return false for unknown capability', () => {
@@ -281,30 +183,14 @@ describe('PlatformDetector', () => {
     });
   });
 
-  describe('isCapabilityAvailable edge cases', () => {
-    it('should return false for unknown capability name', () => {
-      expect(PlatformDetector.isCapabilityAvailable('desktop_mcp', 'nonexistent')).toBe(false);
-      expect(PlatformDetector.isCapabilityAvailable('ios_skills', 'nonexistent')).toBe(false);
-    });
-  });
-
-  describe('iPadOS capabilities', () => {
-    it('should have same capabilities as iOS', () => {
-      const iosCapabilities = PlatformDetector.getCapabilities('ios_skills');
-      const ipadosCapabilities = PlatformDetector.getCapabilities('ipados_skills');
-
-      expect(iosCapabilities.length).toBe(ipadosCapabilities.length);
-      expect(PlatformDetector.isCapabilityAvailable('ipados_skills', 'native_reminders')).toBe(true);
-      expect(PlatformDetector.isCapabilityAvailable('ipados_skills', 'native_calendar')).toBe(true);
+  describe('hasFallback', () => {
+    it('should return false for capabilities without fallback', () => {
+      expect(PlatformDetector.hasFallback('desktop_mcp', CAPABILITY_NAMES.FILE_SYSTEM)).toBe(false);
+      expect(PlatformDetector.hasFallback('remote_mcp', CAPABILITY_NAMES.REMOTE_ACCESS)).toBe(false);
     });
 
-    it('should have same feature set as iOS', () => {
-      const iosFeatures = PlatformDetector.getFeatureSet('ios_skills');
-      const ipadosFeatures = PlatformDetector.getFeatureSet('ipados_skills');
-
-      expect(ipadosFeatures.taskAnalysis).toBe(iosFeatures.taskAnalysis);
-      expect(ipadosFeatures.persistentConfig).toBe(iosFeatures.persistentConfig);
-      expect(ipadosFeatures.appleReminders).toBe(iosFeatures.appleReminders);
+    it('should return false for unknown capability', () => {
+      expect(PlatformDetector.hasFallback('desktop_mcp', 'unknown_capability')).toBe(false);
     });
   });
 });

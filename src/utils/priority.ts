@@ -174,7 +174,8 @@ export class PriorityEngine {
 
     switch (condition.operator) {
       case '<':
-        return diffMs < thresholdMs && diffMs > 0;
+        // Include overdue tasks (diffMs <= 0) as well as tasks due within threshold
+        return diffMs <= thresholdMs;
       case '>':
         return diffMs > thresholdMs;
       case '=':
@@ -215,16 +216,30 @@ export class PriorityEngine {
   ): boolean {
     const value = condition.value as string;
 
-    if (value === 'manager' && teamConfig?.manager) {
+    if (value === 'manager') {
       const managerKeywords = [
-        teamConfig.manager.name.toLowerCase(),
         'manager',
         'マネージャー',
         '上司',
         'boss',
-        ...teamConfig.manager.keywords.map((k) => k.toLowerCase()),
+        '部長',
+        '課長',
+        '係長',
+        '主任',
+        '社長',
+        '取締役',
+        'director',
+        'lead',
+        'リーダー',
       ];
-      return managerKeywords.some((keyword) => text.includes(keyword));
+
+      // Add configured manager keywords if available
+      if (teamConfig?.manager) {
+        managerKeywords.push(teamConfig.manager.name.toLowerCase());
+        managerKeywords.push(...teamConfig.manager.keywords.map((k) => k.toLowerCase()));
+      }
+
+      return managerKeywords.some((keyword) => text.includes(keyword.toLowerCase()));
     }
 
     if (value === 'lead' && teamConfig?.frequentCollaborators) {

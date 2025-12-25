@@ -134,7 +134,7 @@ describe('NotionMCPService', () => {
       const futureDate = new Date();
       futureDate.setDate(futureDate.getDate() + 10);
 
-      const shouldSync = service.shouldSyncToNotion(futureDate.toISOString(), 8);
+      const shouldSync = service.shouldSyncToNotion(futureDate.toISOString(), 8, 'valid-db-id');
       expect(shouldSync).toBe(true);
     });
 
@@ -142,13 +142,21 @@ describe('NotionMCPService', () => {
       const nearDate = new Date();
       nearDate.setDate(nearDate.getDate() + 5);
 
-      const shouldSync = service.shouldSyncToNotion(nearDate.toISOString(), 8);
+      const shouldSync = service.shouldSyncToNotion(nearDate.toISOString(), 8, 'valid-db-id');
       expect(shouldSync).toBe(false);
     });
 
     it('should return false for tasks without deadline', () => {
-      const shouldSync = service.shouldSyncToNotion(undefined, 8);
+      const shouldSync = service.shouldSyncToNotion(undefined, 8, 'valid-db-id');
       expect(shouldSync).toBe(false);
+    });
+
+    it('should return false when database ID is not configured', () => {
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 10);
+
+      expect(service.shouldSyncToNotion(futureDate.toISOString(), 8, '')).toBe(false);
+      expect(service.shouldSyncToNotion(futureDate.toISOString(), 8, undefined)).toBe(false);
     });
   });
 });

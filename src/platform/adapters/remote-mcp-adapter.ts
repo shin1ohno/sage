@@ -1,28 +1,30 @@
 /**
- * MCP Adapter
- * Platform adapter for Desktop/Code MCP environment
+ * Remote MCP Adapter
+ * Platform adapter for Remote MCP environment (iOS/iPadOS/Web clients)
  * Requirements: 7.1, 7.4
+ *
+ * Remote MCP clients connect via the Remote MCP Server
  */
 
 import type { PlatformAdapter, PlatformInfo, FeatureSet } from '../types.js';
 import { PlatformDetector } from '../detector.js';
 
 /**
- * Adapter for MCP (Model Context Protocol) server environment
- * Used in Claude Desktop and Claude Code
+ * Adapter for Remote MCP environment
+ * Used for iOS/iPadOS/Web clients connecting via Remote MCP Server
  */
-export class MCPAdapter implements PlatformAdapter {
+export class RemoteMCPAdapter implements PlatformAdapter {
   private platformInfo: PlatformInfo;
   private featureSet: FeatureSet;
 
   constructor() {
     this.platformInfo = {
-      type: 'desktop_mcp',
+      type: 'remote_mcp',
       version: '1.0.0',
-      capabilities: PlatformDetector.getCapabilities('desktop_mcp'),
-      integrations: PlatformDetector.getIntegrations('desktop_mcp'),
+      capabilities: PlatformDetector.getCapabilities('remote_mcp'),
+      integrations: PlatformDetector.getIntegrations('remote_mcp'),
     };
-    this.featureSet = PlatformDetector.getFeatureSet('desktop_mcp');
+    this.featureSet = PlatformDetector.getFeatureSet('remote_mcp');
   }
 
   /**
@@ -43,17 +45,17 @@ export class MCPAdapter implements PlatformAdapter {
    * Initialize the adapter
    */
   async initialize(): Promise<void> {
-    // MCP adapter initialization
+    // Remote MCP adapter initialization
     // In the future, this could:
-    // - Check AppleScript availability
-    // - Verify Notion MCP connection
-    // - Load persisted configuration
+    // - Establish connection to Remote MCP Server
+    // - Load cloud configuration
+    // - Setup authentication
   }
 
   /**
    * Check if a specific capability is available
    */
   isCapabilityAvailable(capability: string): boolean {
-    return PlatformDetector.isCapabilityAvailable('desktop_mcp', capability);
+    return PlatformDetector.isCapabilityAvailable('remote_mcp', capability);
   }
 }

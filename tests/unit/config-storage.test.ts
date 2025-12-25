@@ -2,6 +2,10 @@
  * Config Storage Unit Tests
  * Tests for platform-specific configuration storage
  * Requirements: 1.1, 1.5, 10.1
+ *
+ * 実装:
+ * - desktop_mcp: ファイルベースストレージ
+ * - remote_mcp: クラウドストレージ（セッションフォールバック）
  */
 
 import { FileConfigStorage } from '../../src/config/storage/file-storage.js';
@@ -124,18 +128,8 @@ describe('ConfigStorageFactory', () => {
       expect(storage).toBeInstanceOf(FileConfigStorage);
     });
 
-    it('should create SessionConfigStorage for ios_skills', () => {
-      const storage = ConfigStorageFactory.create('ios_skills');
-      expect(storage).toBeInstanceOf(SessionConfigStorage);
-    });
-
-    it('should create SessionConfigStorage for ipados_skills', () => {
-      const storage = ConfigStorageFactory.create('ipados_skills');
-      expect(storage).toBeInstanceOf(SessionConfigStorage);
-    });
-
-    it('should create SessionConfigStorage for web_skills', () => {
-      const storage = ConfigStorageFactory.create('web_skills');
+    it('should create SessionConfigStorage for remote_mcp', () => {
+      const storage = ConfigStorageFactory.create('remote_mcp');
       expect(storage).toBeInstanceOf(SessionConfigStorage);
     });
   });
@@ -145,12 +139,8 @@ describe('ConfigStorageFactory', () => {
       expect(ConfigStorageFactory.getStorageType('desktop_mcp')).toBe('file');
     });
 
-    it('should return session for ios_skills', () => {
-      expect(ConfigStorageFactory.getStorageType('ios_skills')).toBe('session');
-    });
-
-    it('should return session for web_skills', () => {
-      expect(ConfigStorageFactory.getStorageType('web_skills')).toBe('session');
+    it('should return cloud for remote_mcp', () => {
+      expect(ConfigStorageFactory.getStorageType('remote_mcp')).toBe('cloud');
     });
   });
 
@@ -159,12 +149,20 @@ describe('ConfigStorageFactory', () => {
       expect(ConfigStorageFactory.isPersistent('desktop_mcp')).toBe(true);
     });
 
-    it('should return true for ios_skills (iCloud)', () => {
-      expect(ConfigStorageFactory.isPersistent('ios_skills')).toBe(true);
+    it('should return true for remote_mcp (cloud storage)', () => {
+      expect(ConfigStorageFactory.isPersistent('remote_mcp')).toBe(true);
+    });
+  });
+
+  describe('getStorageDescription', () => {
+    it('should return file description for desktop_mcp', () => {
+      const desc = ConfigStorageFactory.getStorageDescription('desktop_mcp');
+      expect(desc).toContain('~/.sage/config.json');
     });
 
-    it('should return false for web_skills', () => {
-      expect(ConfigStorageFactory.isPersistent('web_skills')).toBe(false);
+    it('should return cloud description for remote_mcp', () => {
+      const desc = ConfigStorageFactory.getStorageDescription('remote_mcp');
+      expect(desc).toContain('クラウドストレージ');
     });
   });
 });

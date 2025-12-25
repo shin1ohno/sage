@@ -2,13 +2,13 @@
  * SageCore
  * Platform-independent core logic for sage task management
  * Requirements: 2.1, 2.2, 11.1, 7.3, 7.4
+ *
+ * 実装:
+ * - desktop_mcp: AppleScript経由の統合
+ * - remote_mcp: Remote MCP Server経由の統合
  */
 
-import type {
-  PlatformAdapter,
-  PlatformInfo,
-  FeatureSet,
-} from '../platform/types.js';
+import type { PlatformAdapter, PlatformInfo, FeatureSet } from '../platform/types.js';
 import type { Task, UserConfig } from '../types/index.js';
 import { TaskAnalyzer } from '../tools/analyze-tasks.js';
 import type { AnalysisResult } from '../tools/analyze-tasks.js';
@@ -20,7 +20,7 @@ import { DEFAULT_CONFIG } from '../types/config.js';
 export interface IntegrationRecommendation {
   integration: 'reminders' | 'calendar' | 'notion';
   available: boolean;
-  method: 'native' | 'applescript' | 'mcp' | 'connector' | 'manual_copy';
+  method: 'native' | 'applescript' | 'mcp' | 'remote' | 'manual_copy';
   fallback?: string;
   description: string;
 }
@@ -130,12 +130,12 @@ export class SageCore {
         method: 'applescript',
         description: 'AppleScript経由でApple Remindersに連携',
       });
-    } else if (platformType === 'ios_skills' || platformType === 'ipados_skills') {
+    } else if (platformType === 'remote_mcp') {
       recommendations.push({
         integration: 'reminders',
         available: true,
-        method: 'native',
-        description: 'ネイティブAPIでApple Remindersに直接連携',
+        method: 'remote',
+        description: 'Remote MCP Server経由でApple Remindersに連携',
       });
     } else {
       recommendations.push({
@@ -155,12 +155,12 @@ export class SageCore {
         method: 'applescript',
         description: 'AppleScript経由でCalendar.appから予定を取得',
       });
-    } else if (platformType === 'ios_skills' || platformType === 'ipados_skills') {
+    } else if (platformType === 'remote_mcp') {
       recommendations.push({
         integration: 'calendar',
         available: true,
-        method: 'native',
-        description: 'ネイティブAPIでカレンダーイベントを取得',
+        method: 'remote',
+        description: 'Remote MCP Server経由でカレンダーイベントを取得',
       });
     } else {
       recommendations.push({
@@ -181,12 +181,12 @@ export class SageCore {
           method: 'mcp',
           description: 'MCP経由でNotionデータベースに連携',
         });
-      } else if (platformType === 'ios_skills' || platformType === 'ipados_skills') {
+      } else if (platformType === 'remote_mcp') {
         recommendations.push({
           integration: 'notion',
           available: true,
-          method: 'connector',
-          description: 'Notion Connector経由でNotionデータベースに連携',
+          method: 'remote',
+          description: 'Remote MCP Server経由でNotionデータベースに連携',
         });
       }
     } else {

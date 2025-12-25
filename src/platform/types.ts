@@ -3,15 +3,15 @@
  * Defines types for multi-platform support
  * Requirements: 7.1, 7.2, 7.3
  *
- * 現行実装: desktop_mcp（Claude Desktop/Code）
- * 将来対応予定: ios_skills, ipados_skills, web_skills
- * （Claude Skills APIがデバイスAPIへのアクセスを提供した時点で実装）
+ * 実装:
+ * - desktop_mcp: Claude Desktop/Code（AppleScript統合）
+ * - remote_mcp: iOS/iPadOS/Web（Remote MCPサーバー経由）
  */
 
 /**
  * Platform type enumeration
  */
-export type PlatformType = 'desktop_mcp' | 'ios_skills' | 'ipados_skills' | 'web_skills';
+export type PlatformType = 'desktop_mcp' | 'remote_mcp';
 
 /**
  * Platform information
@@ -20,7 +20,7 @@ export interface PlatformInfo {
   type: PlatformType;
   version: string;
   capabilities: PlatformCapability[];
-  nativeIntegrations: string[];
+  integrations: string[];
 }
 
 /**
@@ -46,23 +46,11 @@ export interface FeatureSet {
 }
 
 /**
- * Permission status for native integrations
- */
-export interface PermissionStatus {
-  reminders: 'granted' | 'denied' | 'not_determined';
-  calendar: 'granted' | 'denied' | 'not_determined';
-  notion: 'granted' | 'denied' | 'not_determined';
-  canRequestPermission: boolean;
-}
-
-/**
  * Platform-specific configuration
  */
 export interface PlatformSpecificConfig {
   type: PlatformType;
-  nativeIntegrationsEnabled: boolean;
   fallbackMethods: string[];
-  permissionsGranted: Record<string, boolean>;
 }
 
 /**
@@ -118,40 +106,9 @@ export interface ConfigStorage {
 }
 
 /**
- * Native integration service interface
- * Used for iOS/iPadOS native integrations
+ * Reminder request
  */
-export interface NativeIntegrationService {
-  /**
-   * Create a reminder using native API
-   */
-  createReminder(request: NativeReminderRequest): Promise<NativeReminderResult>;
-
-  /**
-   * Fetch calendar events using native API
-   */
-  fetchCalendarEvents(startDate: string, endDate: string): Promise<NativeCalendarEvent[]>;
-
-  /**
-   * Create a Notion page using Connector API
-   */
-  createNotionPage(request: NativeNotionRequest): Promise<NativeNotionResult>;
-
-  /**
-   * Check permission status
-   */
-  checkPermissions(): Promise<PermissionStatus>;
-
-  /**
-   * Request permissions from user
-   */
-  requestPermissions(): Promise<PermissionStatus>;
-}
-
-/**
- * Native reminder request
- */
-export interface NativeReminderRequest {
+export interface ReminderRequest {
   title: string;
   notes?: string;
   dueDate?: string;
@@ -160,20 +117,20 @@ export interface NativeReminderRequest {
 }
 
 /**
- * Native reminder result
+ * Reminder result
  */
-export interface NativeReminderResult {
+export interface ReminderResult {
   success: boolean;
-  method: 'native' | 'applescript' | 'fallback';
+  method: 'applescript' | 'fallback';
   reminderId?: string;
   reminderUrl?: string;
   error?: string;
 }
 
 /**
- * Native calendar event
+ * Calendar event
  */
-export interface NativeCalendarEvent {
+export interface CalendarEvent {
   id: string;
   title: string;
   start: string;
@@ -183,9 +140,9 @@ export interface NativeCalendarEvent {
 }
 
 /**
- * Native Notion page request
+ * Notion page request
  */
-export interface NativeNotionRequest {
+export interface NotionRequest {
   databaseId: string;
   title: string;
   properties?: Record<string, unknown>;
@@ -193,11 +150,11 @@ export interface NativeNotionRequest {
 }
 
 /**
- * Native Notion page result
+ * Notion page result
  */
-export interface NativeNotionResult {
+export interface NotionResult {
   success: boolean;
-  method: 'connector' | 'mcp' | 'fallback';
+  method: 'mcp' | 'fallback';
   pageId?: string;
   pageUrl?: string;
   error?: string;
@@ -211,11 +168,8 @@ export const CAPABILITY_NAMES = {
   FILE_SYSTEM: 'file_system',
   EXTERNAL_PROCESS: 'external_process',
   MCP_INTEGRATION: 'mcp_integration',
-  SESSION_STORAGE: 'session_storage',
-  ICLOUD_SYNC: 'icloud_sync',
-  NATIVE_REMINDERS: 'native_reminders',
-  NATIVE_CALENDAR: 'native_calendar',
-  NOTION_CONNECTOR: 'notion_connector',
+  REMOTE_ACCESS: 'remote_access',
+  CLOUD_STORAGE: 'cloud_storage',
 } as const;
 
 /**
@@ -224,7 +178,5 @@ export const CAPABILITY_NAMES = {
 export const INTEGRATION_NAMES = {
   APPLESCRIPT: 'applescript',
   NOTION_MCP: 'notion_mcp',
-  NOTION_CONNECTOR: 'notion_connector',
-  REMINDERS: 'reminders',
-  CALENDAR: 'calendar',
+  REMOTE_MCP_SERVER: 'remote_mcp_server',
 } as const;

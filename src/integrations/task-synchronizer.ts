@@ -1,7 +1,7 @@
 /**
  * TaskSynchronizer
  * Multi-source task synchronization and conflict resolution
- * Requirement: 12.6, 14.1-14.3
+ * Requirement: 12.5, 12.6
  */
 
 import { Priority } from '../types/task.js';
@@ -79,7 +79,7 @@ export class TaskSynchronizer {
 
   /**
    * Sync all tasks across all sources
-   * Requirement: 14.1
+   * Requirement: 12.6
    */
   async syncAllTasks(): Promise<SyncAllResult> {
     const startTime = Date.now();
@@ -147,7 +147,7 @@ export class TaskSynchronizer {
 
   /**
    * Detect duplicates in a list of tasks
-   * Requirement: 14.2
+   * Requirement: 12.5
    */
   detectDuplicatesInList(tasks: TodoItem[]): DuplicateTask[] {
     const duplicates: DuplicateTask[] = [];
@@ -330,7 +330,7 @@ export class TaskSynchronizer {
 
   /**
    * Merge duplicate tasks
-   * Requirement: 14.2
+   * Requirement: 12.5
    */
   async mergeDuplicates(duplicates: DuplicateTask[]): Promise<MergeResult> {
     if (duplicates.length === 0) {
@@ -442,7 +442,7 @@ export class TaskSynchronizer {
 
   /**
    * Resolve conflicts
-   * Requirement: 14.1
+   * Requirement: 12.6
    */
   async resolveConflicts(conflicts: TaskConflict[]): Promise<ConflictResolution[]> {
     return conflicts.map((conflict) => {

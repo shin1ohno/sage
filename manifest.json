@@ -57,6 +57,14 @@
     {
       "name": "update_config",
       "description": "Update sage configuration settings."
+    },
+    {
+      "name": "list_todos",
+      "description": "List all todos from Apple Reminders and Notion with optional filtering."
+    },
+    {
+      "name": "update_task_status",
+      "description": "Update the status of a task and optionally sync across sources."
     }
   ],
   "update": {

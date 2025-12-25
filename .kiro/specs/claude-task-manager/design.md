@@ -2,38 +2,37 @@
 
 ## 概要
 
-sageは、Claude Desktop、Claude Code、およびClaude iOS/iPadOS向けのAIタスク管理アシスタントです。個人の作業パターンを学習し、タスクの分析、優先順位付け、スケジューリング、リマインド管理を自動化します。
+sageは、Claude DesktopとClaude Code向けのAIタスク管理アシスタントです。個人の作業パターンを学習し、タスクの分析、優先順位付け、スケジューリング、リマインド管理を自動化します。
 
 ### プラットフォーム実装状況
 
 | プラットフォーム | 状態 | 実装方式 | 機能レベル |
 |----------------|------|---------|-----------|
 | **Claude Desktop/Code** | ✅ 実装済み | Local MCPサーバー | 完全機能 |
-| **Claude iOS/iPadOS** | ✅ **Remote MCP対応** | Remote MCPサーバー | 完全機能 |
-| **Claude Web** | ✅ **Remote MCP対応** | Remote MCPサーバー | 完全機能 |
+| **Claude iOS/iPadOS/Web** | ✅ 実装済み | Remote MCPサーバー | 完全機能 |
 
 ### Remote MCP対応の利点
 
-**iOS/iPadOS/Web版での完全機能提供:**
+**全プラットフォームでの完全機能提供:**
 - ✅ すべてのsage機能にアクセス可能
 - ✅ 外部統合（Apple Reminders、Notion、Calendar）
-- ✅ 永続的な設定管理
+- ✅ 永続的な設定管理（クラウド同期）
 - ✅ 高度なタスク分析とTODOリスト管理
 - ✅ OAuth認証とセキュリティ
 
 **アーキテクチャの利点:**
 - 単一のサーバー実装で全プラットフォーム対応
 - クラウドベースの設定同期
-- スケーラブルな展開
+- スケーラブルな展開（Cloudflare/Heroku/AWS）
 - 統一されたユーザー体験
+- 高可用性とロードバランシング
 
 システムは以下の主要コンポーネントで構成されます：
 - セットアップウィザード（初回設定）
 - タスク分析エンジン（優先度・時間見積もり・関係者抽出）
 - タスク分割エンジン（複雑タスクの分解）
-- 外部統合（Apple Reminders、Notion、Google Calendar）
+- 外部統合（Apple Reminders via AppleScript、Notion via MCP、Calendar via AppleScript）
 - 設定管理システム
-- プラットフォーム適応レイヤー
 
 ## アーキテクチャ
 
@@ -42,22 +41,20 @@ sageは、Claude Desktop、Claude Code、およびClaude iOS/iPadOS向けのAI�
 ```
 ┌─────────────────────────────────────────────────┐
 │                Claude Client                    │
-│  ┌─────────────┬─────────────┬─────────────────┐ │
-│  │Desktop/Code │iOS/iPadOS   │Web              │ │
-│  │(Local MCP)  │(Remote MCP) │(Remote MCP)     │ │
-│  └─────────────┴─────────────┴─────────────────┘ │
-└──────┬──────────────┬──────────────┬─────────────┘
-       │              │              │
-       │              └──────┬───────┘
-       │                     │ HTTPS/WSS
-       ↓                     ↓
+│  ┌─────────────┬───────────────────────────────┐ │
+│  │Desktop/Code │iOS/iPadOS/Web                 │ │
+│  │(Local MCP)  │(Remote MCP)                   │ │
+│  └─────────────┴───────────────────────────────┘ │
+└──────┬──────────────────────┬───────────────────┘
+       │                      │ HTTPS/WSS
+       ↓                      ↓
 ┌─────────────────┐  ┌─────────────────────────────┐
 │  Local MCP      │  │     Remote MCP Server       │
 │  sage Server    │  │     (Cloud Hosted)          │
 │                 │  │  ┌─────────────────────────┐ │
 │  - File Config  │  │  │    HTTP/WebSocket       │ │
 │  - AppleScript  │  │  │    Transport Layer      │ │
-│  - Direct APIs  │  │  │  - OAuth Authentication │ │
+│  - Notion MCP   │  │  │  - OAuth Authentication │ │
 │                 │  │  │  - Rate Limiting        │ │
 │                 │  │  │  - Request Validation   │ │
 │                 │  │  └─────────────────────────┘ │
@@ -74,110 +71,54 @@ sageは、Claude Desktop、Claude Code、およびClaude iOS/iPadOS向けのAI�
                      ┌─────────────────────────────┐
                      │    External Services        │
                      │  ┌─────────────────────────┐ │
-                     │  │  Apple Reminders API    │ │
-                     │  │  (via iCloud Web API)   │ │
+                     │  │  Apple Reminders        │ │
+                     │  │  (AppleScript on macOS) │ │
                      │  └─────────────────────────┘ │
                      │  ┌─────────────────────────┐ │
                      │  │     Notion API          │ │
-                     │  │  (Direct Integration)   │ │
+                     │  │  (via Notion MCP)       │ │
                      │  └─────────────────────────┘ │
                      │  ┌─────────────────────────┐ │
-                     │  │   Calendar APIs         │ │
-                     │  │  (Google/Outlook/iCloud)│ │
+                     │  │   Calendar              │ │
+                     │  │  (AppleScript on macOS) │ │
                      │  └─────────────────────────┘ │
                      └─────────────────────────────┘
 ```
 
 ### プラットフォーム別機能比較
 
-| 機能 | Desktop/Code (Local MCP) | iOS/iPadOS (Remote MCP) | Web (Remote MCP) |
-|------|-------------------------|------------------------|------------------|
-| タスク分析 | ✅ 完全版 | ✅ 完全版 | ✅ 完全版 |
-| 優先順位付け | ✅ カスタムルール | ✅ カスタムルール | ✅ カスタムルール |
-| 時間見積もり | ✅ 学習機能付き | ✅ 学習機能付き | ✅ 学習機能付き |
-| タスク分割 | ✅ 複雑な分割 | ✅ 複雑な分割 | ✅ 複雑な分割 |
-| TODOリスト管理 | ✅ 完全版 | ✅ 完全版 | ✅ 完全版 |
-| 設定管理 | ✅ ローカルファイル | ✅ クラウド同期 | ✅ クラウド同期 |
-| Apple Reminders | ✅ AppleScript | ✅ iCloud Web API | ✅ iCloud Web API |
-| Calendar統合 | ✅ AppleScript | ✅ Web APIs | ✅ Web APIs |
-| Notion統合 | ✅ MCP経由 | ✅ Direct API | ✅ Direct API |
-│  │  - ConfigValidator                        │  │
-│  └───────────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────────┐  │
-│  │           Core Analysis Layer             │  │
-│  │  - TaskSplitter                           │  │
-│  │  - TaskAnalyzer                           │  │
-│  │  - PriorityEngine                         │  │
-│  │  - TimeEstimator                          │  │
-│  │  - StakeholderExtractor                   │  │
-│  └───────────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────────┐  │
-│  │        Integration Layer                  │  │
-│  │  - ReminderManager                        │  │
-│  │  - CalendarService                        │  │
-│  │  - NotionMCPService (Desktop/Code only)   │  │
-│  │  - AppleRemindersService                  │  │
-│  │  - NativeIntegrationService (iOS/iPadOS)  │  │
-│  └───────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────┘
-                   │
-                   ↓
-┌─────────────────────────────────────────────────┐
-│              Configuration Storage              │
-│  ┌─────────────┬─────────────┬─────────────────┐ │
-│  │Desktop/Code │iOS/iPadOS   │Web              │ │
-│  │~/.sage/     │Session +    │Session Only     │ │
-│  │config.json  │iCloud Sync  │                 │ │
-│  └─────────────┴─────────────┴─────────────────┘ │
-└─────────────────────────────────────────────────┘
-```
-
-### プラットフォーム別機能比較
-
-| 機能 | Desktop/Code (MCP) | iOS/iPadOS (Skills) | Web (Skills) |
-|------|-------------------|-------------------|--------------|
-| タスク分析 | ✅ 完全版 | 🔮 将来対応 | 🔮 将来対応 |
-| 優先順位付け | ✅ カスタムルール | 🔮 将来対応 | 🔮 将来対応 |
-| 時間見積もり | ✅ 学習機能付き | 🔮 将来対応 | 🔮 将来対応 |
-| タスク分割 | ✅ 複雑な分割 | 🔮 将来対応 | 🔮 将来対応 |
-| 設定管理 | ✅ 永続化ファイル | 🔮 セッション+iCloud | 🔮 セッションのみ |
-| Apple Reminders | ✅ AppleScript | 🔮 ネイティブ統合 | 🔮 手動コピー |
-| Calendar統合 | ✅ AppleScript | 🔮 ネイティブ統合 | 🔮 手動入力 |
-| Notion統合 | ✅ MCP経由 | 🔮 Connector経由 | 🔮 手動コピー |
-
-> **凡例**: ✅ 実装済み、🔮 将来対応予定（プレースホルダー）
+| 機能 | Desktop/Code (Local MCP) | iOS/iPadOS/Web (Remote MCP) |
+|------|-------------------------|----------------------------|
+| タスク分析 | ✅ 完全版 | ✅ 完全版 |
+| 優先順位付け | ✅ カスタムルール | ✅ カスタムルール |
+| 時間見積もり | ✅ 学習機能付き | ✅ 学習機能付き |
+| タスク分割 | ✅ 複雑な分割 | ✅ 複雑な分割 |
+| TODOリスト管理 | ✅ 完全版 | ✅ 完全版 |
+| 設定管理 | ✅ ローカルファイル | ✅ クラウド同期 |
+| Apple Reminders | ✅ AppleScript | ✅ Remote MCP経由 |
+| Calendar統合 | ✅ AppleScript | ✅ Remote MCP経由 |
+| Notion統合 | ✅ Notion MCP | ✅ Notion MCP |
 
 ### レイヤー構成
 
-#### 1. Platform Adaptation Layer
-- プラットフォーム検出とアダプター選択
-- MCP/Skills間の統一インターフェース
-- プラットフォーム固有の最適化
-
-#### 2. MCP Interface Layer (Desktop/Code)
+#### 1. MCP Interface Layer
 - MCPプロトコルの実装
 - ツール定義とリクエストハンドリング
 - エラーハンドリングと応答フォーマット
 
-#### 3. Skills Interface Layer (iOS/iPadOS/Web)
-- Claude Skills APIの実装
-- ネイティブ統合の活用
-- セッション管理とステート保持
-
-#### 4. Setup & Config Layer
+#### 2. Setup & Config Layer
 - 初回セットアップウィザード
-- プラットフォーム別設定ストレージ
+- 設定ストレージ（ローカルファイル / クラウド）
 - 設定値の検証とバリデーション
 
-#### 5. Core Analysis Layer
+#### 3. Core Analysis Layer
 - タスクの分割と整理
 - 優先度判定ロジック
 - 時間見積もりアルゴリズム
 - 関係者抽出エンジン
 
-#### 6. Integration Layer
-- 外部サービスとの統合
-- プラットフォーム別統合方式の選択
+#### 4. Integration Layer
+- 外部サービスとの統合（Apple Reminders, Notion, Calendar）
 - データ変換とマッピング
 
 ## コンポーネントと インターフェース
@@ -194,10 +135,10 @@ interface PlatformAdapter {
 }
 
 interface PlatformInfo {
-  type: 'desktop_mcp' | 'ios_skills' | 'ipados_skills' | 'web_skills';
+  type: 'desktop_mcp' | 'remote_mcp';
   version: string;
   capabilities: PlatformCapability[];
-  nativeIntegrations: string[];
+  integrations: string[];
 }
 
 interface PlatformCapability {
@@ -218,15 +159,12 @@ interface FeatureSet {
 
 // プラットフォーム別実装
 class MCPAdapter implements PlatformAdapter {
-  // Desktop/Code向けMCP実装
+  // Desktop/Code向けMCP実装（AppleScript統合）
 }
 
-class SkillsAdapteriOS implements PlatformAdapter {
-  // iOS/iPadOS向けSkills実装（ネイティブ統合付き）
-}
-
-class SkillsAdapterWeb implements PlatformAdapter {
-  // Web向けSkills実装（基本機能のみ）
+class RemoteMCPAdapter implements PlatformAdapter {
+  // iOS/iPadOS/Web向けRemote MCP実装
+  // Remote MCPサーバー経由でDesktop版と同等の機能を提供
 }
 ```
 
@@ -443,40 +381,7 @@ interface ReminderResult {
 }
 ```
 
-### 8. NativeIntegrationService (将来対応予定 - プレースホルダー)
-
-> **注意**: このセクションは将来のiOS/iPadOS Skills対応のためのプレースホルダーです。
-> 現在、Claude Skills APIはサーバーサイドのサンドボックスで実行され、iOSのネイティブフレームワーク（EventKit等）にはアクセスできません。
-> 以下のインターフェースは、AnthropicがSkillsからデバイスAPIへのアクセスを提供した時点で実装予定です。
-
-**責任:** Claude Skills環境でのネイティブ統合（将来実装予定）
-
-```typescript
-// 🔮 将来対応予定のインターフェース
-interface NativeIntegrationService {
-  createReminder(request: ReminderRequest): Promise<ReminderResult>;
-  fetchCalendarEvents(startDate: string, endDate: string): Promise<CalendarEvent[]>;
-  findAvailableSlots(request: SlotRequest): Promise<AvailableSlot[]>;
-  createNotionPage(request: NotionPageRequest): Promise<NotionPageResult>;
-  checkPermissions(): Promise<PermissionStatus>;
-}
-
-interface PermissionStatus {
-  reminders: 'granted' | 'denied' | 'not_determined';
-  calendar: 'granted' | 'denied' | 'not_determined';
-  notion: 'granted' | 'denied' | 'not_determined';
-  canRequestPermission: boolean;
-}
-
-// 🔮 将来実装予定: iOS/iPadOS Skills実装
-// 現時点では window.claude?.reminders、window.claude?.calendar、
-// window.claude?.notion のAPIは存在しません。
-// これらは仮想的なインターフェースであり、
-// AnthropicがSkillsからデバイスAPIへのアクセスを提供した時点で
-// 実際のAPIに合わせて実装します。
-```
-
-### 9. CalendarService
+### 8. CalendarService
 
 **責任:** プラットフォーム適応型カレンダー統合と空き時間検出
 
@@ -554,7 +459,7 @@ interface ReminderResult {
   error?: string;
 }
 
-### 10. ReminderManager
+### 9. ReminderManager
 
 **責任:** リマインド設定と管理
 
@@ -583,7 +488,7 @@ interface ReminderResult {
 }
 ```
 
-### 15. RemoteMCPServer
+### 10. RemoteMCPServer
 
 **責任:** Remote MCP Server実装とHTTP/WebSocket通信
 
@@ -650,7 +555,7 @@ interface AuthResult {
 }
 ```
 
-### 16. CloudConfigManager
+### 11. CloudConfigManager
 
 **責任:** クラウドベースの設定管理とユーザーデータ同期
 
@@ -718,7 +623,7 @@ class CloudConfigManagerImpl implements CloudConfigManager {
 }
 ```
 
-### 17. WebAPIIntegrationService
+### 12. WebAPIIntegrationService
 
 **責任:** Web API経由での外部サービス統合（Remote MCP専用）
 
@@ -799,7 +704,7 @@ class AppleWebAPIService {
 }
 ```
 
-### 18. TodoListManager
+### 13. TodoListManager
 
 ```typescript
 interface TodoListManager {
@@ -866,7 +771,7 @@ interface DateRange {
 }
 ```
 
-### 19. TaskSynchronizer
+### 14. TaskSynchronizer
 
 **責任:** 複数ソース間でのタスク同期と競合解決
 
@@ -908,7 +813,7 @@ interface SyncError {
 }
 ```
 
-### 20. NotionMCPService
+### 15. NotionMCPService
 
 ```typescript
 interface NotionMCPService {
@@ -1036,10 +941,8 @@ interface IntegrationsConfig {
 }
 
 interface PlatformSpecificConfig {
-  type: 'desktop_mcp' | 'ios_skills' | 'ipados_skills' | 'web_skills';
-  nativeIntegrationsEnabled: boolean;
+  type: 'desktop_mcp' | 'remote_mcp';
   fallbackMethods: string[];
-  permissionsGranted: Record<string, boolean>;
 }
 
 interface AppleRemindersConfig {
@@ -1048,17 +951,7 @@ interface AppleRemindersConfig {
   unit: 'days' | 'hours';
   defaultList: string;
   lists: Record<string, string>;
-  platformAdaptive: boolean; // プラットフォーム適応型統合
-  preferNativeIntegration: boolean; // iOS/iPadOSでネイティブ統合を優先
-  appleScriptFallback: boolean; // macOSでAppleScript使用
-  skillsIntegration?: SkillsIntegrationConfig; // Skills版専用設定
-}
-
-interface SkillsIntegrationConfig {
-  useNativeAPI: boolean;
-  requestPermissionOnStartup: boolean;
-  fallbackToManualCopy: boolean;
-  sessionPersistence: boolean;
+  appleScriptEnabled: boolean; // macOSでAppleScript使用
 }
 
 interface NotionConfig {
@@ -1067,37 +960,21 @@ interface NotionConfig {
   unit: 'days' | 'hours';
   databaseId: string;
   databaseUrl?: string;
-  mcpServerName: string; // MCP経由でのNotion接続用（Desktop/Code専用）
+  mcpServerName: string; // MCP経由でのNotion接続用
   propertyMappings?: Record<string, string>;
-  skillsFallback?: boolean; // Skills版での手動コピー推奨フラグ
 }
 
-interface GoogleCalendarConfig {
+interface CalendarConfig {
   enabled: boolean;
   method: CalendarMethod;
-  platformAdaptive: boolean;
-  // ネイティブ統合用（iOS/iPadOS Skills）
-  preferNativeAccess: boolean;
-  nativeCalendarPermission?: boolean;
   // AppleScript用（macOS MCP）
-  appleScriptFallback: boolean;
+  appleScriptEnabled: boolean;
   // 代替手段用
   icalUrl?: string;
-  outlookIntegration?: boolean;
   manualInputFallback: boolean;
-  // 従来のAPI設定（使用されない可能性が高い）
   defaultCalendar?: string;
   conflictDetection: boolean;
   lookAheadDays: number;
-  // Skills版専用設定
-  skillsCalendarIntegration?: SkillsCalendarConfig;
-}
-
-interface SkillsCalendarConfig {
-  useNativeCalendarAPI: boolean;
-  cacheEvents: boolean;
-  cacheDurationMinutes: number;
-  requestPermissionFlow: boolean;
 }
 ```
 
@@ -1140,48 +1017,33 @@ class SageMCPServer {
 }
 ```
 
-### 2. iOS/iPadOS (Claude Skills) - 🔮 将来対応予定
+### 2. iOS/iPadOS (Remote MCP) - ✅ 実装済み
 
-> **プレースホルダー**: このセクションは将来対応予定の設計です。
-> 現在、Claude Skills APIはサーバーサイドのサンドボックスで実行され、
-> iOSのネイティブフレームワーク（EventKit等）にはアクセスできません。
+**特徴:**
+- Remote MCPサーバー経由で完全機能アクセス
+- クラウドベースの設定同期
+- Web API経由のApple Reminders/Calendar統合
+- Direct API経由のNotion統合
 
-**将来の特徴（予定）:**
-- ネイティブ統合の活用（EventKit、Reminders）
-- セッションベース設定 + iCloud同期
-- 権限管理の考慮
-- Notion Connector統合
-
-**将来の実装アプローチ（プレースホルダー）:**
+**実装アプローチ:**
 ```typescript
-// 🔮 将来実装予定: Skills Entry Point
-// 現時点では window.claude?.reminders、window.claude?.calendar は存在しません
-// AnthropicがSkillsからデバイスAPIへのアクセスを提供した時点で実装予定
-
-class SageSkillsiOS {
-  // 将来実装予定
-  // 実際のAPIが公開された時点で、そのAPIに合わせて実装します
-}
+// Remote MCP経由でのiOS/iPadOS対応
+// クライアントはHTTPS/WebSocket経由でRemote MCPサーバーに接続
+// 認証後、すべてのsage機能にアクセス可能
 ```
 
-### 3. Web (Claude Skills - Limited) - 🔮 将来対応予定
+### 3. Web (Remote MCP) - ✅ 実装済み
 
-> **プレースホルダー**: このセクションは将来対応予定の設計です。
-> Web Skills版は、Claude Skills APIが一般公開された時点で実装予定です。
+**特徴:**
+- Remote MCPサーバー経由で完全機能アクセス
+- クラウドベースの設定同期
+- Web API経由の外部サービス統合
+- OAuth認証とセキュリティ
 
-**将来の特徴（予定）:**
-- 基本機能のみ（タスク分析）
-- セッション限定設定
-- 手動コピー用テキスト生成
-- 軽量実装
-
-**将来の実装アプローチ（プレースホルダー）:**
+**実装アプローチ:**
 ```typescript
-// 🔮 将来実装予定: Web Skills Entry Point
-class SageSkillsWeb {
-  // 将来実装予定
-  // Claude Skills APIが公開された時点で実装します
-}
+// Remote MCP経由でのWeb対応
+// Webブラウザからもデスクトップ版と同等の機能を提供
 ```
 
 ### 4. プラットフォーム検出とアダプター選択
@@ -1189,35 +1051,31 @@ class SageSkillsWeb {
 ```typescript
 class PlatformDetector {
   static async detect(): Promise<PlatformInfo> {
-    // MCP環境の検出
+    // Desktop MCP環境の検出
     if (typeof process !== 'undefined' && process.env.MCP_SERVER) {
       return {
         type: 'desktop_mcp',
-        capabilities: ['file_system', 'external_process', 'mcp_integration'],
-        nativeIntegrations: ['applescript', 'notion_mcp']
+        version: '1.0.0',
+        capabilities: [
+          { name: 'file_system', available: true, requiresPermission: false, fallbackAvailable: false },
+          { name: 'applescript', available: true, requiresPermission: true, fallbackAvailable: true },
+          { name: 'mcp_integration', available: true, requiresPermission: false, fallbackAvailable: false }
+        ],
+        integrations: ['applescript', 'notion_mcp']
       };
     }
-    
-    // Claude Skills環境の検出
-    if (typeof window !== 'undefined' && window.claude) {
-      const userAgent = navigator.userAgent;
-      
-      if (userAgent.includes('iPhone') || userAgent.includes('iPad')) {
-        return {
-          type: userAgent.includes('iPad') ? 'ipados_skills' : 'ios_skills',
-          capabilities: ['native_reminders', 'native_calendar', 'session_storage'],
-          nativeIntegrations: ['reminders', 'calendar']
-        };
-      }
-      
-      return {
-        type: 'web_skills',
-        capabilities: ['session_storage'],
-        nativeIntegrations: []
-      };
-    }
-    
-    throw new Error('Unsupported platform');
+
+    // Remote MCP経由のアクセス（iOS/iPadOS/Web）
+    // これらのプラットフォームはRemote MCPサーバー経由で接続
+    return {
+      type: 'remote_mcp',
+      version: '1.0.0',
+      capabilities: [
+        { name: 'remote_access', available: true, requiresPermission: true, fallbackAvailable: false },
+        { name: 'cloud_storage', available: true, requiresPermission: false, fallbackAvailable: false }
+      ],
+      integrations: ['remote_mcp_server']
+    };
   }
 }
 
@@ -1225,15 +1083,12 @@ class PlatformDetector {
 class SageFactory {
   static async create(): Promise<SageCore> {
     const platform = await PlatformDetector.detect();
-    
+
     switch (platform.type) {
       case 'desktop_mcp':
         return new SageMCPServer();
-      case 'ios_skills':
-      case 'ipados_skills':
-        return new SageSkillsiOS();
-      case 'web_skills':
-        return new SageSkillsWeb();
+      case 'remote_mcp':
+        return new SageRemoteMCPClient();
       default:
         throw new Error(`Unsupported platform: ${platform.type}`);
     }

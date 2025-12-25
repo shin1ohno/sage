@@ -28,6 +28,12 @@ const MANAGER_KEYWORDS = [
   'リーダー',
   'team lead',
   'チームリード',
+  '部長',
+  '課長',
+  '係長',
+  '主任',
+  '社長',
+  '取締役',
 ];
 
 // Mention patterns
@@ -67,10 +73,20 @@ export class StakeholderExtractor {
     const managerInvolved = this.checkManagerInvolvement(text, teamConfig);
 
     // Add manager to stakeholders if involved
-    if (managerInvolved && teamConfig?.manager) {
-      if (!stakeholders.includes(teamConfig.manager.name)) {
-        stakeholders.push(teamConfig.manager.name);
-        matchedTeamMembers.push(teamConfig.manager);
+    if (managerInvolved) {
+      if (teamConfig?.manager) {
+        if (!stakeholders.includes(teamConfig.manager.name)) {
+          stakeholders.push(teamConfig.manager.name);
+          matchedTeamMembers.push(teamConfig.manager);
+        }
+      } else {
+        // Extract manager keywords found in text and add as stakeholders
+        const managerNames = this.extractManagerReferences(text);
+        for (const name of managerNames) {
+          if (!stakeholders.includes(name)) {
+            stakeholders.push(name);
+          }
+        }
       }
     }
 
@@ -272,6 +288,35 @@ export class StakeholderExtractor {
    */
   static getManagerPriorityBoost(): number {
     return 1; // Boost priority by 1 level (e.g., P2 -> P1)
+  }
+
+  /**
+   * Extract manager references from text (name + title patterns)
+   */
+  private static extractManagerReferences(text: string): string[] {
+    const references: Set<string> = new Set();
+
+    // Japanese name + manager title patterns (山田部長, 鈴木課長, etc.)
+    const japaneseManagerPattern = /([一-龯]{2,4})(部長|課長|係長|主任|社長|取締役|マネージャー|リーダー)/g;
+    let match;
+    while ((match = japaneseManagerPattern.exec(text)) !== null) {
+      references.add(match[1] + match[2]); // Full reference (e.g., 山田部長)
+      references.add(match[1]); // Name only (e.g., 山田)
+    }
+
+    // English name + title patterns
+    const englishManagerPattern = /(?:manager|director|lead|boss)\s+([A-Z][a-z]+)/gi;
+    while ((match = englishManagerPattern.exec(text)) !== null) {
+      references.add(match[1]);
+    }
+
+    // Title followed by name
+    const titleFirstPattern = /([A-Z][a-z]+)\s+(?:manager|director|lead)/gi;
+    while ((match = titleFirstPattern.exec(text)) !== null) {
+      references.add(match[1]);
+    }
+
+    return Array.from(references);
   }
 
   /**

@@ -332,4 +332,218 @@ end tell`;
   private escapeAppleScript(str: string): string {
     return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
+
+  /**
+   * Fetched reminder from Apple Reminders
+   */
+  public reminderFromAppleScript: ReminderFromAppleScript[] = [];
+
+  /**
+   * Fetch reminders from Apple Reminders
+   * Requirement: 12.1
+   */
+  async fetchReminders(listName?: string): Promise<ReminderFromAppleScript[]> {
+    const platform = await this.detectPlatform();
+
+    if (!platform.supportsAppleScript) {
+      return [];
+    }
+
+    try {
+      // Lazy load run-applescript
+      if (!this.runAppleScript) {
+        const module = await import('run-applescript');
+        this.runAppleScript = module.runAppleScript;
+      }
+
+      const script = this.buildFetchRemindersScript(listName);
+
+      const result = await retryWithBackoff(
+        async () => {
+          return await this.runAppleScript!(script);
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            console.error(`AppleScript fetch retry attempt ${attempt}: ${error.message}`);
+          },
+        }
+      );
+
+      // Parse the AppleScript result
+      return this.parseRemindersResult(result);
+    } catch (error) {
+      console.error('Failed to fetch reminders:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Build AppleScript for fetching reminders
+   */
+  private buildFetchRemindersScript(listName?: string): string {
+    const targetList = listName ? `list "${listName}"` : 'default list';
+
+    return `
+tell application "Reminders"
+  set reminderList to {}
+  set targetList to ${targetList}
+
+  repeat with r in reminders of targetList
+    set reminderInfo to {id of r, name of r, body of r, completed of r, due date of r, creation date of r, modification date of r, priority of r}
+    set end of reminderList to reminderInfo
+  end repeat
+
+  return reminderList
+end tell`;
+  }
+
+  /**
+   * Parse AppleScript result into reminder objects
+   */
+  private parseRemindersResult(result: string): ReminderFromAppleScript[] {
+    if (!result || result.trim() === '' || result.trim() === '{}') {
+      return [];
+    }
+
+    try {
+      // AppleScript returns a list of lists
+      // Format: {{id, name, notes, completed, dueDate, creationDate, modificationDate, priority}, ...}
+      const reminders: ReminderFromAppleScript[] = [];
+
+      // Basic parsing - AppleScript result format varies
+      // This is a simplified parser that handles common formats
+      const cleanResult = result.trim();
+
+      // If result looks like a structured list
+      if (cleanResult.startsWith('{{') || cleanResult.startsWith('{')) {
+        // Split by reminder entries (rough approximation)
+        const entries = cleanResult
+          .replace(/^\{+|\}+$/g, '')
+          .split(/\},\s*\{/);
+
+        for (const entry of entries) {
+          const parts = entry.split(',').map((p) => p.trim());
+          if (parts.length >= 2) {
+            reminders.push({
+              id: parts[0]?.replace(/"/g, '') || '',
+              title: parts[1]?.replace(/"/g, '') || 'Untitled',
+              notes: parts[2]?.replace(/"/g, '') || undefined,
+              completed: parts[3]?.toLowerCase() === 'true',
+              dueDate: this.parseAppleScriptDate(parts[4]),
+              creationDate: this.parseAppleScriptDate(parts[5]),
+              modificationDate: this.parseAppleScriptDate(parts[6]),
+              priority: parseInt(parts[7] || '0', 10) || undefined,
+            });
+          }
+        }
+      }
+
+      return reminders;
+    } catch (error) {
+      console.error('Failed to parse reminders result:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Parse AppleScript date string to ISO format
+   */
+  private parseAppleScriptDate(dateStr?: string): string | undefined {
+    if (!dateStr || dateStr === 'missing value' || dateStr === '') {
+      return undefined;
+    }
+
+    try {
+      const date = new Date(dateStr.replace(/"/g, ''));
+      if (isNaN(date.getTime())) {
+        return undefined;
+      }
+      return date.toISOString();
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Update reminder status (mark as completed/incomplete)
+   * Requirement: 12.5
+   */
+  async updateReminderStatus(
+    reminderId: string,
+    completed: boolean,
+    listName?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const platform = await this.detectPlatform();
+
+    if (!platform.supportsAppleScript) {
+      return {
+        success: false,
+        error: 'AppleScript is not supported on this platform',
+      };
+    }
+
+    try {
+      // Lazy load run-applescript
+      if (!this.runAppleScript) {
+        const module = await import('run-applescript');
+        this.runAppleScript = module.runAppleScript;
+      }
+
+      const script = this.buildUpdateStatusScript(reminderId, completed, listName);
+
+      await retryWithBackoff(
+        async () => {
+          return await this.runAppleScript!(script);
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            console.error(`AppleScript update retry attempt ${attempt}: ${error.message}`);
+          },
+        }
+      );
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to update reminder: ${(error as Error).message}`,
+      };
+    }
+  }
+
+  /**
+   * Build AppleScript for updating reminder status
+   */
+  private buildUpdateStatusScript(reminderId: string, completed: boolean, listName?: string): string {
+    const escapedId = this.escapeAppleScript(reminderId);
+    const targetList = listName ? `list "${this.escapeAppleScript(listName)}"` : 'default list';
+
+    return `
+tell application "Reminders"
+  set targetList to ${targetList}
+  repeat with r in reminders of targetList
+    if id of r is "${escapedId}" then
+      set completed of r to ${completed}
+      return "success"
+    end if
+  end repeat
+  return "not found"
+end tell`;
+  }
+}
+
+/**
+ * Reminder fetched from Apple Reminders
+ */
+export interface ReminderFromAppleScript {
+  id: string;
+  title: string;
+  notes?: string;
+  completed: boolean;
+  dueDate?: string;
+  creationDate?: string;
+  modificationDate?: string;
+  priority?: number;
 }

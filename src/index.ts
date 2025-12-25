@@ -1416,7 +1416,7 @@ async function createServer(): Promise<McpServer> {
 
   /**
    * sync_tasks - Sync tasks across all sources
-   * Requirement: 14.1, 12.6
+   * Requirement: 12.6
    */
   server.tool(
     'sync_tasks',
@@ -1493,7 +1493,7 @@ async function createServer(): Promise<McpServer> {
 
   /**
    * detect_duplicates - Detect duplicate tasks across sources
-   * Requirement: 14.2
+   * Requirement: 12.5
    */
   server.tool(
     'detect_duplicates',

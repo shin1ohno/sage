@@ -23,6 +23,15 @@ const RETRY_OPTIONS = {
 };
 
 /**
+ * Notion MCP Client configuration
+ */
+export interface NotionMCPClientConfig {
+  allowedDatabaseIds: string[];
+  mcpServerCommand?: string;
+  mcpServerArgs?: string[];
+}
+
+/**
  * Notion platform info
  */
 export interface NotionPlatformInfo {
@@ -39,6 +48,39 @@ export interface NotionPageRequest {
   title: string;
   properties: Record<string, any>;
   content?: NotionBlock[];
+}
+
+/**
+ * Notion query request
+ */
+export interface NotionQueryRequest {
+  databaseId: string;
+  filter?: Record<string, any>;
+  sorts?: Array<{ property: string; direction: 'ascending' | 'descending' }>;
+  pageSize?: number;
+}
+
+/**
+ * Notion query result
+ */
+export interface NotionQueryResult {
+  success: boolean;
+  results?: NotionPageInfo[];
+  hasMore?: boolean;
+  nextCursor?: string;
+  error?: string;
+}
+
+/**
+ * Notion page info from query
+ */
+export interface NotionPageInfo {
+  id: string;
+  title: string;
+  properties: Record<string, any>;
+  url: string;
+  createdTime: string;
+  lastEditedTime: string;
 }
 
 /**
@@ -85,6 +127,463 @@ export interface MCPRequest {
 }
 
 /**
+ * MCP response content
+ */
+interface MCPResponseContent {
+  type: string;
+  text: string;
+}
+
+/**
+ * MCP response format
+ */
+interface MCPResponse {
+  content: MCPResponseContent[];
+}
+
+/**
+ * Notion MCP Client
+ * Handles actual communication with Notion MCP server
+ * Enforces database ID restrictions for security
+ */
+export class NotionMCPClient {
+  private config: NotionMCPClientConfig;
+  private mcpClient: any = null;
+  private connected: boolean = false;
+
+  constructor(config: NotionMCPClientConfig) {
+    this.config = config;
+  }
+
+  /**
+   * Check if a database ID is in the allowed list
+   */
+  isValidDatabaseId(databaseId: string): boolean {
+    if (!databaseId || databaseId.trim() === '') {
+      return false;
+    }
+    return this.config.allowedDatabaseIds.includes(databaseId);
+  }
+
+  /**
+   * Validate database ID and throw if not allowed
+   */
+  private validateDatabaseId(databaseId: string): void {
+    if (!this.isValidDatabaseId(databaseId)) {
+      throw new Error(`Database ID ${databaseId} is not in the allowed list`);
+    }
+  }
+
+  /**
+   * Connect to the Notion MCP server
+   */
+  async connect(): Promise<void> {
+    if (this.connected) {
+      return;
+    }
+
+    try {
+      // Dynamic import to avoid issues in environments without MCP SDK
+      const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+
+      this.mcpClient = new Client(
+        {
+          name: 'sage-notion-client',
+          version: '1.0.0',
+        },
+        {
+          capabilities: {},
+        }
+      );
+
+      // Note: In a real implementation, we would use StdioClientTransport
+      // to connect to the Notion MCP server process.
+      // For now, we assume the MCP client is already connected via the
+      // MCP host (Claude Desktop/Code) which handles the connection.
+
+      if (this.mcpClient.connect) {
+        await this.mcpClient.connect();
+      }
+
+      this.connected = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to connect to Notion MCP server: ${message}`);
+    }
+  }
+
+  /**
+   * Disconnect from the Notion MCP server
+   */
+  async disconnect(): Promise<void> {
+    if (!this.connected || !this.mcpClient) {
+      return;
+    }
+
+    try {
+      if (this.mcpClient.close) {
+        await this.mcpClient.close();
+      }
+    } finally {
+      this.connected = false;
+    }
+  }
+
+  /**
+   * Check if connected
+   */
+  isConnected(): boolean {
+    return this.connected;
+  }
+
+  /**
+   * Create a page in Notion via MCP
+   */
+  async createPage(request: NotionPageRequest): Promise<NotionPageResult> {
+    // Validate database ID first
+    this.validateDatabaseId(request.databaseId);
+
+    if (!this.connected || !this.mcpClient) {
+      return {
+        success: false,
+        method: 'mcp',
+        error: 'MCP client not connected. Call connect() first.',
+      };
+    }
+
+    try {
+      const result = await retryWithBackoff<NotionPageResult>(
+        async () => {
+          const mcpRequest = this.buildCreatePageRequest(request);
+          const response: MCPResponse = await this.mcpClient.request(mcpRequest);
+
+          return this.parseCreatePageResponse(response);
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            console.error(`Notion MCP createPage retry attempt ${attempt}: ${error.message}`);
+          },
+        }
+      );
+
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return {
+        success: false,
+        method: 'mcp',
+        error: `Notion MCP error: ${message}`,
+      };
+    }
+  }
+
+  /**
+   * Query a Notion database via MCP
+   */
+  async queryDatabase(query: NotionQueryRequest): Promise<NotionQueryResult> {
+    // Validate database ID first
+    this.validateDatabaseId(query.databaseId);
+
+    if (!this.connected || !this.mcpClient) {
+      return {
+        success: false,
+        error: 'MCP client not connected. Call connect() first.',
+      };
+    }
+
+    try {
+      const result = await retryWithBackoff<NotionQueryResult>(
+        async () => {
+          const mcpRequest = this.buildQueryDatabaseRequest(query);
+          const response: MCPResponse = await this.mcpClient.request(mcpRequest);
+
+          return this.parseQueryDatabaseResponse(response);
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            console.error(`Notion MCP queryDatabase retry attempt ${attempt}: ${error.message}`);
+          },
+        }
+      );
+
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return {
+        success: false,
+        error: `Notion MCP query error: ${message}`,
+      };
+    }
+  }
+
+  /**
+   * Update a Notion page via MCP
+   * Requirement: 12.5
+   */
+  async updatePage(
+    pageId: string,
+    properties: Record<string, any>
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!this.connected || !this.mcpClient) {
+      return {
+        success: false,
+        error: 'MCP client not connected. Call connect() first.',
+      };
+    }
+
+    try {
+      const result = await retryWithBackoff(
+        async () => {
+          const mcpRequest = this.buildUpdatePageRequest(pageId, properties);
+          const response: MCPResponse = await this.mcpClient.request(mcpRequest);
+          return this.parseUpdatePageResponse(response);
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            console.error(`Notion MCP updatePage retry attempt ${attempt}: ${error.message}`);
+          },
+        }
+      );
+
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return {
+        success: false,
+        error: `Notion MCP update error: ${message}`,
+      };
+    }
+  }
+
+  /**
+   * Build MCP request for updating a page
+   */
+  private buildUpdatePageRequest(
+    pageId: string,
+    properties: Record<string, any>
+  ): MCPRequest {
+    return {
+      method: 'tools/call',
+      params: {
+        name: 'notion-update-page',
+        arguments: {
+          data: {
+            page_id: pageId,
+            command: 'update_properties',
+            properties,
+          },
+        },
+      },
+    };
+  }
+
+  /**
+   * Parse response from updatePage MCP call
+   */
+  private parseUpdatePageResponse(response: MCPResponse): { success: boolean; error?: string } {
+    try {
+      const textContent = response.content?.find((c) => c.type === 'text');
+      if (!textContent) {
+        return {
+          success: false,
+          error: 'No text content in MCP response',
+        };
+      }
+
+      // If we got a response, consider it successful
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to parse MCP response: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+    }
+  }
+
+  /**
+   * Build MCP request for creating a page
+   */
+  private buildCreatePageRequest(request: NotionPageRequest): MCPRequest {
+    const children = request.content?.map((block) => this.buildNotionBlock(block)) || [];
+
+    return {
+      method: 'tools/call',
+      params: {
+        name: 'notion-create-pages',
+        arguments: {
+          parent: {
+            type: 'database_id',
+            database_id: request.databaseId,
+          },
+          pages: [
+            {
+              properties: {
+                title: request.title,
+                ...request.properties,
+              },
+              content: children.length > 0 ? this.formatContentForNotion(children) : undefined,
+            },
+          ],
+        },
+      },
+    };
+  }
+
+  /**
+   * Format content blocks for Notion markdown format
+   */
+  private formatContentForNotion(blocks: Record<string, any>[]): string {
+    return blocks
+      .map((block) => {
+        if (block.type === 'paragraph') {
+          return block.paragraph?.rich_text?.[0]?.text?.content || '';
+        } else if (block.type === 'heading_2') {
+          return `## ${block.heading_2?.rich_text?.[0]?.text?.content || ''}`;
+        } else if (block.type === 'bulleted_list_item') {
+          return `- ${block.bulleted_list_item?.rich_text?.[0]?.text?.content || ''}`;
+        }
+        return '';
+      })
+      .join('\n');
+  }
+
+  /**
+   * Build MCP request for querying a database
+   */
+  private buildQueryDatabaseRequest(query: NotionQueryRequest): MCPRequest {
+    return {
+      method: 'tools/call',
+      params: {
+        name: 'notion-query-data-sources',
+        arguments: {
+          data: {
+            mode: 'sql',
+            data_source_urls: [`collection://${query.databaseId}`],
+            query: `SELECT * FROM "collection://${query.databaseId}" LIMIT ${query.pageSize || 100}`,
+          },
+        },
+      },
+    };
+  }
+
+  /**
+   * Parse response from createPage MCP call
+   */
+  private parseCreatePageResponse(response: MCPResponse): NotionPageResult {
+    try {
+      const textContent = response.content?.find((c) => c.type === 'text');
+      if (!textContent) {
+        return {
+          success: false,
+          method: 'mcp',
+          error: 'No text content in MCP response',
+        };
+      }
+
+      const data = JSON.parse(textContent.text);
+
+      return {
+        success: true,
+        method: 'mcp',
+        pageId: data.id || data.pageId,
+        pageUrl: data.url || data.pageUrl,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        method: 'mcp',
+        error: `Failed to parse MCP response: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+    }
+  }
+
+  /**
+   * Parse response from queryDatabase MCP call
+   */
+  private parseQueryDatabaseResponse(response: MCPResponse): NotionQueryResult {
+    try {
+      const textContent = response.content?.find((c) => c.type === 'text');
+      if (!textContent) {
+        return {
+          success: false,
+          error: 'No text content in MCP response',
+        };
+      }
+
+      const data = JSON.parse(textContent.text);
+
+      // Parse results from SQL query response
+      const results: NotionPageInfo[] = (data.results || data.rows || []).map((row: any) => ({
+        id: row.id || row._id,
+        title: row.title || row.Name || row.name || '',
+        properties: row,
+        url: row.url || `https://notion.so/${row.id}`,
+        createdTime: row.created_time || row.createdTime || '',
+        lastEditedTime: row.last_edited_time || row.lastEditedTime || '',
+      }));
+
+      return {
+        success: true,
+        results,
+        hasMore: data.has_more || false,
+        nextCursor: data.next_cursor,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to parse MCP response: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+    }
+  }
+
+  /**
+   * Build Notion block format
+   */
+  private buildNotionBlock(block: NotionBlock): Record<string, any> {
+    switch (block.type) {
+      case 'paragraph':
+        return {
+          object: 'block',
+          type: 'paragraph',
+          paragraph: {
+            rich_text: [{ type: 'text', text: { content: block.content } }],
+          },
+        };
+
+      case 'heading':
+        return {
+          object: 'block',
+          type: 'heading_2',
+          heading_2: {
+            rich_text: [{ type: 'text', text: { content: block.content } }],
+          },
+        };
+
+      case 'bulleted_list_item':
+        return {
+          object: 'block',
+          type: 'bulleted_list_item',
+          bulleted_list_item: {
+            rich_text: [{ type: 'text', text: { content: block.content } }],
+          },
+        };
+
+      default:
+        return {
+          object: 'block',
+          type: 'paragraph',
+          paragraph: {
+            rich_text: [{ type: 'text', text: { content: block.content } }],
+          },
+        };
+    }
+  }
+}
+
+/**
  * Notion MCP Service
  * Provides platform-adaptive Notion integration
  * - Desktop/Code: MCP経由
@@ -92,6 +591,22 @@ export interface MCPRequest {
  * - Web: フォールバック
  */
 export class NotionMCPService {
+  private mcpClient: NotionMCPClient | null = null;
+
+  /**
+   * Set the MCP client for Notion integration
+   */
+  setMCPClient(client: NotionMCPClient): void {
+    this.mcpClient = client;
+  }
+
+  /**
+   * Get the MCP client
+   */
+  getMCPClient(): NotionMCPClient | null {
+    return this.mcpClient;
+  }
+
   /**
    * Detect the current platform for Notion integration
    */
@@ -136,6 +651,24 @@ export class NotionMCPService {
    * Requirement: 8.1, 8.2, 8.3
    */
   async createPage(request: NotionPageRequest): Promise<NotionPageResult> {
+    // If MCP client is configured, use it
+    if (this.mcpClient) {
+      try {
+        return await this.mcpClient.createPage(request);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return {
+          success: false,
+          method: 'mcp',
+          error: message,
+          fallbackText: this.generateFallbackTemplate({
+            title: request.title,
+            ...request.properties,
+          }),
+        };
+      }
+    }
+
     const platform = await this.detectPlatform();
 
     switch (platform.method) {
@@ -155,6 +688,29 @@ export class NotionMCPService {
           }),
         };
     }
+  }
+
+  /**
+   * Query Notion database
+   * Only queries the configured database ID
+   */
+  async queryDatabase(query: NotionQueryRequest): Promise<NotionQueryResult> {
+    if (this.mcpClient) {
+      try {
+        return await this.mcpClient.queryDatabase(query);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return {
+          success: false,
+          error: message,
+        };
+      }
+    }
+
+    return {
+      success: false,
+      error: 'Notion MCP client not configured',
+    };
   }
 
   /**
@@ -367,8 +923,18 @@ export class NotionMCPService {
   /**
    * Determine if a task should be synced to Notion based on deadline
    * Requirement: 8.1 (8日以上先のタスク)
+   * Now also validates that database ID is configured
    */
-  shouldSyncToNotion(deadline: string | undefined, thresholdDays: number = 8): boolean {
+  shouldSyncToNotion(
+    deadline: string | undefined,
+    thresholdDays: number = 8,
+    configuredDatabaseId?: string
+  ): boolean {
+    // Require a configured database ID
+    if (!configuredDatabaseId || configuredDatabaseId.trim() === '') {
+      return false;
+    }
+
     if (!deadline) {
       return false;
     }

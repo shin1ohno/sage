@@ -1,12 +1,15 @@
 /**
  * SageCore Unit Tests
  * Requirements: 2.1, 2.2, 11.1, 7.3, 7.4
+ *
+ * 実装:
+ * - desktop_mcp: MCPAdapter
+ * - remote_mcp: RemoteMCPAdapter
  */
 
 import { SageCore } from '../../src/core/sage-core.js';
 import { MCPAdapter } from '../../src/platform/adapters/mcp-adapter.js';
-import { SkillsAdapteriOS } from '../../src/platform/adapters/skills-adapter-ios.js';
-import { SkillsAdapterWeb } from '../../src/platform/adapters/skills-adapter-web.js';
+import { RemoteMCPAdapter } from '../../src/platform/adapters/remote-mcp-adapter.js';
 import type { Task, UserConfig } from '../../src/types/index.js';
 import { DEFAULT_CONFIG } from '../../src/types/config.js';
 
@@ -49,10 +52,7 @@ describe('SageCore', () => {
     });
 
     it('should analyze tasks', async () => {
-      const tasks: Task[] = [
-        { title: 'Review PR' },
-        { title: 'Fix urgent bug' },
-      ];
+      const tasks: Task[] = [{ title: 'Review PR' }, { title: 'Fix urgent bug' }];
 
       const result = await core.analyzeTasks(tasks);
 
@@ -93,25 +93,27 @@ describe('SageCore', () => {
     });
   });
 
-  describe('with SkillsAdapteriOS', () => {
+  describe('with RemoteMCPAdapter', () => {
     let core: SageCore;
 
     beforeEach(async () => {
-      const adapter = new SkillsAdapteriOS();
+      const adapter = new RemoteMCPAdapter();
       core = new SageCore(adapter);
       await core.initialize(testConfig);
     });
 
-    it('should initialize with iOS Skills adapter', () => {
-      expect(core.getPlatformInfo().type).toBe('ios_skills');
+    it('should initialize with Remote MCP adapter', () => {
+      expect(core.getPlatformInfo().type).toBe('remote_mcp');
     });
 
-    it('should have iOS-specific features available', () => {
+    it('should have Remote MCP features available', () => {
       const features = core.getAvailableFeatures();
       expect(features.taskAnalysis).toBe(true);
-      expect(features.appleReminders).toBe(true);
-      expect(features.calendarIntegration).toBe(true);
-      expect(features.notionIntegration).toBe(true); // Notion Connector
+      expect(features.persistentConfig).toBe(true); // cloud storage
+      expect(features.appleReminders).toBe(true); // via Remote MCP Server
+      expect(features.calendarIntegration).toBe(true); // via Remote MCP Server
+      expect(features.notionIntegration).toBe(true); // via Remote MCP Server
+      expect(features.fileSystemAccess).toBe(false);
     });
 
     it('should analyze tasks', async () => {
@@ -123,64 +125,21 @@ describe('SageCore', () => {
       expect(result.analyzedTasks).toHaveLength(1);
     });
 
-    it('should provide iOS-specific recommendations', () => {
+    it('should provide Remote MCP-specific recommendations', () => {
       const recommendations = core.getIntegrationRecommendations();
 
       expect(recommendations).toContainEqual(
         expect.objectContaining({
           integration: 'reminders',
           available: true,
-          method: 'native',
+          method: 'remote',
         })
       );
       expect(recommendations).toContainEqual(
         expect.objectContaining({
           integration: 'notion',
           available: true,
-          method: 'connector',
-        })
-      );
-    });
-  });
-
-  describe('with SkillsAdapterWeb', () => {
-    let core: SageCore;
-
-    beforeEach(async () => {
-      const adapter = new SkillsAdapterWeb();
-      core = new SageCore(adapter);
-      await core.initialize(testConfig);
-    });
-
-    it('should initialize with Web Skills adapter', () => {
-      expect(core.getPlatformInfo().type).toBe('web_skills');
-    });
-
-    it('should have limited features available', () => {
-      const features = core.getAvailableFeatures();
-      expect(features.taskAnalysis).toBe(true);
-      expect(features.persistentConfig).toBe(false);
-      expect(features.appleReminders).toBe(false);
-      expect(features.notionIntegration).toBe(false);
-    });
-
-    it('should still analyze tasks', async () => {
-      const tasks: Task[] = [{ title: 'Web task' }];
-
-      const result = await core.analyzeTasks(tasks);
-
-      expect(result.success).toBe(true);
-      expect(result.analyzedTasks).toHaveLength(1);
-    });
-
-    it('should provide web-specific recommendations with fallbacks', () => {
-      const recommendations = core.getIntegrationRecommendations();
-
-      expect(recommendations).toContainEqual(
-        expect.objectContaining({
-          integration: 'reminders',
-          available: false,
-          fallback: 'manual_copy',
+          method: 'remote',
         })
       );
     });
@@ -272,10 +231,7 @@ describe('SageCore', () => {
     });
 
     it('should estimate time for tasks', async () => {
-      const tasks: Task[] = [
-        { title: 'Quick review' },
-        { title: 'Design new architecture' },
-      ];
+      const tasks: Task[] = [{ title: 'Quick review' }, { title: 'Design new architecture' }];
       const result = await core.analyzeTasks(tasks);
 
       expect(result.analyzedTasks[0].estimatedMinutes).toBeLessThan(

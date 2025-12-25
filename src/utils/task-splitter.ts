@@ -93,10 +93,22 @@ export class TaskSplitter {
    * Requirement: 11.1, 11.4
    */
   static splitTasks(input: string): SplitResult {
-    const tasks: Task[] = [];
-    const lines = this.splitIntoLines(input);
+    // Handle empty or whitespace-only input
+    const trimmedInput = input.trim();
+    if (!trimmedInput) {
+      return {
+        originalInput: input,
+        splitTasks: [],
+        splitReason: '入力が空です',
+        recommendedOrder: [],
+        dependencies: [],
+      };
+    }
 
-    if (lines.length === 1 && !this.containsMultipleTasks(input)) {
+    const tasks: Task[] = [];
+    const lines = this.splitIntoLines(trimmedInput);
+
+    if (lines.length === 1 && !this.containsMultipleTasks(trimmedInput)) {
       // Single task - check if it needs complexity-based splitting
       const task: Task = { title: input.trim() };
       const complexity = this.analyzeComplexity(task);
@@ -188,16 +200,64 @@ export class TaskSplitter {
    * Split input into individual lines/items
    */
   private static splitIntoLines(input: string): string[] {
-    // First, try to split by bullet points or numbered lists
-    const bulletSplit = input.split(/(?:^|\n)\s*[-•*]\s+/).filter(Boolean);
-    if (bulletSplit.length > 1) {
-      return bulletSplit.map((s) => s.trim());
+    const results: string[] = [];
+    let hasListItems = false;
+
+    // Split by newlines first to process each line
+    const lines = input.split('\n');
+
+    // Track if we're in a list context
+    let currentNonListText = '';
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+
+      // Check for numbered list item (1. or 1))
+      const numberedMatch = trimmedLine.match(/^\d+[.)]\s+(.+)/);
+      if (numberedMatch) {
+        hasListItems = true;
+        // Save any accumulated non-list text
+        if (currentNonListText.trim()) {
+          results.push(currentNonListText.trim());
+          currentNonListText = '';
+        }
+        results.push(numberedMatch[1].trim());
+        continue;
+      }
+
+      // Check for bullet point (-, *, •)
+      const bulletMatch = trimmedLine.match(/^[-•*]\s+(.+)/);
+      if (bulletMatch) {
+        hasListItems = true;
+        // Save any accumulated non-list text
+        if (currentNonListText.trim()) {
+          results.push(currentNonListText.trim());
+          currentNonListText = '';
+        }
+        results.push(bulletMatch[1].trim());
+        continue;
+      }
+
+      // Skip section headers and empty lines
+      if (trimmedLine === '' || trimmedLine.endsWith(':') || trimmedLine.endsWith('：')) {
+        continue;
+      }
+
+      // Accumulate non-list text
+      currentNonListText += ' ' + trimmedLine;
     }
 
-    const numberedSplit = input.split(/(?:^|\n)\s*\d+[.)]\s+/).filter(Boolean);
-    if (numberedSplit.length > 1) {
-      return numberedSplit.map((s) => s.trim());
+    // Add any remaining non-list text
+    if (currentNonListText.trim()) {
+      results.push(currentNonListText.trim());
     }
+
+    // If we found list items, return results
+    if (hasListItems && results.length > 0) {
+      return results;
+    }
+
+    // No list items found, try other splitting methods
 
     // Try splitting by Japanese conjunctions
     const conjunctionSplit = input.split(/(?:そして|また|さらに|加えて|それから)/);
@@ -205,12 +265,13 @@ export class TaskSplitter {
       return conjunctionSplit.map((s) => s.trim()).filter(Boolean);
     }
 
-    // Split by newlines
-    const newlineSplit = input.split('\n').filter((s) => s.trim());
+    // Try splitting by newlines (for plain text with multiple lines)
+    const newlineSplit = input.split('\n').map((s) => s.trim()).filter(Boolean);
     if (newlineSplit.length > 1) {
       return newlineSplit;
     }
 
+    // Return the entire input as a single item
     return [input];
   }
 
