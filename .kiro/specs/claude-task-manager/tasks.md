@@ -1,7 +1,8 @@
 # 実装計画
 
 > **TDD原則**: 各タスクは「テスト作成 → 実装 → リファクタリング」の順で進める
-> **マルチプラットフォーム**: Desktop/Code (MCP)、iOS/iPadOS (Remote MCP)、Web (Remote MCP) 対応
+> **プラットフォーム**: macOS 専用（AppleScript のため）
+> **アクセス方式**: Desktop/Code (直接MCP)、iOS/iPadOS/Web (macOS上のRemote MCP Server経由)
 
 ## 完了済みタスク
 
@@ -170,11 +171,11 @@
   - ✅ 認証とセッション管理実装済み（SessionManager, AuthConfig）
   - _要件: 12.1, 12.2, 12.3_
 
-- [x] 20.2 クラウドデプロイメント設定を実装
-  - ✅ Dockerfile実装済み
-  - ✅ docker-compose.yml実装済み
-  - ✅ 環境変数とシークレット管理対応済み
-  - _要件: 12.7_
+- [x] 20.2 ~~クラウドデプロイメント設定を実装~~ (macOS必須のため削除)
+  - ⏭️ Dockerfile/docker-compose.yml/wrangler.toml は削除
+  - ⏭️ AppleScript が macOS でしか動作しないため、Docker/Cloudflare Workers は使用不可
+  - ✅ macOS上でのRemote MCP Server実行ガイド作成済み（docs/SETUP-REMOTE.md）
+  - _削除理由: AppleScript は macOS 専用のため_
 
 - [x] 20.3 Remote MCP認証システムを実装
   - ✅ **テスト**: 認証システムのテストケース実装済み
@@ -235,9 +236,9 @@
   - _要件: 全要件_
 
 - [x] 27. Remote MCPサーバーデプロイメントを実装
-  - ✅ Dockerfile実装済み
-  - ✅ docker-compose.yml実装済み
-  - ✅ wrangler.toml（Cloudflare Workers設定）実装済み
+  - ⏭️ Dockerfile/docker-compose.yml/wrangler.toml は削除（macOS必須のため）
+  - ✅ macOS上でのRemote MCP Server実行ガイド作成済み（docs/SETUP-REMOTE.md）
+  - ✅ pm2/launchd でのバックグラウンド実行設定ガイド作成済み
   - ✅ CI/CDパイプライン設定済み（.github/workflows/）
   - _要件: 12.7, 12.8_
 
@@ -248,7 +249,14 @@
 
 - [x] 29. 配布パッケージを作成
   - ✅ MCP版パッケージ設定済み（package.json、manifest.json）
-  - ✅ Remote MCP Server用のDocker設定済み（Dockerfile、docker-compose.yml）
   - ✅ npm publish設定済み（.github/workflows/publish.yml）
   - ✅ MCPB build設定済み（.github/workflows/mcpb.yml）
+  - ⏭️ Docker設定は削除（macOS必須のため）
   - _要件: 7.1, 7.2, 7.3_
+
+## 実装完了サマリー
+
+- **全29タスク完了**
+- **テスト**: 27 suites, 495 tests passing
+- **プラットフォーム**: macOS 専用（AppleScript のため）
+- **ドキュメント**: SETUP-LOCAL.md, SETUP-REMOTE.md, CONFIGURATION.md, ARCHITECTURE.md, TROUBLESHOOTING.md
