@@ -1,29 +1,51 @@
 {
-  "name": "sage",
+  "name": "@anthropic/sage",
   "version": "0.1.0",
-  "description": "AI Task Management Assistant for Claude Desktop and Claude Code",
+  "description": "AI Task Management Assistant MCP Server for Claude Desktop and Claude Code",
   "main": "dist/index.js",
+  "bin": {
+    "sage": "dist/index.js"
+  },
   "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "test": "jest",
+    "test:coverage": "jest --coverage",
     "lint": "eslint src/**/*.ts",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "mcp",
+    "mcp-server",
     "claude",
+    "claude-desktop",
+    "claude-code",
     "task-management",
-    "ai-assistant"
+    "ai-assistant",
+    "apple-reminders",
+    "notion",
+    "calendar"
   ],
-  "author": "",
+  "author": "Anthropic",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/sage.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anthropics/sage/issues"
+  },
+  "homepage": "https://github.com/anthropics/sage#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "@notionhq/client": "^2.2.15",
-    "googleapis": "^144.0.0",
     "run-applescript": "^7.1.0",
     "zod": "^3.23.8"
   },

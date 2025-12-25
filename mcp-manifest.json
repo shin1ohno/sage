@@ -1,0 +1,75 @@
+{
+  "name": "sage",
+  "version": "0.1.0",
+  "description": "AI Task Management Assistant - タスク分析、優先順位付け、リマインド設定、カレンダー統合",
+  "author": "Anthropic",
+  "license": "MIT",
+  "repository": "https://github.com/anthropics/sage",
+  "mcpVersion": "1.0",
+  "runtime": "node",
+  "entryPoint": "dist/index.js",
+  "capabilities": {
+    "tools": true,
+    "resources": false,
+    "prompts": false
+  },
+  "tools": [
+    {
+      "name": "check_setup_status",
+      "description": "Check if sage has been configured"
+    },
+    {
+      "name": "start_setup_wizard",
+      "description": "Start the interactive setup wizard"
+    },
+    {
+      "name": "answer_wizard_question",
+      "description": "Answer a setup wizard question"
+    },
+    {
+      "name": "save_config",
+      "description": "Save configuration after setup"
+    },
+    {
+      "name": "analyze_tasks",
+      "description": "Analyze tasks for priority, time estimation, and stakeholders"
+    },
+    {
+      "name": "set_reminder",
+      "description": "Set a reminder in Apple Reminders or Notion"
+    },
+    {
+      "name": "find_available_slots",
+      "description": "Find available time slots in calendar"
+    },
+    {
+      "name": "sync_to_notion",
+      "description": "Sync a task to Notion database"
+    },
+    {
+      "name": "update_config",
+      "description": "Update sage configuration"
+    }
+  ],
+  "configuration": {
+    "configPath": "~/.sage/config.json",
+    "required": false,
+    "setupOnFirstRun": true
+  },
+  "platforms": {
+    "macos": {
+      "supported": true,
+      "features": ["apple_reminders", "calendar_applescript", "notion_mcp"]
+    },
+    "windows": {
+      "supported": true,
+      "features": ["notion_mcp"],
+      "notes": "Apple Reminders and Calendar integration not available"
+    },
+    "linux": {
+      "supported": true,
+      "features": ["notion_mcp"],
+      "notes": "Apple Reminders and Calendar integration not available"
+    }
+  }
+}
