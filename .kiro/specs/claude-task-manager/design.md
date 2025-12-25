@@ -42,7 +42,7 @@ sageは、Claude DesktopとClaude Code向けのMCPサーバーとして実装さ
 │  │        Integration Layer                  │  │
 │  │  - ReminderManager                        │  │
 │  │  - CalendarService                        │  │
-│  │  - NotionService                          │  │
+│  │  - NotionMCPService                       │  │
 │  │  - AppleRemindersService                  │  │
 │  └───────────────────────────────────────────┘  │
 └──────────────────┬──────────────────────────────┘
@@ -74,7 +74,8 @@ sageは、Claude DesktopとClaude Code向けのMCPサーバーとして実装さ
 
 #### 4. Integration Layer
 - 外部サービスとの統合
-- API呼び出しとエラーハンドリング
+- MCP経由でのNotion連携
+- Apple RemindersとGoogle Calendarの直接API統合
 - データ変換とマッピング
 
 ## コンポーネントと インターフェース
@@ -240,16 +241,71 @@ interface TeamMember {
 }
 ```
 
-### 7. CalendarService
+### 7. AppleRemindersService
 
-**責任:** カレンダー統合と空き時間検出
+**責任:** プラットフォーム適応型Apple Reminders統合
+
+```typescript
+interface AppleRemindersService {
+  createReminder(request: ReminderRequest): Promise<ReminderResult>;
+  detectPlatform(): Promise<PlatformInfo>;
+  isAvailable(): Promise<boolean>;
+}
+
+interface PlatformInfo {
+  platform: 'ios' | 'ipados' | 'macos' | 'web' | 'unknown';
+  hasNativeIntegration: boolean;
+  supportsAppleScript: boolean;
+  recommendedMethod: 'native' | 'applescript' | 'fallback';
+}
+
+interface ReminderRequest {
+  title: string;
+  notes?: string;
+  dueDate?: string;
+  list?: string;
+  priority?: 'low' | 'medium' | 'high';
+  alarms?: AlarmConfig[];
+}
+
+interface AlarmConfig {
+  type: 'absolute' | 'relative';
+  datetime?: string;
+  offsetMinutes?: number;
+}
+
+interface ReminderResult {
+  success: boolean;
+  method: 'native' | 'applescript' | 'fallback';
+  reminderId?: string;
+  error?: string;
+  platformInfo?: PlatformInfo;
+}
+```
+```
+
+### 8. CalendarService
+
+**責任:** プラットフォーム適応型カレンダー統合と空き時間検出
 
 ```typescript
 interface CalendarService {
   findAvailableSlots(request: SlotRequest, config: CalendarConfig): Promise<AvailableSlot[]>;
   fetchEvents(startDate: string, endDate: string): Promise<CalendarEvent[]>;
   calculateSuitability(slot: TimeSlot, config: CalendarConfig): SlotSuitability;
+  detectCalendarPlatform(): Promise<CalendarPlatformInfo>;
+  isCalendarAccessible(): Promise<boolean>;
 }
+
+interface CalendarPlatformInfo {
+  platform: 'ios' | 'ipados' | 'macos' | 'web' | 'unknown';
+  availableMethods: CalendarMethod[];
+  recommendedMethod: CalendarMethod;
+  requiresPermission: boolean;
+  hasNativeAccess: boolean;
+}
+
+type CalendarMethod = 'native' | 'applescript' | 'caldav' | 'ical_url' | 'manual_input' | 'outlook';
 
 interface SlotRequest {
   taskDuration: number;
@@ -268,10 +324,18 @@ interface AvailableSlot {
   reason: string;
   conflicts: string[];
   dayType: 'deep-work' | 'meeting-heavy' | 'normal';
+  source: CalendarMethod;
+}
+
+interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  isAllDay: boolean;
+  source: CalendarMethod;
 }
 ```
-
-### 8. ReminderManager
 
 **責任:** リマインド設定と管理
 
@@ -292,10 +356,68 @@ interface ReminderRequest {
 
 interface ReminderResult {
   success: boolean;
-  destination: 'apple_reminders' | 'notion';
+  destination: 'apple_reminders' | 'notion_mcp';
   reminderId?: string;
   reminderUrl?: string;
   error?: string;
+}
+
+### 9. ReminderManager
+
+**責任:** リマインド設定と管理
+
+```typescript
+interface ReminderManager {
+  setReminder(request: ReminderRequest, config: UserConfig): Promise<ReminderResult>;
+  determineDestination(task: Task, config: UserConfig): 'apple' | 'notion';
+  calculateReminderTimes(deadline: string, types: string[]): ReminderTime[];
+}
+
+interface ReminderRequest {
+  taskTitle: string;
+  reminderType: string;
+  targetDate?: string;
+  list?: string;
+  priority?: Priority;
+}
+
+interface ReminderResult {
+  success: boolean;
+  destination: 'apple_reminders' | 'notion_mcp';
+  method?: 'native' | 'applescript' | 'fallback';
+  reminderId?: string;
+  reminderUrl?: string;
+  error?: string;
+}
+```
+
+**責任:** Notion MCP経由でのNotion統合
+
+```typescript
+interface NotionMCPService {
+  createPage(request: NotionPageRequest): Promise<NotionPageResult>;
+  searchPages(query: string): Promise<NotionPage[]>;
+  updatePage(pageId: string, updates: NotionPageUpdates): Promise<NotionPageResult>;
+  isAvailable(): Promise<boolean>;
+}
+
+interface NotionPageRequest {
+  databaseId: string;
+  title: string;
+  properties: Record<string, any>;
+  content?: NotionBlock[];
+}
+
+interface NotionPageResult {
+  success: boolean;
+  pageId?: string;
+  pageUrl?: string;
+  error?: string;
+}
+
+interface NotionBlock {
+  type: 'paragraph' | 'heading' | 'bulleted_list_item';
+  content: string;
 }
 ```
 
@@ -401,6 +523,9 @@ interface AppleRemindersConfig {
   unit: 'days' | 'hours';
   defaultList: string;
   lists: Record<string, string>;
+  platformAdaptive: boolean; // プラットフォーム適応型統合
+  preferNativeIntegration: boolean; // iOS/iPadOSでネイティブ統合を優先
+  appleScriptFallback: boolean; // macOSでAppleScript使用
 }
 
 interface NotionConfig {
@@ -409,12 +534,24 @@ interface NotionConfig {
   unit: 'days' | 'hours';
   databaseId: string;
   databaseUrl?: string;
+  mcpServerName: string; // MCP経由でのNotion接続用
   propertyMappings?: Record<string, string>;
 }
 
 interface GoogleCalendarConfig {
   enabled: boolean;
-  defaultCalendar: string;
+  method: CalendarMethod;
+  platformAdaptive: boolean;
+  // ネイティブ統合用
+  preferNativeAccess: boolean;
+  // AppleScript用
+  appleScriptFallback: boolean;
+  // 代替手段用
+  icalUrl?: string;
+  outlookIntegration?: boolean;
+  manualInputFallback: boolean;
+  // 従来のAPI設定（使用されない可能性が高い）
+  defaultCalendar?: string;
   conflictDetection: boolean;
   lookAheadDays: number;
 }
