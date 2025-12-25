@@ -22,7 +22,7 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
   "mcpServers": {
     "sage": {
       "command": "npx",
-      "args": ["-y", "@anthropic/sage"]
+      "args": ["-y", "@shin1ohno/sage"]
     }
   }
 }
@@ -31,13 +31,13 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 ### Claude Code
 
 ```bash
-claude mcp add sage -- npx -y @anthropic/sage
+claude mcp add sage -- npx -y @shin1ohno/sage
 ```
 
 ### Manual Installation
 
 ```bash
-npm install -g @anthropic/sage
+npm install -g @shin1ohno/sage
 ```
 
 ## Setup
