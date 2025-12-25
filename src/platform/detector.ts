@@ -2,6 +2,13 @@
  * Platform Detector
  * Detects the running platform and provides capability information
  * Requirements: 7.1, 7.2, 7.3
+ *
+ * 現行実装: desktop_mcp（macOS, Claude Desktop/Code）
+ * 将来対応予定: ios_skills, ipados_skills, web_skills
+ *
+ * 注意: iOS/iPadOS/Web Skillsの検出ロジックはプレースホルダーです。
+ * 現時点では Claude Skills APIはサーバーサイドのサンドボックスで実行され、
+ * iOSのネイティブフレームワーク（EventKit等）にはアクセスできません。
  */
 
 // Declare window for browser environment detection

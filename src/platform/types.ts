@@ -2,6 +2,10 @@
  * Platform Types
  * Defines types for multi-platform support
  * Requirements: 7.1, 7.2, 7.3
+ *
+ * 現行実装: desktop_mcp（Claude Desktop/Code）
+ * 将来対応予定: ios_skills, ipados_skills, web_skills
+ * （Claude Skills APIがデバイスAPIへのアクセスを提供した時点で実装）
  */
 
 /**

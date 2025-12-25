@@ -1,7 +1,10 @@
 /**
  * Apple Reminders Service
- * Platform-adaptive Apple Reminders integration
+ * macOS AppleScript integration for Apple Reminders
  * Requirements: 9.1-9.6
+ *
+ * 現行実装: macOS AppleScript経由
+ * 将来対応予定: iOS/iPadOS ネイティブ統合（Claude Skills APIがデバイスAPIへのアクセスを提供した時点）
  */
 
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
@@ -148,59 +151,24 @@ export class AppleRemindersService {
 
   /**
    * Create reminder via native iOS/iPadOS API
+   * 🔮 将来対応予定: Claude Skills APIがデバイスAPIへのアクセスを提供した時点で実装
+   * 現時点では window.claude?.reminders API は存在しません
    * Requirement: 9.2
    */
   private async createNativeReminder(
-    request: ReminderRequest,
+    _request: ReminderRequest,
     platform: RemindersPlatformInfo
   ): Promise<ReminderResult> {
-    try {
-      // This would use window.claude?.reminders?.create() in Skills environment
-      const claudeReminders = (window as any).claude?.reminders;
-
-      if (!claudeReminders) {
-        return {
-          success: false,
-          method: 'native',
-          error: 'ネイティブReminders APIが利用できません',
-          platformInfo: platform,
-        };
-      }
-
-      // Use retry with exponential backoff for native API calls
-      const result = await retryWithBackoff(
-        async () => {
-          return await claudeReminders.create({
-            title: request.title,
-            notes: request.notes,
-            dueDate: request.dueDate,
-            list: request.list || 'Reminders',
-            priority: this.mapPriority(request.priority),
-          });
-        },
-        {
-          ...RETRY_OPTIONS,
-          onRetry: (error, attempt) => {
-            console.error(`Native Reminders retry attempt ${attempt}: ${error.message}`);
-          },
-        }
-      );
-
-      return {
-        success: true,
-        method: 'native',
-        reminderId: result.id,
-        reminderUrl: result.url,
-        platformInfo: platform,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        method: 'native',
-        error: `ネイティブ統合エラー: ${(error as Error).message}`,
-        platformInfo: platform,
-      };
-    }
+    // 🔮 将来対応予定: ネイティブ統合
+    // 現時点では、iOS/iPadOSでの実行時はフォールバックにリダイレクト
+    return {
+      success: false,
+      method: 'native',
+      error:
+        'ネイティブReminders統合は将来対応予定です。現在はmacOS AppleScriptのみサポートしています。',
+      platformInfo: platform,
+      fallbackText: this.generateFallbackText(_request),
+    };
   }
 
   /**

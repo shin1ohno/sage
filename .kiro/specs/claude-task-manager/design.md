@@ -2,12 +2,17 @@
 
 ## 概要
 
-sageは、Claude Desktop、Claude Code、およびClaude iOS/iPadOSアプリ向けのAIタスク管理アシスタントです。個人の作業パターンを学習し、タスクの分析、優先順位付け、スケジューリング、リマインド管理を自動化します。
+sageは、Claude DesktopおよびClaude Code向けのAIタスク管理アシスタントです。MCPサーバーとして実装され、個人の作業パターンを学習し、タスクの分析、優先順位付け、スケジューリング、リマインド管理を自動化します。
 
-プラットフォーム別実装：
-- **Claude Desktop/Code**: MCPサーバーとして実装（完全機能）
-- **Claude iOS/iPadOS**: Claude Skillsとして実装（ネイティブ統合付き）
-- **Claude Web**: Claude Skillsとして実装（基本機能）
+### プラットフォーム実装状況
+
+| プラットフォーム | 状態 | 実装方式 |
+|----------------|------|---------|
+| **Claude Desktop/Code** | ✅ 実装済み | MCPサーバー（完全機能） |
+| **Claude iOS/iPadOS** | 🔮 将来対応予定 | Claude Skills（プレースホルダー） |
+| **Claude Web** | 🔮 将来対応予定 | Claude Skills（プレースホルダー） |
+
+> **重要**: Claude Skills APIは現在サーバーサイドのサンドボックスで実行され、iOSのネイティブフレームワーク（EventKit、Reminders等）にはアクセスできません。iOS/iPadOS対応は、AnthropicがSkillsからデバイスAPIへのアクセスを提供した時点で実装予定です。
 
 システムは以下の主要コンポーネントで構成されます：
 - セットアップウィザード（初回設定）
@@ -78,14 +83,16 @@ sageは、Claude Desktop、Claude Code、およびClaude iOS/iPadOSアプリ向�
 
 | 機能 | Desktop/Code (MCP) | iOS/iPadOS (Skills) | Web (Skills) |
 |------|-------------------|-------------------|--------------|
-| タスク分析 | ✅ 完全版 | ✅ 完全版 | ✅ 基本版 |
-| 優先順位付け | ✅ カスタムルール | ✅ カスタムルール | ✅ 基本ルール |
-| 時間見積もり | ✅ 学習機能付き | ✅ 学習機能付き | ✅ 固定ルール |
-| タスク分割 | ✅ 複雑な分割 | ✅ 複雑な分割 | ✅ 基本分割 |
-| 設定管理 | ✅ 永続化ファイル | ✅ セッション+iCloud | ⚠️ セッションのみ |
-| Apple Reminders | ✅ AppleScript | ✅ **ネイティブ統合** | ❌ 手動コピー推奨 |
-| Calendar統合 | ✅ AppleScript | ✅ **ネイティブ統合** | ❌ 手動入力 |
-| Notion統合 | ✅ MCP経由 | ✅ **Connector経由** | ❌ 手動コピー推奨 |
+| タスク分析 | ✅ 完全版 | 🔮 将来対応 | 🔮 将来対応 |
+| 優先順位付け | ✅ カスタムルール | 🔮 将来対応 | 🔮 将来対応 |
+| 時間見積もり | ✅ 学習機能付き | 🔮 将来対応 | 🔮 将来対応 |
+| タスク分割 | ✅ 複雑な分割 | 🔮 将来対応 | 🔮 将来対応 |
+| 設定管理 | ✅ 永続化ファイル | 🔮 セッション+iCloud | 🔮 セッションのみ |
+| Apple Reminders | ✅ AppleScript | 🔮 ネイティブ統合 | 🔮 手動コピー |
+| Calendar統合 | ✅ AppleScript | 🔮 ネイティブ統合 | 🔮 手動入力 |
+| Notion統合 | ✅ MCP経由 | 🔮 Connector経由 | 🔮 手動コピー |
+
+> **凡例**: ✅ 実装済み、🔮 将来対応予定（プレースホルダー）
 
 ### レイヤー構成
 
@@ -383,119 +390,37 @@ interface ReminderResult {
 }
 ```
 
-### 8. NativeIntegrationService (iOS/iPadOS Skills専用)
+### 8. NativeIntegrationService (将来対応予定 - プレースホルダー)
 
-**責任:** Claude Skills環境でのネイティブ統合
+> **注意**: このセクションは将来のiOS/iPadOS Skills対応のためのプレースホルダーです。
+> 現在、Claude Skills APIはサーバーサイドのサンドボックスで実行され、iOSのネイティブフレームワーク（EventKit等）にはアクセスできません。
+> 以下のインターフェースは、AnthropicがSkillsからデバイスAPIへのアクセスを提供した時点で実装予定です。
+
+**責任:** Claude Skills環境でのネイティブ統合（将来実装予定）
 
 ```typescript
+// 🔮 将来対応予定のインターフェース
 interface NativeIntegrationService {
   createReminder(request: ReminderRequest): Promise<ReminderResult>;
   fetchCalendarEvents(startDate: string, endDate: string): Promise<CalendarEvent[]>;
   findAvailableSlots(request: SlotRequest): Promise<AvailableSlot[]>;
-  createNotionPage(request: NotionPageRequest): Promise<NotionPageResult>; // 追加
+  createNotionPage(request: NotionPageRequest): Promise<NotionPageResult>;
   checkPermissions(): Promise<PermissionStatus>;
 }
 
 interface PermissionStatus {
   reminders: 'granted' | 'denied' | 'not_determined';
   calendar: 'granted' | 'denied' | 'not_determined';
-  notion: 'granted' | 'denied' | 'not_determined'; // 追加
+  notion: 'granted' | 'denied' | 'not_determined';
   canRequestPermission: boolean;
 }
 
-// iOS/iPadOS Skills実装例
-class NativeIntegrationServiceiOS implements NativeIntegrationService {
-  async createReminder(request: ReminderRequest): Promise<ReminderResult> {
-    try {
-      // Claude iOSアプリのネイティブReminders統合を使用
-      const result = await window.claude?.reminders?.create({
-        title: request.title,
-        notes: request.notes,
-        dueDate: request.dueDate,
-        list: request.list || 'Today',
-        priority: this.mapPriority(request.priority)
-      });
-      
-      return {
-        success: true,
-        method: 'native',
-        reminderId: result.id,
-        reminderUrl: result.url
-      };
-    } catch (error) {
-      return {
-        success: false,
-        method: 'native',
-        error: `ネイティブ統合エラー: ${error.message}`
-      };
-    }
-  }
-  
-  async fetchCalendarEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
-    try {
-      // Claude iOSアプリのネイティブCalendar統合を使用
-      const events = await window.claude?.calendar?.getEvents({
-        startDate,
-        endDate,
-        includeAllDayEvents: false
-      });
-      
-      return events.map(event => ({
-        id: event.id,
-        title: event.title,
-        start: event.startDate,
-        end: event.endDate,
-        isAllDay: event.isAllDay,
-        source: 'native'
-      }));
-    } catch (error) {
-      console.error('ネイティブカレンダー統合エラー:', error);
-      return [];
-    }
-  }
-  
-  async findAvailableSlots(request: SlotRequest): Promise<AvailableSlot[]> {
-    const events = await this.fetchCalendarEvents(
-      request.startDate || new Date().toISOString(),
-      request.endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-    );
-    
-    return this.calculateAvailableSlots(events, request.taskDuration);
-  }
-  
-  async createNotionPage(request: NotionPageRequest): Promise<NotionPageResult> {
-    try {
-      // Claude iOSアプリのNotion Connector統合を使用
-      const result = await window.claude?.notion?.createPage({
-        databaseId: request.databaseId,
-        title: request.title,
-        properties: request.properties,
-        content: request.content
-      });
-      
-      return {
-        success: true,
-        pageId: result.id,
-        pageUrl: result.url
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Notion Connector統合エラー: ${error.message}`
-      };
-    }
-  }
-  
-  private mapPriority(priority?: Priority): number {
-    const priorityMap = { 'P0': 1, 'P1': 5, 'P2': 5, 'P3': 9 };
-    return priorityMap[priority] || 5;
-  }
-  
-  private calculateAvailableSlots(events: CalendarEvent[], duration: number): AvailableSlot[] {
-    // 空き時間計算ロジック（既存のCalendarServiceと同様）
-    // ネイティブデータを使用してより正確な計算が可能
-  }
-}
+// 🔮 将来実装予定: iOS/iPadOS Skills実装
+// 現時点では window.claude?.reminders、window.claude?.calendar、
+// window.claude?.notion のAPIは存在しません。
+// これらは仮想的なインターフェースであり、
+// AnthropicがSkillsからデバイスAPIへのアクセスを提供した時点で
+// 実際のAPIに合わせて実装します。
 ```
 
 ### 9. CalendarService
@@ -839,133 +764,47 @@ class SageMCPServer {
 }
 ```
 
-### 2. iOS/iPadOS (Claude Skills)
+### 2. iOS/iPadOS (Claude Skills) - 🔮 将来対応予定
 
-**特徴:**
-- ネイティブ統合の活用
-- セッションベース設定
+> **プレースホルダー**: このセクションは将来対応予定の設計です。
+> 現在、Claude Skills APIはサーバーサイドのサンドボックスで実行され、
+> iOSのネイティブフレームワーク（EventKit等）にはアクセスできません。
+
+**将来の特徴（予定）:**
+- ネイティブ統合の活用（EventKit、Reminders）
+- セッションベース設定 + iCloud同期
 - 権限管理の考慮
-- 制限された外部統合
+- Notion Connector統合
 
-**実装アプローチ:**
+**将来の実装アプローチ（プレースホルダー）:**
 ```typescript
-// Skills Entry Point
+// 🔮 将来実装予定: Skills Entry Point
+// 現時点では window.claude?.reminders、window.claude?.calendar は存在しません
+// AnthropicがSkillsからデバイスAPIへのアクセスを提供した時点で実装予定
+
 class SageSkillsiOS {
-  private nativeIntegration: NativeIntegrationService;
-  private sessionConfig: Partial<UserConfig>;
-  
-  async initialize(): Promise<void> {
-    // セッション設定の初期化
-    this.sessionConfig = await this.loadSessionConfig();
-    
-    // 権限状態の確認
-    const permissions = await this.nativeIntegration.checkPermissions();
-    if (!permissions.reminders || !permissions.calendar) {
-      await this.requestPermissions();
-    }
-  }
-  
-  async analyzeTasksWithNativeIntegration(input: string): Promise<TaskAnalysisResult> {
-    // 1. タスク分析（共通ロジック）
-    const analysis = await this.analyzeCore(input);
-    
-    // 2. ネイティブカレンダーから空き時間取得
-    const availableSlots = await this.nativeIntegration.findAvailableSlots({
-      taskDuration: analysis.totalEstimatedMinutes
-    });
-    
-    // 3. ネイティブRemindersに直接作成
-    const reminders = await Promise.all(
-      analysis.tasks.map(task => 
-        this.nativeIntegration.createReminder({
-          title: task.title,
-          dueDate: task.suggestedTimeSlot?.start,
-          priority: task.priority
-        })
-      )
-    );
-    
-    // 4. Notion Connector経由でのページ作成（長期タスク）
-    const notionPages = await Promise.all(
-      analysis.tasks
-        .filter(task => this.isLongTermTask(task))
-        .map(task => this.createNotionPage(task))
-    );
-    
-    return {
-      ...analysis,
-      availableSlots,
-      remindersCreated: reminders,
-      notionPagesCreated: notionPages,
-      integrationMethod: 'native'
-    };
-  }
-  
-  private async createNotionPage(task: AnalyzedTask): Promise<NotionPageResult> {
-    try {
-      // Claude iOSアプリのNotion Connector統合を使用
-      const result = await window.claude?.notion?.createPage({
-        databaseId: this.sessionConfig.notion?.databaseId,
-        title: task.original.title,
-        properties: {
-          Priority: { select: { name: task.priority } },
-          'Due Date': { date: { start: task.original.deadline } },
-          Stakeholders: { multi_select: task.stakeholders.map(s => ({ name: s })) }
-        }
-      });
-      
-      return {
-        success: true,
-        pageId: result.id,
-        pageUrl: result.url
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Notion Connector統合エラー: ${error.message}`
-      };
-    }
-  }
+  // 将来実装予定
+  // 実際のAPIが公開された時点で、そのAPIに合わせて実装します
 }
 ```
 
-### 3. Web (Claude Skills - Limited)
+### 3. Web (Claude Skills - Limited) - 🔮 将来対応予定
 
-**特徴:**
-- 基本機能のみ
+> **プレースホルダー**: このセクションは将来対応予定の設計です。
+> Web Skills版は、Claude Skills APIが一般公開された時点で実装予定です。
+
+**将来の特徴（予定）:**
+- 基本機能のみ（タスク分析）
 - セッション限定設定
-- 手動統合推奨
+- 手動コピー用テキスト生成
 - 軽量実装
 
-**実装アプローチ:**
+**将来の実装アプローチ（プレースホルダー）:**
 ```typescript
-// Web Skills Entry Point
+// 🔮 将来実装予定: Web Skills Entry Point
 class SageSkillsWeb {
-  private sessionConfig: BasicConfig;
-  
-  async analyzeTasksBasic(input: string): Promise<BasicTaskAnalysis> {
-    // 基本的なタスク分析のみ
-    const tasks = await this.splitAndAnalyzeTasks(input);
-    
-    return {
-      tasks,
-      recommendations: this.generateBasicRecommendations(tasks),
-      manualSteps: this.generateManualIntegrationSteps(tasks),
-      upgradePrompt: "より高度な機能はClaude DesktopまたはiOS/iPadOSアプリをご利用ください"
-    };
-  }
-  
-  private generateManualIntegrationSteps(tasks: Task[]): ManualStep[] {
-    return tasks.map(task => ({
-      task: task.title,
-      steps: [
-        `Apple Remindersに手動で追加: "${task.title}"`,
-        `期限: ${task.deadline}`,
-        `優先度: ${task.priority}`,
-        `見積時間: ${task.estimatedMinutes}分`
-      ]
-    }));
-  }
+  // 将来実装予定
+  // Claude Skills APIが公開された時点で実装します
 }
 ```
 

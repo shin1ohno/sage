@@ -1,7 +1,10 @@
 /**
  * Calendar Service
- * Platform-adaptive calendar integration
+ * macOS AppleScript integration for Calendar.app
  * Requirements: 6.1-6.9
+ *
+ * 現行実装: macOS AppleScript経由
+ * 将来対応予定: iOS/iPadOS ネイティブ統合（Claude Skills APIがデバイスAPIへのアクセスを提供した時点）
  */
 
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
@@ -182,45 +185,17 @@ export class CalendarService {
 
   /**
    * Fetch events via native iOS/iPadOS API
+   * 🔮 将来対応予定: Claude Skills APIがデバイスAPIへのアクセスを提供した時点で実装
+   * 現時点では window.claude?.calendar API は存在しません
    * Requirement: 6.2
    */
-  private async fetchNativeEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
-    try {
-      const claudeCalendar = window.claude?.calendar;
-
-      if (!claudeCalendar) {
-        return [];
-      }
-
-      // Use retry with exponential backoff for native API calls
-      const events = await retryWithBackoff(
-        async () => {
-          return await claudeCalendar.getEvents({
-            startDate,
-            endDate,
-            includeAllDayEvents: false,
-          });
-        },
-        {
-          ...RETRY_OPTIONS,
-          onRetry: (error, attempt) => {
-            console.error(`Native Calendar retry attempt ${attempt}: ${error.message}`);
-          },
-        }
-      );
-
-      return events.map((event: any) => ({
-        id: event.id,
-        title: event.title,
-        start: event.startDate,
-        end: event.endDate,
-        isAllDay: event.isAllDay,
-        source: 'native',
-      }));
-    } catch (error) {
-      console.error('ネイティブカレンダー統合エラー:', error);
-      return [];
-    }
+  private async fetchNativeEvents(_startDate: string, _endDate: string): Promise<CalendarEvent[]> {
+    // 🔮 将来対応予定: ネイティブ統合
+    // 現時点では、iOS/iPadOSでの実行時は空の配列を返す
+    console.warn(
+      'ネイティブCalendar統合は将来対応予定です。現在はmacOS AppleScriptのみサポートしています。'
+    );
+    return [];
   }
 
   /**

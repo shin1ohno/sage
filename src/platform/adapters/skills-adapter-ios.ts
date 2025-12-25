@@ -1,6 +1,11 @@
 /**
  * Skills Adapter for iOS/iPadOS
- * Platform adapter for Claude Skills on iOS/iPadOS with native integrations
+ * 🔮 将来対応予定: Claude Skills APIがデバイスAPIへのアクセスを提供した時点で実装
+ *
+ * 現時点では、Claude Skills APIはサーバーサイドのサンドボックスで実行され、
+ * iOSのネイティブフレームワーク（EventKit等）にはアクセスできません。
+ * このアダプターは将来のAPI公開に備えたプレースホルダーです。
+ *
  * Requirements: 7.2, 7.4
  */
 

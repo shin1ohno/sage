@@ -1,6 +1,10 @@
 /**
  * Skills Adapter for Web
- * Platform adapter for Claude Skills on Web with limited features
+ * 🔮 将来対応予定: Claude Skills APIが一般公開された時点で実装
+ *
+ * 現時点では、Claude Skills APIの詳細な仕様が公開されていません。
+ * このアダプターは将来のAPI公開に備えたプレースホルダーです。
+ *
  * Requirements: 7.3, 7.4
  */
 

@@ -1,10 +1,10 @@
 /**
  * Notion MCP Service
- * Platform-adaptive Notion integration
- * - Desktop/Code: MCP経由
- * - iOS/iPadOS: Notion Connector経由
- * - Web: フォールバック（手動コピー）
+ * Notion integration via MCP Server
  * Requirements: 8.1-8.5
+ *
+ * 現行実装: Notion MCP Server経由（Desktop/Code）
+ * 将来対応予定: iOS/iPadOS Notion Connector統合（Claude Skills APIが対応した時点）
  */
 
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
@@ -203,51 +203,23 @@ export class NotionMCPService {
 
   /**
    * Create page via Notion Connector (iOS/iPadOS Skills)
+   * 🔮 将来対応予定: Claude Skills APIがデバイスAPIへのアクセスを提供した時点で実装
+   * 現時点では window.claude?.notion API は存在しません
    * Requirement: 8.1, 8.2
    */
   private async createPageViaConnector(request: NotionPageRequest): Promise<NotionPageResult> {
-    try {
-      const notionConnector = window.claude?.notion;
-
-      if (!notionConnector) {
-        return {
-          success: false,
-          method: 'connector',
-          error: 'Notion Connectorが利用できません',
-        };
-      }
-
-      // Use retry with exponential backoff
-      const result = await retryWithBackoff(
-        async () => {
-          return await notionConnector.createPage({
-            databaseId: request.databaseId,
-            title: request.title,
-            properties: request.properties,
-            content: request.content,
-          });
-        },
-        {
-          ...RETRY_OPTIONS,
-          onRetry: (error, attempt) => {
-            console.error(`Notion Connector retry attempt ${attempt}: ${error.message}`);
-          },
-        }
-      );
-
-      return {
-        success: true,
-        method: 'connector',
-        pageId: result.id,
-        pageUrl: result.url,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        method: 'connector',
-        error: `Notion Connector エラー: ${(error as Error).message}`,
-      };
-    }
+    // 🔮 将来対応予定: Notion Connector統合
+    // 現時点では、iOS/iPadOSでの実行時はフォールバックを返す
+    return {
+      success: false,
+      method: 'connector',
+      error:
+        'Notion Connector統合は将来対応予定です。現在はNotion MCP Server経由のみサポートしています。',
+      fallbackText: this.generateFallbackTemplate({
+        title: request.title,
+        ...request.properties,
+      }),
+    };
   }
 
   /**
