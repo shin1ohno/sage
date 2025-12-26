@@ -8,7 +8,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # sage requires macOS for AppleScript/EventKit integration
+    runs-on: macos-latest
 
     strategy:
       matrix:
