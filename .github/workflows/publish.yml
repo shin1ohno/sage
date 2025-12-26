@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # sage requires macOS for AppleScript/EventKit integration tests
+    runs-on: macos-latest
 
     steps:
       - name: Checkout repository
