@@ -20,6 +20,7 @@ import { TodoListManager } from "./integrations/todo-list-manager.js";
 import { TaskSynchronizer } from "./integrations/task-synchronizer.js";
 import { CalendarEventResponseService } from "./integrations/calendar-event-response.js";
 import { CalendarEventCreatorService } from "./integrations/calendar-event-creator.js";
+import { CalendarEventDeleterService } from "./integrations/calendar-event-deleter.js";
 import type { UserConfig } from "./types/index.js";
 import type { Priority } from "./types/index.js";
 import { VERSION, SERVER_NAME } from "./version.js";
@@ -34,6 +35,7 @@ let todoListManager: TodoListManager | null = null;
 let taskSynchronizer: TaskSynchronizer | null = null;
 let calendarEventResponseService: CalendarEventResponseService | null = null;
 let calendarEventCreatorService: CalendarEventCreatorService | null = null;
+let calendarEventDeleterService: CalendarEventDeleterService | null = null;
 
 /**
  * Validation result type
@@ -191,6 +193,7 @@ function initializeServices(userConfig: UserConfig): void {
   taskSynchronizer = new TaskSynchronizer();
   calendarEventResponseService = new CalendarEventResponseService();
   calendarEventCreatorService = new CalendarEventCreatorService();
+  calendarEventDeleterService = new CalendarEventDeleterService();
 }
 
 /**
@@ -1504,6 +1507,243 @@ async function createServer(): Promise<McpServer> {
                 {
                   error: true,
                   message: `カレンダーイベント作成に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  /**
+   * delete_calendar_event - Delete a calendar event
+   * Requirement: 19.1-19.9
+   */
+  server.tool(
+    "delete_calendar_event",
+    "Delete a calendar event by its ID.",
+    {
+      eventId: z.string().describe("Event ID (UUID or full ID from list_calendar_events)"),
+      calendarName: z
+        .string()
+        .optional()
+        .describe("Calendar name (searches all calendars if not specified)"),
+    },
+    async ({ eventId, calendarName }) => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message:
+                    "sageが設定されていません。check_setup_statusを実行してください。",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!calendarEventDeleterService) {
+        initializeServices(config);
+      }
+
+      try {
+        // Check platform availability
+        const isAvailable = await calendarEventDeleterService!.isEventKitAvailable();
+
+        if (!isAvailable) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message:
+                      "カレンダー統合がこのプラットフォームで利用できません。macOSで実行してください。",
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        // Delete the event
+        const result = await calendarEventDeleterService!.deleteEvent({
+          eventId,
+          calendarName,
+        });
+
+        if (result.success) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    eventId: result.eventId,
+                    title: result.title,
+                    calendarName: result.calendarName,
+                    message: result.message,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        // Handle deletion failure
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: result.error,
+                  message: result.message,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `カレンダーイベント削除に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  /**
+   * delete_calendar_events_batch - Delete multiple calendar events
+   * Requirement: 19.10-19.11
+   */
+  server.tool(
+    "delete_calendar_events_batch",
+    "Delete multiple calendar events by their IDs.",
+    {
+      eventIds: z.array(z.string()).describe("Array of event IDs to delete"),
+      calendarName: z
+        .string()
+        .optional()
+        .describe("Calendar name (searches all calendars if not specified)"),
+    },
+    async ({ eventIds, calendarName }) => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message:
+                    "sageが設定されていません。check_setup_statusを実行してください。",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!calendarEventDeleterService) {
+        initializeServices(config);
+      }
+
+      try {
+        // Check platform availability
+        const isAvailable = await calendarEventDeleterService!.isEventKitAvailable();
+
+        if (!isAvailable) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message:
+                      "カレンダー統合がこのプラットフォームで利用できません。macOSで実行してください。",
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        // Delete events in batch
+        const result = await calendarEventDeleterService!.deleteEventsBatch({
+          eventIds,
+          calendarName,
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: result.success,
+                  totalCount: result.totalCount,
+                  successCount: result.successCount,
+                  failedCount: result.failedCount,
+                  results: result.results.map((r) => ({
+                    eventId: r.eventId,
+                    success: r.success,
+                    title: r.title,
+                    calendarName: r.calendarName,
+                    error: r.error,
+                  })),
+                  message: result.message,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `カレンダーイベント一括削除に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
                 },
                 null,
                 2,
