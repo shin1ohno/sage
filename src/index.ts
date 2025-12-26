@@ -21,6 +21,7 @@ import { TaskSynchronizer } from "./integrations/task-synchronizer.js";
 import { CalendarEventResponseService } from "./integrations/calendar-event-response.js";
 import { CalendarEventCreatorService } from "./integrations/calendar-event-creator.js";
 import { CalendarEventDeleterService } from "./integrations/calendar-event-deleter.js";
+import { WorkingCadenceService } from "./services/working-cadence.js";
 import type { UserConfig } from "./types/index.js";
 import type { Priority } from "./types/index.js";
 import { VERSION, SERVER_NAME } from "./version.js";
@@ -36,6 +37,7 @@ let taskSynchronizer: TaskSynchronizer | null = null;
 let calendarEventResponseService: CalendarEventResponseService | null = null;
 let calendarEventCreatorService: CalendarEventCreatorService | null = null;
 let calendarEventDeleterService: CalendarEventDeleterService | null = null;
+let workingCadenceService: WorkingCadenceService | null = null;
 
 /**
  * Validation result type
@@ -194,6 +196,7 @@ function initializeServices(userConfig: UserConfig): void {
   calendarEventResponseService = new CalendarEventResponseService();
   calendarEventCreatorService = new CalendarEventCreatorService();
   calendarEventDeleterService = new CalendarEventDeleterService();
+  workingCadenceService = new WorkingCadenceService();
 }
 
 /**
@@ -2492,6 +2495,105 @@ async function createServer(): Promise<McpServer> {
                 {
                   error: true,
                   message: `重複検出に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  /**
+   * get_working_cadence - Get user's working rhythm information
+   * Requirement: 32.1-32.10
+   */
+  server.tool(
+    "get_working_cadence",
+    "Get user's working rhythm including deep work days, meeting-heavy days, and scheduling recommendations.",
+    {
+      dayOfWeek: z
+        .enum([
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday",
+          "Saturday",
+          "Sunday",
+        ])
+        .optional()
+        .describe("Get info for a specific day of week"),
+      date: z
+        .string()
+        .optional()
+        .describe(
+          "Get info for a specific date in ISO 8601 format (e.g., 2025-01-15)",
+        ),
+    },
+    async ({ dayOfWeek, date }) => {
+      // Initialize service if not already done
+      if (!workingCadenceService) {
+        workingCadenceService = new WorkingCadenceService();
+      }
+
+      try {
+        const result = await workingCadenceService.getWorkingCadence({
+          dayOfWeek,
+          date,
+        });
+
+        if (!result.success) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message: result.error || "勤務リズム情報の取得に失敗しました。",
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  user: result.user,
+                  workingHours: result.workingHours,
+                  weeklyPattern: result.weeklyPattern,
+                  deepWorkBlocks: result.deepWorkBlocks,
+                  weeklyReview: result.weeklyReview,
+                  specificDay: result.specificDay,
+                  recommendations: result.recommendations,
+                  summary: result.summary,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `勤務リズム情報の取得に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
                 },
                 null,
                 2,

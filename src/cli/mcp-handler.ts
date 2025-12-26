@@ -17,6 +17,7 @@ import { TaskSynchronizer } from '../integrations/task-synchronizer.js';
 import { CalendarEventResponseService, type EventResponseType } from '../integrations/calendar-event-response.js';
 import { CalendarEventCreatorService } from '../integrations/calendar-event-creator.js';
 import { CalendarEventDeleterService } from '../integrations/calendar-event-deleter.js';
+import { WorkingCadenceService } from '../services/working-cadence.js';
 import type { UserConfig, Priority } from '../types/index.js';
 
 // Protocol version
@@ -93,6 +94,7 @@ class MCPHandlerImpl implements MCPHandler {
   private calendarEventResponseService: CalendarEventResponseService | null = null;
   private calendarEventCreatorService: CalendarEventCreatorService | null = null;
   private calendarEventDeleterService: CalendarEventDeleterService | null = null;
+  private workingCadenceService: WorkingCadenceService | null = null;
   private initialized: boolean = false;
 
   private tools: Map<string, { definition: ToolDefinition; handler: ToolHandler }> = new Map();
@@ -138,6 +140,7 @@ class MCPHandlerImpl implements MCPHandler {
     this.calendarEventResponseService = new CalendarEventResponseService();
     this.calendarEventCreatorService = new CalendarEventCreatorService();
     this.calendarEventDeleterService = new CalendarEventDeleterService();
+    this.workingCadenceService = new WorkingCadenceService();
   }
 
   /**
@@ -1991,6 +1994,110 @@ class MCPHandlerImpl implements MCPHandler {
                   {
                     error: true,
                     message: `重複検出に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+      }
+    );
+
+    // get_working_cadence
+    this.registerTool(
+      {
+        name: 'get_working_cadence',
+        description:
+          "Get user's working rhythm including deep work days, meeting-heavy days, and scheduling recommendations.",
+        inputSchema: {
+          type: 'object',
+          properties: {
+            dayOfWeek: {
+              type: 'string',
+              enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+              description: 'Get info for a specific day of week',
+            },
+            date: {
+              type: 'string',
+              description: 'Get info for a specific date in ISO 8601 format (e.g., 2025-01-15)',
+            },
+          },
+        },
+      },
+      async (args) => {
+        // Initialize service if not already done
+        if (!this.workingCadenceService) {
+          this.workingCadenceService = new WorkingCadenceService();
+        }
+
+        try {
+          const dayOfWeek = args.dayOfWeek as
+            | 'Monday'
+            | 'Tuesday'
+            | 'Wednesday'
+            | 'Thursday'
+            | 'Friday'
+            | 'Saturday'
+            | 'Sunday'
+            | undefined;
+          const date = args.date as string | undefined;
+
+          const result = await this.workingCadenceService.getWorkingCadence({
+            dayOfWeek,
+            date,
+          });
+
+          if (!result.success) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      error: true,
+                      message: result.error || '勤務リズム情報の取得に失敗しました。',
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    user: result.user,
+                    workingHours: result.workingHours,
+                    weeklyPattern: result.weeklyPattern,
+                    deepWorkBlocks: result.deepWorkBlocks,
+                    weeklyReview: result.weeklyReview,
+                    specificDay: result.specificDay,
+                    recommendations: result.recommendations,
+                    summary: result.summary,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message: `勤務リズム情報の取得に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
                   },
                   null,
                   2
