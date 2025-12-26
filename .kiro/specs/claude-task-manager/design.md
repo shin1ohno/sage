@@ -1575,13 +1575,447 @@ class PluginManager {
 ```typescript
 class ConfigMigrator {
   private migrations: Map<string, (config: any) => any> = new Map();
-  
+
   migrate(config: any, fromVersion: string, toVersion: string): any {
     // バージョン間の設定マイグレーション
   }
-  
+
   addMigration(version: string, migrationFn: (config: any) => any): void {
     this.migrations.set(version, migrationFn);
+  }
+}
+```
+
+## カレンダーイベント返信機能
+
+### 14. CalendarEventResponseService
+
+**責任:** カレンダーイベントへの返信（承諾/辞退/仮承諾）の処理
+
+```typescript
+type EventResponseType = 'accept' | 'decline' | 'tentative';
+
+interface EventResponseRequest {
+  eventId: string;
+  response: EventResponseType;
+  comment?: string;
+}
+
+interface EventResponseBatchRequest {
+  eventIds: string[];
+  response: EventResponseType;
+  comment?: string;
+}
+
+interface EventResponseResult {
+  success: boolean;
+  eventId: string;
+  title: string;
+  action: 'responded' | 'skipped' | 'failed';
+  reason: string;
+  method?: 'eventkit' | 'google_api' | 'calendar_app';
+}
+
+interface BatchResponseResult {
+  success: boolean;
+  summary: {
+    total: number;
+    responded: number;
+    skipped: number;
+    failed: number;
+  };
+  details: {
+    responded: EventResponseResult[];
+    skipped: EventResponseResult[];
+    failed: EventResponseResult[];
+  };
+  message: string;
+}
+
+interface CalendarEventResponseService {
+  respondToEvent(request: EventResponseRequest): Promise<EventResponseResult>;
+  respondToEventsBatch(request: EventResponseBatchRequest): Promise<BatchResponseResult>;
+  canRespondToEvent(eventId: string): Promise<EventEligibility>;
+}
+
+interface EventEligibility {
+  canRespond: boolean;
+  reason?: string;
+  isOrganizer: boolean;
+  hasAttendees: boolean;
+  isReadOnly: boolean;
+  calendarType: 'google' | 'icloud' | 'exchange' | 'local';
+}
+```
+
+### カレンダータイプ検出と返信戦略
+
+```typescript
+class CalendarEventResponseServiceImpl implements CalendarEventResponseService {
+
+  /**
+   * イベントIDからカレンダータイプを検出
+   */
+  private detectCalendarType(eventId: string): CalendarType {
+    if (eventId.includes('@google.com')) {
+      return 'google';
+    } else if (eventId.includes('@icloud.com')) {
+      return 'icloud';
+    } else if (eventId.includes('@outlook.com') || eventId.includes('@exchange')) {
+      return 'exchange';
+    }
+    return 'local';
+  }
+
+  /**
+   * イベントへの返信
+   */
+  async respondToEvent(request: EventResponseRequest): Promise<EventResponseResult> {
+    // 1. イベント情報取得
+    const event = await this.fetchEventDetails(request.eventId);
+
+    // 2. 返信可否チェック
+    const eligibility = await this.canRespondToEvent(request.eventId);
+    if (!eligibility.canRespond) {
+      return {
+        success: false,
+        eventId: request.eventId,
+        title: event.title,
+        action: 'skipped',
+        reason: eligibility.reason || '返信できません'
+      };
+    }
+
+    // 3. カレンダータイプに応じた返信処理
+    const calendarType = this.detectCalendarType(request.eventId);
+
+    switch (calendarType) {
+      case 'google':
+        return this.respondViaGoogleAPI(request, event);
+      case 'icloud':
+      case 'local':
+        return this.respondViaEventKit(request, event);
+      case 'exchange':
+        return this.respondViaCalendarApp(request, event);
+      default:
+        return this.respondViaCalendarApp(request, event);
+    }
+  }
+
+  /**
+   * イベントへの返信可否チェック
+   */
+  async canRespondToEvent(eventId: string): Promise<EventEligibility> {
+    const event = await this.fetchEventDetails(eventId);
+
+    // 主催者チェック
+    if (event.organizer?.isCurrentUser) {
+      return {
+        canRespond: false,
+        reason: '主催者のためスキップ',
+        isOrganizer: true,
+        hasAttendees: event.attendees?.length > 0,
+        isReadOnly: false,
+        calendarType: this.detectCalendarType(eventId)
+      };
+    }
+
+    // 出席者チェック（個人の予定）
+    if (!event.attendees || event.attendees.length === 0) {
+      return {
+        canRespond: false,
+        reason: '出席者なしのためスキップ',
+        isOrganizer: false,
+        hasAttendees: false,
+        isReadOnly: false,
+        calendarType: this.detectCalendarType(eventId)
+      };
+    }
+
+    // 読み取り専用カレンダーチェック
+    if (event.calendar?.isReadOnly) {
+      return {
+        canRespond: false,
+        reason: '読み取り専用カレンダー',
+        isOrganizer: false,
+        hasAttendees: true,
+        isReadOnly: true,
+        calendarType: this.detectCalendarType(eventId)
+      };
+    }
+
+    return {
+      canRespond: true,
+      isOrganizer: false,
+      hasAttendees: true,
+      isReadOnly: false,
+      calendarType: this.detectCalendarType(eventId)
+    };
+  }
+}
+```
+
+### Google Calendar API返信
+
+```typescript
+class GoogleCalendarResponseService {
+  private oauth2Client: OAuth2Client;
+
+  async respondToEvent(
+    eventId: string,
+    calendarId: string,
+    response: EventResponseType,
+    comment?: string
+  ): Promise<EventResponseResult> {
+    try {
+      // Google Calendar APIでイベント取得
+      const calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
+
+      const event = await calendar.events.get({
+        calendarId,
+        eventId: this.extractGoogleEventId(eventId)
+      });
+
+      // 自分の出席者エントリを更新
+      const updatedAttendees = event.data.attendees?.map(attendee => {
+        if (attendee.self) {
+          return {
+            ...attendee,
+            responseStatus: response === 'accept' ? 'accepted' :
+                           response === 'decline' ? 'declined' : 'tentative',
+            comment: comment
+          };
+        }
+        return attendee;
+      });
+
+      // イベント更新
+      await calendar.events.patch({
+        calendarId,
+        eventId: this.extractGoogleEventId(eventId),
+        requestBody: {
+          attendees: updatedAttendees
+        },
+        sendUpdates: 'all' // 主催者に通知を送信
+      });
+
+      return {
+        success: true,
+        eventId,
+        title: event.data.summary || '',
+        action: 'responded',
+        reason: `${response === 'decline' ? '辞退' : response === 'accept' ? '承諾' : '仮承諾'}しました`,
+        method: 'google_api'
+      };
+    } catch (error) {
+      return {
+        success: false,
+        eventId,
+        title: '',
+        action: 'failed',
+        reason: `Google API エラー: ${error.message}`,
+        method: 'google_api'
+      };
+    }
+  }
+
+  private extractGoogleEventId(eventKitId: string): string {
+    // EventKitのIDからGoogle Event IDを抽出
+    // 形式: "xxxxx@google.com" または base64エンコード
+    const match = eventKitId.match(/([a-zA-Z0-9_-]+)@google\.com/);
+    return match ? match[1] : eventKitId;
+  }
+}
+```
+
+### EventKit経由の返信（iCloud/ローカル）
+
+```typescript
+class EventKitResponseService {
+
+  async respondToEvent(
+    eventId: string,
+    response: EventResponseType
+  ): Promise<EventResponseResult> {
+    // AppleScriptObjCを使用してEventKitにアクセス
+    const script = this.buildEventKitResponseScript(eventId, response);
+
+    try {
+      const result = await runAppleScript(script);
+      return JSON.parse(result);
+    } catch (error) {
+      // EventKitで直接変更できない場合、Calendar.appを開く
+      return this.fallbackToCalendarApp(eventId, response);
+    }
+  }
+
+  private buildEventKitResponseScript(eventId: string, response: EventResponseType): string {
+    const statusCode = response === 'accept' ? 1 : response === 'decline' ? 2 : 3;
+
+    return `
+use AppleScript version "2.7"
+use framework "Foundation"
+use framework "EventKit"
+use scripting additions
+
+set theStore to current application's EKEventStore's alloc()'s init()
+theStore's requestFullAccessToEventsWithCompletion:(missing value)
+delay 0.5
+
+set theEvent to theStore's eventWithIdentifier:"${eventId}"
+
+if theEvent is missing value then
+  return "{\\"success\\": false, \\"reason\\": \\"イベントが見つかりません\\"}"
+end if
+
+-- 出席者の中から自分を探す
+set attendees to theEvent's attendees()
+if attendees is missing value or (count of attendees) = 0 then
+  return "{\\"success\\": false, \\"reason\\": \\"出席者なし\\"}"
+end if
+
+-- 注意: EKParticipantは読み取り専用
+-- Calendar.appへのフォールバックが必要な場合あり
+set eventTitle to (theEvent's title()) as text
+return "{\\"success\\": true, \\"title\\": \\"" & eventTitle & "\\", \\"needsFallback\\": true}"
+`;
+  }
+
+  private async fallbackToCalendarApp(
+    eventId: string,
+    response: EventResponseType
+  ): Promise<EventResponseResult> {
+    // Calendar.appを使用してイベントを開く
+    const script = `
+tell application "Calendar"
+  activate
+  -- calendar:// URLスキームを使用してイベントを開く
+end tell
+`;
+
+    await runAppleScript(script);
+
+    return {
+      success: false,
+      eventId,
+      title: '',
+      action: 'failed',
+      reason: 'Calendar.appを開きました。手動で返信してください。',
+      method: 'calendar_app'
+    };
+  }
+}
+```
+
+### バッチ処理の実装
+
+```typescript
+class BatchEventResponseProcessor {
+  private responseService: CalendarEventResponseService;
+  private concurrency = 5; // 同時実行数
+
+  async processBatch(request: EventResponseBatchRequest): Promise<BatchResponseResult> {
+    const results: EventResponseResult[] = [];
+
+    // 並列処理（レート制限付き）
+    for (let i = 0; i < request.eventIds.length; i += this.concurrency) {
+      const batch = request.eventIds.slice(i, i + this.concurrency);
+      const batchResults = await Promise.all(
+        batch.map(eventId =>
+          this.responseService.respondToEvent({
+            eventId,
+            response: request.response,
+            comment: request.comment
+          })
+        )
+      );
+      results.push(...batchResults);
+
+      // レート制限対策
+      if (i + this.concurrency < request.eventIds.length) {
+        await this.delay(500);
+      }
+    }
+
+    // 結果の集計
+    const responded = results.filter(r => r.action === 'responded');
+    const skipped = results.filter(r => r.action === 'skipped');
+    const failed = results.filter(r => r.action === 'failed');
+
+    return {
+      success: failed.length === 0,
+      summary: {
+        total: results.length,
+        responded: responded.length,
+        skipped: skipped.length,
+        failed: failed.length
+      },
+      details: {
+        responded,
+        skipped,
+        failed
+      },
+      message: this.buildSummaryMessage(responded.length, skipped.length, failed.length, request.response)
+    };
+  }
+
+  private buildSummaryMessage(
+    responded: number,
+    skipped: number,
+    failed: number,
+    response: EventResponseType
+  ): string {
+    const action = response === 'decline' ? '辞退' :
+                   response === 'accept' ? '承諾' : '仮承諾';
+    const total = responded + skipped + failed;
+
+    if (failed === 0 && skipped === 0) {
+      return `${total}件のイベントを${action}しました。`;
+    } else if (failed === 0) {
+      return `${total}件中${responded}件のイベントを${action}しました。${skipped}件はスキップされました。`;
+    } else {
+      return `${total}件中${responded}件のイベントを${action}しました。${skipped}件スキップ、${failed}件失敗。`;
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+```
+
+### Google Calendar OAuth2設定
+
+Google Calendar APIを使用するには、OAuth2認証が必要です。
+
+```typescript
+interface GoogleCalendarConfig {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  scopes: string[];
+}
+
+// 必要なスコープ
+const GOOGLE_CALENDAR_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.events'  // イベントの読み書き
+];
+```
+
+**設定ファイル追加** (`~/.sage/config.json`):
+```json
+{
+  "integrations": {
+    "googleCalendar": {
+      "enabled": true,
+      "clientId": "your-client-id.apps.googleusercontent.com",
+      "clientSecret": "your-client-secret",
+      "tokens": {
+        "access_token": "...",
+        "refresh_token": "...",
+        "expiry_date": 1234567890000
+      }
+    }
   }
 }
 ```

@@ -408,10 +408,64 @@
   - ✅ 繰り返しイベント展開テスト
   - ✅ タイムゾーン処理テスト
 
+## 未実装タスク
+
+- [ ] 34. カレンダーイベント返信機能の実装
+- [ ] 34.1 CalendarEventResponseService基盤の実装
+  - 📋 `EventResponseType` 型定義（accept/decline/tentative）
+  - 📋 `EventResponseRequest`/`EventResponseResult` インターフェース
+  - 📋 `CalendarEventResponseService` クラスの作成
+  - 📋 イベント返信可否チェック（`canRespondToEvent`）
+  - _要件: 17.1, 17.7, 17.9, 17.10_
+
+- [ ] 34.2 カレンダータイプ検出と返信戦略
+  - 📋 イベントIDからカレンダータイプ検出（Google/iCloud/Exchange/Local）
+  - 📋 カレンダータイプに応じた返信メソッド選択
+  - 📋 主催者/出席者/読み取り専用チェック
+  - _要件: 17.5, 17.6, 17.7, 17.9, 17.10_
+
+- [ ] 34.3 EventKit経由の返信（iCloud/ローカル）
+  - 📋 AppleScriptObjCを使用したEventKitアクセス
+  - 📋 EKParticipant読み取り専用制約への対応
+  - 📋 Calendar.appフォールバック処理
+  - _要件: 17.6_
+
+- [ ] 34.4 Google Calendar API返信（オプション）
+  - 📋 Google Calendar OAuth2認証設定
+  - 📋 イベントIDからGoogle Event IDの抽出
+  - 📋 出席者ステータス更新API呼び出し
+  - 📋 主催者への通知送信
+  - _要件: 17.5_
+
+- [ ] 34.5 バッチ処理機能
+  - 📋 `respond_to_calendar_events_batch` MCPツール
+  - 📋 並列処理（レート制限付き）
+  - 📋 結果の集計とサマリー生成
+  - _要件: 17.3, 17.4, 17.12_
+
+- [ ] 34.6 MCPツールの登録
+  - 📋 `respond_to_calendar_event` ツールを index.ts に追加
+  - 📋 `respond_to_calendar_events_batch` ツールを index.ts に追加
+  - 📋 mcp-handler.ts への追加（HTTPモード対応）
+  - _要件: 17.1, 17.3, 17.11_
+
+- [ ] 34.7 エッジケース処理
+  - 📋 繰り返しイベントの単一インスタンス処理
+  - 📋 終日イベントの処理
+  - 📋 個人の予定（出席者なし）のスキップ
+  - _要件: 17.8, 17.9_
+
+- [ ] 34.8 テストの実装
+  - 📋 単一イベント返信テスト
+  - 📋 バッチ返信テスト
+  - 📋 主催者イベントスキップテスト
+  - 📋 出席者なしイベントスキップテスト
+  - 📋 読み取り専用カレンダーエラーテスト
+
 ## 実装完了サマリー
 
 - **完了タスク**: 33タスク
-- **未実装タスク**: 0タスク
+- **未実装タスク**: 1タスク（Task 34: カレンダーイベント返信）
 - **テスト**: 39 suites, 698 tests passing
 - **プラットフォーム**: macOS 専用（AppleScript/EventKit のため）
 - **ドキュメント**: SETUP-LOCAL.md, SETUP-REMOTE.md, CONFIGURATION.md, ARCHITECTURE.md, TROUBLESHOOTING.md
