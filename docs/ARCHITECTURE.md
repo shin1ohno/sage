@@ -348,9 +348,6 @@ sage/
 │   ├── integration/                # Integration tests
 │   └── e2e/                        # End-to-end tests
 ├── docs/                           # Documentation
-├── Dockerfile                      # Docker build
-├── docker-compose.yml              # Docker compose
-├── wrangler.toml                   # Cloudflare Workers
 └── manifest.json                   # MCP manifest
 ```
 

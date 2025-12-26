@@ -517,11 +517,15 @@ tail -f ~/Library/Logs/Claude/mcp*.log
 ### Remote MCP Server のログ
 
 ```bash
-# Docker の場合
-docker logs -f sage-remote
-
 # pm2 の場合
 pm2 logs sage-remote
+
+# launchd の場合
+tail -f /tmp/sage-remote.log
+tail -f /tmp/sage-remote.error.log
+
+# nohup の場合
+tail -f ~/.sage/server.log
 ```
 
 ---
