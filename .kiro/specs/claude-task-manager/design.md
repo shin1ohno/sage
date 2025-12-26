@@ -1988,7 +1988,8 @@ class BatchEventResponseProcessor {
 
 ### 15. CalendarEventDeleterService
 
-カレンダーイベントの削除をCalendar.app AppleScript経由で実行するサービス。
+カレンダーイベントの削除をEventKit（AppleScriptObjC）経由で実行するサービス。
+`create_calendar_event`と同じアプローチでEventKitフレームワークを使用。
 
 ```typescript
 interface DeleteCalendarEventRequest {
@@ -2051,40 +2052,81 @@ function extractUid(eventId: string): string {
 }
 ```
 
-### Calendar.app AppleScript削除スクリプト
+### EventKit AppleScriptObjC削除スクリプト
 
 #### カレンダー指定時
 
 ```applescript
-tell application "Calendar"
-    tell calendar "${calendarName}"
-        try
-            set targetEvent to first event whose uid is "${eventId}"
-            set eventTitle to summary of targetEvent
-            delete targetEvent
-            return "SUCCESS|" & eventTitle
-        on error
-            return "ERROR|イベントが見つかりません"
-        end try
-    end tell
-end tell
+use AppleScript version "2.7"
+use framework "Foundation"
+use framework "EventKit"
+use scripting additions
+
+set theStore to current application's EKEventStore's alloc()'s init()
+theStore's requestFullAccessToEventsWithCompletion:(missing value)
+delay 0.5
+
+-- Find calendar by name
+set targetCalendar to missing value
+set allCalendars to theStore's calendarsForEntityType:0
+repeat with aCal in allCalendars
+  if ((aCal's title()) as text) is equal to "${calendarName}" then
+    set targetCalendar to aCal
+    exit repeat
+  end if
+end repeat
+
+if targetCalendar is missing value then
+  return "ERROR|カレンダーが見つかりません"
+end if
+
+-- Find event by identifier
+set theEvent to theStore's eventWithIdentifier:"${eventId}"
+if theEvent is missing value then
+  return "ERROR|イベントが見つかりません"
+end if
+
+-- Delete event
+set eventTitle to (theEvent's title()) as text
+set deleteSuccess to theStore's removeEvent:theEvent span:0 |error|:(missing value)
+
+if deleteSuccess then
+  return "SUCCESS|" & eventTitle
+else
+  return "ERROR|イベントの削除に失敗しました"
+end if
 ```
 
-#### 全カレンダー検索時
+#### 全カレンダー検索時（カレンダー未指定）
 
 ```applescript
-tell application "Calendar"
-    repeat with cal in calendars
-        try
-            set targetEvent to first event of cal whose uid is "${eventId}"
-            set eventTitle to summary of targetEvent
-            set calName to name of cal
-            delete targetEvent
-            return "SUCCESS|" & eventTitle & "|" & calName
-        end try
-    end repeat
-    return "ERROR|イベントが見つかりません"
-end tell
+use AppleScript version "2.7"
+use framework "Foundation"
+use framework "EventKit"
+use scripting additions
+
+set theStore to current application's EKEventStore's alloc()'s init()
+theStore's requestFullAccessToEventsWithCompletion:(missing value)
+delay 0.5
+
+-- Find event by identifier (searches across all calendars)
+set theEvent to theStore's eventWithIdentifier:"${eventId}"
+if theEvent is missing value then
+  return "ERROR|イベントが見つかりません"
+end if
+
+-- Get event info before deletion
+set eventTitle to (theEvent's title()) as text
+set calName to ((theEvent's calendar())'s title()) as text
+
+-- Delete event
+set deleteSuccess to theStore's removeEvent:theEvent span:0 |error|:(missing value)
+
+if deleteSuccess then
+  return "SUCCESS|" & eventTitle & "|" & calName
+else
+  return "ERROR|イベントの削除に失敗しました"
+end if
 ```
 
 ### CalendarEventDeleterService実装
@@ -2156,35 +2198,71 @@ class CalendarEventDeleterServiceImpl implements CalendarEventDeleterService {
   }
 
   private buildDeleteScript(uid: string, calendarName?: string): string {
+    const baseScript = `
+use AppleScript version "2.7"
+use framework "Foundation"
+use framework "EventKit"
+use scripting additions
+
+set theStore to current application's EKEventStore's alloc()'s init()
+theStore's requestFullAccessToEventsWithCompletion:(missing value)
+delay 0.5
+
+-- Check access
+set accessStatus to current application's EKEventStore's authorizationStatusForEntityType:0
+if accessStatus is not 3 then
+  return "ERROR|カレンダーへのアクセス権限がありません"
+end if
+`;
+
     if (calendarName) {
       const escapedCalendar = calendarName.replace(/"/g, '\\"');
-      return `
-tell application "Calendar"
-    tell calendar "${escapedCalendar}"
-        try
-            set targetEvent to first event whose uid is "${uid}"
-            set eventTitle to summary of targetEvent
-            delete targetEvent
-            return "SUCCESS|" & eventTitle
-        on error
-            return "ERROR|イベントが見つかりません"
-        end try
-    end tell
-end tell`;
+      return baseScript + `
+-- Find calendar by name
+set targetCalendar to missing value
+set allCalendars to theStore's calendarsForEntityType:0
+repeat with aCal in allCalendars
+  if ((aCal's title()) as text) is equal to "${escapedCalendar}" then
+    set targetCalendar to aCal
+    exit repeat
+  end if
+end repeat
+
+if targetCalendar is missing value then
+  return "ERROR|カレンダーが見つかりません: ${escapedCalendar}"
+end if
+
+-- Find and delete event
+set theEvent to theStore's eventWithIdentifier:"${uid}"
+if theEvent is missing value then
+  return "ERROR|イベントが見つかりません"
+end if
+
+set eventTitle to (theEvent's title()) as text
+set deleteSuccess to theStore's removeEvent:theEvent span:0 |error|:(missing value)
+
+if deleteSuccess then
+  return "SUCCESS|" & eventTitle
+else
+  return "ERROR|イベントの削除に失敗しました"
+end if`;
     } else {
-      return `
-tell application "Calendar"
-    repeat with cal in calendars
-        try
-            set targetEvent to first event of cal whose uid is "${uid}"
-            set eventTitle to summary of targetEvent
-            set calName to name of cal
-            delete targetEvent
-            return "SUCCESS|" & eventTitle & "|" & calName
-        end try
-    end repeat
-    return "ERROR|イベントが見つかりません"
-end tell`;
+      return baseScript + `
+-- Find event by identifier (searches across all calendars)
+set theEvent to theStore's eventWithIdentifier:"${uid}"
+if theEvent is missing value then
+  return "ERROR|イベントが見つかりません"
+end if
+
+set eventTitle to (theEvent's title()) as text
+set calName to ((theEvent's calendar())'s title()) as text
+set deleteSuccess to theStore's removeEvent:theEvent span:0 |error|:(missing value)
+
+if deleteSuccess then
+  return "SUCCESS|" & eventTitle & "|" & calName
+else
+  return "ERROR|イベントの削除に失敗しました"
+end if`;
     }
   }
 

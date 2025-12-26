@@ -475,9 +475,9 @@ interface CreateCalendarEventResult {
 
 #### 技術的詳細
 
-- **Calendar.app AppleScript使用**: `delete`コマンドで削除
-- **UUID抽出**: フルIDからUUID部分を抽出して使用
-- **Google Calendar同期**: Calendar.appでの削除はGoogle Calendarに同期される
+- **EventKit使用**: AppleScriptObjC経由でEventKitフレームワークを使用（`create_calendar_event`と同じ方式）
+- **UUID抽出**: フルIDからUUID部分（eventIdentifier）を抽出して使用
+- **Google Calendar同期**: EventKitでの削除はiCloud経由でGoogle Calendarに同期される
 
 #### 入力スキーマ
 

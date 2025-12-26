@@ -516,7 +516,8 @@
   - 📋 フルID/UUIDどちらも受け付ける
   - _要件: 19.4, 19.5_
 
-- [ ] 36.3 Calendar.app AppleScript削除
+- [ ] 36.3 EventKit AppleScriptObjC削除
+  - 📋 EventKit経由の削除スクリプト（`create_calendar_event`と同じ方式）
   - 📋 カレンダー指定時の削除スクリプト
   - 📋 全カレンダー検索時の削除スクリプト
   - 📋 結果パース処理
