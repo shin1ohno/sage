@@ -355,12 +355,25 @@
 
 ## 未実装タスク
 
-なし（すべてのタスクが完了しました）
+- [ ] 32. Remote MCP Server の実際の MCP ハンドリング実装
+- [ ] 32.1 HTTP Server に MCP ツール処理を統合
+  - ⚠️ **問題**: `http-server-with-config.ts` の `processMCPRequest` がプレースホルダー実装
+  - ⚠️ 現状は `{ message: 'MCP request received' }` を返すのみ
+  - 📋 `src/index.ts` の MCP サーバーロジック（ツール定義・ハンドラー）を再利用
+  - 📋 `tools/list`, `tools/call` などの MCP メソッドを実装
+  - 📋 analyze_tasks, set_reminder, list_todos 等の全ツールを HTTP 経由で利用可能に
+  - _要件: 13.1, 13.5_
+
+- [ ] 32.2 Claude iOS App 互換性の確認
+  - ⚠️ **問題**: Claude iOS は OAuth 2.0 認証のみサポート
+  - ⚠️ 現状は認証なしモードで使用（ローカルネットワーク限定）
+  - 📋 OAuth 2.0 対応の検討（将来対応）
+  - _要件: 13.2_
 
 ## 実装完了サマリー
 
-- **完了タスク**: 31タスク（全タスク完了）
-- **未実装タスク**: なし
+- **完了タスク**: 31タスク
+- **未実装タスク**: 1タスク（Remote MCP の MCP ハンドリング）
 - **テスト**: 36 suites, 653 tests passing
 - **プラットフォーム**: macOS 専用（AppleScript/EventKit のため）
 - **ドキュメント**: SETUP-LOCAL.md, SETUP-REMOTE.md, CONFIGURATION.md, ARCHITECTURE.md, TROUBLESHOOTING.md
