@@ -15,6 +15,7 @@ import {
 } from './remote-config-loader.js';
 import { createSecretAuthenticator, SecretAuthenticator } from './secret-auth.js';
 import { createMCPHandler, MCPHandler, MCPRequest } from './mcp-handler.js';
+import { createSSEStreamHandler, SSEStreamHandler } from './sse-stream-handler.js';
 
 /**
  * Options for creating the server
@@ -66,6 +67,7 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   private effectiveHost: string;
   private authenticator: SecretAuthenticator | null = null;
   private mcpHandler: MCPHandler | null = null;
+  private sseHandler: SSEStreamHandler | null = null;
 
   constructor(config: RemoteConfig, options: HTTPServerWithConfigOptions) {
     this.config = config;
@@ -98,6 +100,9 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     // Initialize MCP handler
     this.mcpHandler = await createMCPHandler();
 
+    // Initialize SSE handler for Streamable HTTP Transport (Requirement 20)
+    this.sseHandler = createSSEStreamHandler();
+
     return new Promise((resolve, reject) => {
       try {
         this.server = createServer(this.handleRequest.bind(this));
@@ -118,6 +123,11 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   async stop(): Promise<void> {
     if (!this.running || !this.server) {
       return;
+    }
+
+    // Cleanup SSE connections
+    if (this.sseHandler) {
+      this.sseHandler.cleanup();
     }
 
     return new Promise((resolve) => {
@@ -176,6 +186,13 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     // Auth token endpoint
     if (url === '/auth/token' && method === 'POST') {
       this.handleAuthToken(req, res);
+      return;
+    }
+
+    // MCP SSE endpoint for Streamable HTTP Transport (Requirement 20.1)
+    // GET /mcp establishes SSE stream for server->client notifications
+    if (url === '/mcp' && method === 'GET') {
+      this.handleMCPSSERequest(req, res);
       return;
     }
 
@@ -269,6 +286,71 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         res.end(JSON.stringify({ error: 'Invalid request body' }));
       }
     });
+  }
+
+  /**
+   * Handle GET /mcp request for SSE stream (Streamable HTTP Transport)
+   * Requirement 20.1, 20.10
+   */
+  private handleMCPSSERequest(req: IncomingMessage, res: ServerResponse): void {
+    // Requirement 20.10: Check authentication if enabled
+    if (this.isAuthEnabled()) {
+      const authHeader = req.headers.authorization;
+
+      if (!authHeader) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'Authentication required',
+          })
+        );
+        return;
+      }
+
+      const parts = authHeader.split(' ');
+      if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'Invalid Authorization header',
+          })
+        );
+        return;
+      }
+
+      const token = parts[1];
+
+      // Verify token then establish SSE connection
+      this.authenticator!.verifyToken(token).then((verifyResult) => {
+        if (!verifyResult.valid) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: verifyResult.error || 'Invalid token',
+            })
+          );
+          return;
+        }
+
+        this.establishSSEConnection(req, res);
+      });
+    } else {
+      // Requirement 20.10: authEnabled: false allows access without auth
+      this.establishSSEConnection(req, res);
+    }
+  }
+
+  /**
+   * Establish SSE connection
+   */
+  private establishSSEConnection(req: IncomingMessage, res: ServerResponse): void {
+    if (!this.sseHandler) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'SSE handler not initialized' }));
+      return;
+    }
+
+    this.sseHandler.handleSSERequest(req, res);
   }
 
   private handleMCPRequest(req: IncomingMessage, res: ServerResponse): void {
