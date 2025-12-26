@@ -316,7 +316,10 @@ theEvent's addAlarm:newAlarm`)
 
     // Build calendar selection section
     let calendarSection = `
-set targetCalendar to theStore's defaultCalendarForNewEvents()`;
+set targetCalendar to theStore's defaultCalendarForNewEvents()
+if targetCalendar is missing value then
+  return "ERROR:デフォルトカレンダーが設定されていません"
+end if`;
 
     if (request.calendarName) {
       const escapedCalendarName = request.calendarName.replace(/"/g, '\\"');
@@ -334,7 +337,8 @@ if targetCalendar is missing value then
   return "ERROR:指定されたカレンダーが見つかりません: ${escapedCalendarName}"
 end if
 
-if not ((targetCalendar's allowsContentModifications()) as boolean) then
+set canModify to (targetCalendar's allowsContentModifications()) as boolean
+if not canModify then
   return "ERROR:読み取り専用カレンダーには書き込めません: ${escapedCalendarName}"
 end if`;
     }
