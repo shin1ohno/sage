@@ -76,9 +76,7 @@ cat > ~/.sage/remote-config.json << 'EOF'
     "port": 3000,
     "host": "0.0.0.0",
     "auth": {
-      "type": "jwt",
-      "secret": "your-secure-secret-key-at-least-32-chars",
-      "expiresIn": "24h"
+      "type": "none"
     },
     "cors": {
       "allowedOrigins": ["*"]
@@ -90,6 +88,10 @@ EOF
 # 起動
 npx @shin1ohno/sage --remote --config ~/.sage/remote-config.json
 ```
+
+> **注意**: Claude iOS App は OAuth 2.0 認証のみサポートしているため、
+> 現在は `"type": "none"` で認証なしモードを使用してください。
+> ローカルネットワーク内でのみ使用することを推奨します。
 
 ### Step 3: Mac の IP アドレスを確認
 
@@ -221,7 +223,30 @@ launchctl unload ~/Library/LaunchAgents/com.sage.remote.plist
 
 Remote MCP Server は複数の認証方式をサポートしています。
 
-### JWT 認証（推奨）
+> **⚠️ Claude iOS App の制限**
+>
+> Claude iOS App は現在 **OAuth 2.0 認証のみ**をサポートしています。
+> sage は OAuth 2.0 を実装していないため、Claude iOS から使用する場合は
+> **認証なしモード（`"type": "none"`）**を使用してください。
+>
+> 以下の JWT / API Key 認証は、カスタムクライアントや curl 等での使用を想定しています。
+
+### 認証なし（Claude iOS 用）
+
+Claude iOS App から使用する場合はこの設定を使用してください。
+
+**設定:**
+```json
+{
+  "auth": {
+    "type": "none"
+  }
+}
+```
+
+**セキュリティ注意:** ローカルネットワーク内でのみ使用してください。
+
+### JWT 認証（カスタムクライアント用）
 
 最も安全で柔軟な認証方式です。
 
@@ -320,15 +345,24 @@ ngrok http 3000
 
 ### Claude iOS App での設定
 
+> **重要**: Claude iOS App は現在 **OAuth 2.0 認証のみ**をサポートしています。
+> sage は OAuth 2.0 を実装していないため、**認証なしモード**で使用してください。
+> ローカルネットワーク内でのみ使用することを推奨します。
+
 1. Claude App を開く
-2. 設定 → MCP Servers
+2. 設定 → MCP Servers（またはカスタムコネクタ）
 3. 「Add Server」をタップ
 4. 以下を入力:
-   - **Name**: sage
-   - **URL**: `https://your-domain.com/mcp` または `http://192.168.1.100:3000/mcp`
-   - **Authorization**: `Bearer <your-token>`
-5. 「Save」をタップ
-6. 「Test Connection」で接続を確認
+   - **名前**: sage
+   - **リモートMCPサーバーURL**: `http://192.168.x.x:3000/mcp`（Mac の IP アドレス）
+   - **OAuth Client ID**: （空欄のまま）
+   - **OAuth クライアントシークレット**: （空欄のまま）
+5. 「追加」をタップ
+
+**Mac の IP アドレス確認方法:**
+```bash
+ipconfig getifaddr en0
+```
 
 ---
 
