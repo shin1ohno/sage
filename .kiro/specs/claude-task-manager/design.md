@@ -654,7 +654,6 @@ interface RemoteMCPConfig {
   corsOrigins: string[];
   oauth: OAuthConfig;
   rateLimit: RateLimitConfig;
-  logging: LoggingConfig;
 }
 
 interface OAuthConfig {
@@ -1390,8 +1389,7 @@ const mockConfig: UserConfig = {
 
 ### 2. API セキュリティ
 - **認証**: 各統合サービスの適切な認証方式を使用
-- **レート制限**: API呼び出し頻度の制限と監視
-- **エラーログ**: 機密情報をログに出力しない
+- **レート制限**: API呼び出し頻度の制限
 
 ### 3. 入力検証
 - **サニタイゼーション**: ユーザー入力の適切な検証とサニタイゼーション

@@ -188,7 +188,6 @@ sage/
 2. **段階的実装**: 一度に全てを実装せず、タスク単位で進める
 3. **エラーファースト**: エラーハンドリングを最初から考慮する
 4. **設定ファースト**: ハードコードせず、設定ファイルを活用する
-5. **ログ出力**: デバッグ用のログを適切に出力する
 
 ### 🧪 TDD開発プロセス
 
@@ -255,8 +254,8 @@ class CalendarService {
     } else if (process.platform === 'darwin') {
       return {
         platform: 'macos',
-        availableMethods: ['applescript', 'caldav'],
-        recommendedMethod: 'applescript',
+        availableMethods: ['eventkit', 'caldav'],
+        recommendedMethod: 'eventkit',
         requiresPermission: true,
         hasNativeAccess: true
       };
@@ -277,8 +276,8 @@ class CalendarService {
     switch (platform.recommendedMethod) {
       case 'native':
         return await this.fetchNativeEvents(startDate, endDate);
-      case 'applescript':
-        return await this.fetchAppleScriptEvents(startDate, endDate);
+      case 'eventkit':
+        return await this.fetchEventKitEvents(startDate, endDate);
       case 'ical_url':
         return await this.fetchICalEvents(startDate, endDate);
       case 'manual_input':
@@ -316,47 +315,40 @@ async fetchNativeEvents(startDate: string, endDate: string): Promise<CalendarEve
 }
 ```
 
-#### macOS AppleScriptカレンダー統合
+#### macOS EventKitカレンダー統合
 ```typescript
-async fetchAppleScriptEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
-  const applescript = require('node-applescript');
-  
+async fetchEventKitEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
+  // AppleScriptObjC を使用して EventKit にアクセス
+  // EventKit は繰り返しイベントを個々の発生（occurrence）に自動展開
+  const { runApplescript } = await import('run-applescript');
+
   const script = `
-    tell application "Calendar"
-      set startDate to date "${startDate}"
-      set endDate to date "${endDate}"
-      set eventList to {}
-      
-      repeat with cal in calendars
-        set calEvents to (every event of cal whose start date ≥ startDate and start date ≤ endDate)
-        repeat with evt in calEvents
-          set eventInfo to {summary of evt, start date of evt, end date of evt, uid of evt}
-          set end of eventList to eventInfo
-        end repeat
-      end repeat
-      
-      return eventList
-    end tell
+    use framework "EventKit"
+    use scripting additions
+
+    set eventStore to current application's EKEventStore's alloc()'s init()
+    set startDate to current application's NSDate's dateWithTimeIntervalSince1970:${Date.parse(startDate) / 1000}
+    set endDate to current application's NSDate's dateWithTimeIntervalSince1970:${Date.parse(endDate) / 1000}
+
+    set calendars to eventStore's calendarsForEntityType:0
+    set predicate to eventStore's predicateForEventsWithStartDate:startDate endDate:endDate calendars:calendars
+    set events to eventStore's eventsMatchingPredicate:predicate
+
+    -- イベントを JSON 形式で返す
+    ...
   `;
-  
-  return new Promise((resolve) => {
-    applescript.execString(script, (error: any, result: any) => {
-      if (error) {
-        console.error('AppleScript カレンダーエラー:', error);
-        resolve([]);
-      } else {
-        const events = result.map((eventData: any) => ({
-          id: eventData[3],
-          title: eventData[0],
-          start: eventData[1],
-          end: eventData[2],
-          isAllDay: false,
-          source: 'applescript'
-        }));
-        resolve(events);
-      }
-    });
-  });
+
+  const result = await runApplescript(script);
+  const events = JSON.parse(result);
+
+  return events.map((event: any) => ({
+    id: event.id,
+    title: event.title,
+    start: event.start,
+    end: event.end,
+    isAllDay: event.isAllDay,
+    source: 'eventkit'
+  }));
 }
 ```
 
