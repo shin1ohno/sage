@@ -56,8 +56,51 @@ npm install -g @shin1ohno/sage
 
 ### Step 2: Remote MCP Server を起動
 
+sage は **OAuth 2.1** を完全実装しており、Claude iOS App と安全に連携できます。
+
+#### 方法1: OAuth 2.0 認証（推奨）
+
 ```bash
-# 環境変数を設定して起動
+# ~/.sage/remote-config.json を作成
+cat > ~/.sage/remote-config.json << 'EOF'
+{
+  "remote": {
+    "enabled": true,
+    "port": 3000,
+    "host": "0.0.0.0",
+    "auth": {
+      "type": "oauth2",
+      "issuer": "https://your-domain.com",
+      "accessTokenExpiry": "1h",
+      "refreshTokenExpiry": "30d",
+      "allowedRedirectUris": [
+        "https://claude.ai/api/mcp/auth_callback"
+      ],
+      "users": [
+        {
+          "username": "your-username",
+          "passwordHash": "your-bcrypt-password-hash"
+        }
+      ],
+      "scopes": {
+        "mcp:read": "Read access to MCP resources",
+        "mcp:write": "Write access to MCP resources"
+      }
+    },
+    "cors": {
+      "allowedOrigins": ["https://claude.ai"]
+    }
+  }
+}
+EOF
+
+# 起動
+npx @shin1ohno/sage --remote
+```
+
+#### 方法2: 環境変数を使用
+
+```bash
 export SAGE_REMOTE_MODE=true
 export SAGE_AUTH_SECRET="your-secure-secret-key-at-least-32-chars"
 export SAGE_PORT=3000
@@ -65,10 +108,9 @@ export SAGE_PORT=3000
 npx @shin1ohno/sage --remote
 ```
 
-または、設定ファイルを使用:
+#### 方法3: 認証なし（ローカルネットワーク専用）
 
 ```bash
-# ~/.sage/remote-config.json を作成
 cat > ~/.sage/remote-config.json << 'EOF'
 {
   "remote": {
@@ -85,13 +127,11 @@ cat > ~/.sage/remote-config.json << 'EOF'
 }
 EOF
 
-# 起動
-npx @shin1ohno/sage --remote --config ~/.sage/remote-config.json
+npx @shin1ohno/sage --remote
 ```
 
-> **注意**: Claude iOS App は OAuth 2.0 認証のみサポートしているため、
-> 現在は `"type": "none"` で認証なしモードを使用してください。
-> ローカルネットワーク内でのみ使用することを推奨します。
+> **⚠️ セキュリティ警告**: 認証なしモードはローカルネットワーク内でのみ使用してください。
+> インターネット経由でアクセスする場合は必ず OAuth 2.0 認証を有効にしてください。
 
 ### Step 3: Mac の IP アドレスを確認
 
@@ -223,32 +263,144 @@ launchctl unload ~/Library/LaunchAgents/com.sage.remote.plist
 
 Remote MCP Server は複数の認証方式をサポートしています。
 
-> **⚠️ Claude iOS App の制限**
->
-> Claude iOS App は現在 **OAuth 2.0 認証のみ**をサポートしています。
-> sage は OAuth 2.0 を実装していないため、Claude iOS から使用する場合は
-> **認証なしモード（`"type": "none"`）**を使用してください。
->
-> 以下の JWT / API Key 認証は、カスタムクライアントや curl 等での使用を想定しています。
+| 認証方式 | Claude iOS | Claude Desktop | curl / カスタム | セキュリティ |
+|---------|-----------|----------------|-----------------|-------------|
+| OAuth 2.0 | ✅ 推奨 | ✅ | ✅ | 最高 |
+| JWT | ❌ | ✅ | ✅ | 高 |
+| API Key | ❌ | ✅ | ✅ | 中 |
+| なし | ✅ | ✅ | ✅ | なし |
 
-### 認証なし（Claude iOS 用）
+---
 
-Claude iOS App から使用する場合はこの設定を使用してください。
+### OAuth 2.0 認証（推奨）
 
-**設定:**
+sage は **OAuth 2.1** を完全実装しており、Claude iOS App と安全に連携できます。
+
+#### サポートする OAuth 仕様
+
+| 仕様 | RFC | 状態 |
+|------|-----|------|
+| OAuth 2.1 Authorization Code + PKCE | RFC 7636 | ✅ 実装済み |
+| Authorization Server Metadata | RFC 8414 | ✅ 実装済み |
+| Protected Resource Metadata | RFC 9728 | ✅ 実装済み |
+| Dynamic Client Registration | RFC 7591 | ✅ 実装済み |
+| JWT Bearer Tokens | RS256 | ✅ 実装済み |
+
+#### OAuth 2.0 基本設定
+
 ```json
 {
-  "auth": {
-    "type": "none"
+  "remote": {
+    "enabled": true,
+    "port": 3000,
+    "host": "0.0.0.0",
+    "auth": {
+      "type": "oauth2",
+      "issuer": "https://your-domain.com",
+      "accessTokenExpiry": "1h",
+      "refreshTokenExpiry": "30d",
+      "allowedRedirectUris": [
+        "https://claude.ai/api/mcp/auth_callback"
+      ],
+      "users": [
+        {
+          "username": "admin",
+          "passwordHash": "$2b$10$..."
+        }
+      ],
+      "scopes": {
+        "mcp:read": "Read access to MCP resources",
+        "mcp:write": "Write access to MCP resources",
+        "mcp:admin": "Administrative access"
+      }
+    },
+    "cors": {
+      "allowedOrigins": ["https://claude.ai"]
+    }
   }
 }
 ```
 
-**セキュリティ注意:** ローカルネットワーク内でのみ使用してください。
+#### OAuth 設定項目の詳細
 
-### JWT 認証（カスタムクライアント用）
+| 項目 | 必須 | デフォルト | 説明 |
+|------|------|-----------|------|
+| `type` | ✅ | - | `"oauth2"` を指定 |
+| `issuer` | ✅ | - | OAuth issuer URL（HTTPS推奨） |
+| `accessTokenExpiry` | ❌ | `"1h"` | アクセストークンの有効期限 |
+| `refreshTokenExpiry` | ❌ | `"30d"` | リフレッシュトークンの有効期限 |
+| `allowedRedirectUris` | ❌ | Claude URLs | 許可するリダイレクトURI |
+| `users` | ✅ | - | 認証可能なユーザーリスト |
+| `scopes` | ❌ | 標準スコープ | カスタムスコープ定義 |
 
-最も安全で柔軟な認証方式です。
+#### パスワードハッシュの生成
+
+ユーザーのパスワードは bcrypt でハッシュ化して保存します：
+
+```bash
+# Node.js で生成
+node -e "const bcrypt = require('bcrypt'); bcrypt.hash('your-password', 10).then(console.log)"
+
+# または npx を使用
+npx -y bcrypt-cli hash "your-password"
+
+# 出力例: $2b$10$X5a6J8K9L0M1N2O3P4Q5R.abcdefghijklmnopqrstuvwxyz012345
+```
+
+#### 複数ユーザーの設定
+
+```json
+{
+  "auth": {
+    "type": "oauth2",
+    "issuer": "https://sage.example.com",
+    "users": [
+      {
+        "username": "admin",
+        "passwordHash": "$2b$10$...",
+        "scopes": ["mcp:read", "mcp:write", "mcp:admin"]
+      },
+      {
+        "username": "readonly",
+        "passwordHash": "$2b$10$...",
+        "scopes": ["mcp:read"]
+      }
+    ]
+  }
+}
+```
+
+#### OAuth エンドポイント
+
+サーバー起動後、以下のエンドポイントが利用可能になります：
+
+| エンドポイント | メソッド | 説明 |
+|---------------|---------|------|
+| `/.well-known/oauth-protected-resource` | GET | Protected Resource Metadata |
+| `/.well-known/oauth-authorization-server` | GET | Authorization Server Metadata |
+| `/oauth/register` | POST | Dynamic Client Registration |
+| `/oauth/authorize` | GET | 認可エンドポイント |
+| `/oauth/token` | POST | トークンエンドポイント |
+| `/oauth/login` | GET/POST | ユーザーログイン |
+
+#### Claude iOS App での OAuth 接続
+
+1. Claude App を開く
+2. 設定 → MCP Servers
+3. 「Add Server」をタップ
+4. 以下を入力:
+   - **名前**: sage
+   - **Server URL**: `https://your-domain.com/mcp`
+
+5. 認証フローが開始され、ログイン画面が表示されます
+6. 設定したユーザー名とパスワードでログイン
+7. 認可を許可すると、自動的にトークンが取得されます
+
+---
+
+### JWT 認証
+
+カスタムクライアントや API 経由でのアクセスに適しています。
 
 **設定:**
 ```json
@@ -261,14 +413,23 @@ Claude iOS App から使用する場合はこの設定を使用してくださ�
 }
 ```
 
+**トークンの取得:**
+```bash
+curl -X POST http://localhost:3000/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"secret": "your-secret-key-at-least-32-characters"}'
+```
+
 **クライアントでの使用:**
 ```
 Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 ```
 
+---
+
 ### API Key 認証
 
-シンプルな認証方式です。
+シンプルな認証方式です。開発やテスト環境に適しています。
 
 **設定:**
 ```json
@@ -288,16 +449,36 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 X-API-Key: key1-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-### IP ホワイトリスト
+---
 
-特定の IP アドレスからのアクセスのみ許可します。
+### 認証なし
+
+ローカルネットワーク内でのテスト用です。
 
 **設定:**
 ```json
 {
   "auth": {
-    "type": "jwt",
-    "secret": "...",
+    "type": "none"
+  }
+}
+```
+
+> **⚠️ セキュリティ警告**: インターネットに公開する場合は絶対に使用しないでください。
+
+---
+
+### IP ホワイトリスト（併用可能）
+
+他の認証方式と組み合わせて、特定の IP アドレスからのアクセスのみ許可できます。
+
+**設定:**
+```json
+{
+  "auth": {
+    "type": "oauth2",
+    "issuer": "https://sage.example.com",
+    "users": [...],
     "ipWhitelist": [
       "192.168.1.0/24",
       "10.0.0.0/8"
@@ -305,6 +486,13 @@ X-API-Key: key1-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   }
 }
 ```
+
+**CIDR 表記の例:**
+| 表記 | 許可される IP 範囲 |
+|------|-------------------|
+| `192.168.1.0/24` | 192.168.1.0 〜 192.168.1.255 |
+| `10.0.0.0/8` | 10.0.0.0 〜 10.255.255.255 |
+| `192.168.1.100/32` | 192.168.1.100 のみ |
 
 ---
 
@@ -345,24 +533,42 @@ ngrok http 3000
 
 ### Claude iOS App での設定
 
-> **重要**: Claude iOS App は現在 **OAuth 2.0 認証のみ**をサポートしています。
-> sage は OAuth 2.0 を実装していないため、**認証なしモード**で使用してください。
-> ローカルネットワーク内でのみ使用することを推奨します。
+sage は OAuth 2.0 を完全実装しており、Claude iOS App と安全に連携できます。
+
+#### 方法1: OAuth 2.0 認証（推奨）
+
+HTTPS 経由でインターネットからアクセスする場合の設定です。
 
 1. Claude App を開く
-2. 設定 → MCP Servers（またはカスタムコネクタ）
+2. 設定 → MCP Servers
 3. 「Add Server」をタップ
 4. 以下を入力:
    - **名前**: sage
-   - **リモートMCPサーバーURL**: `http://192.168.x.x:3000/mcp`（Mac の IP アドレス）
-   - **OAuth Client ID**: （空欄のまま）
-   - **OAuth クライアントシークレット**: （空欄のまま）
+   - **Server URL**: `https://your-domain.com/mcp`
+5. 「追加」をタップ
+6. 認証画面が表示されるので、設定したユーザー名とパスワードでログイン
+7. 認可を許可すると接続完了
+
+> **ポイント**: OAuth 2.0 を使用する場合、sage は Dynamic Client Registration (RFC 7591) をサポートしているため、Client ID や Client Secret を手動で入力する必要はありません。
+
+#### 方法2: ローカルネットワーク（認証なし）
+
+ローカルネットワーク内でテストする場合の設定です。
+
+1. Claude App を開く
+2. 設定 → MCP Servers
+3. 「Add Server」をタップ
+4. 以下を入力:
+   - **名前**: sage
+   - **Server URL**: `http://192.168.x.x:3000/mcp`（Mac の IP アドレス）
 5. 「追加」をタップ
 
 **Mac の IP アドレス確認方法:**
 ```bash
 ipconfig getifaddr en0
 ```
+
+> **⚠️ セキュリティ注意**: 認証なしモードはローカルネットワーク内でのみ使用してください。
 
 ### Claude Desktop での設定
 
@@ -428,30 +634,88 @@ check_setup_status を実行してください
 
 ## セキュリティのベストプラクティス
 
-### 1. 強力なシークレットキーを使用
+### 1. OAuth 2.0 を使用（推奨）
 
-```bash
-# 安全なランダムキーを生成
-openssl rand -base64 32
+インターネット経由でアクセスする場合は必ず OAuth 2.0 認証を使用してください：
+
+```json
+{
+  "auth": {
+    "type": "oauth2",
+    "issuer": "https://your-domain.com",
+    "users": [...]
+  }
+}
 ```
 
-### 2. HTTPS を使用
+### 2. 強力なパスワードを使用
 
-ローカルネットワーク外からアクセスする場合は必ず HTTPS を使用してください。
+OAuth ユーザーのパスワードには強力なものを設定してください：
 
-### 3. IP ホワイトリストを設定
+```bash
+# 安全なランダムパスワードを生成
+openssl rand -base64 24
 
-可能であれば、アクセス元の IP アドレスを制限してください。
+# bcrypt ハッシュを生成
+npx -y bcrypt-cli hash "your-strong-password"
+```
 
-### 4. トークンの有効期限を設定
+### 3. HTTPS を必ず使用
 
-JWT トークンには適切な有効期限を設定してください。
+インターネット経由でアクセスする場合は必ず HTTPS を使用してください。OAuth 2.0 のセキュリティは HTTPS に依存しています。
 
-### 5. Mac のスリープを防止
+### 4. IP ホワイトリストを設定
+
+可能であれば、アクセス元の IP アドレスを制限してください：
+
+```json
+{
+  "auth": {
+    "type": "oauth2",
+    "ipWhitelist": ["192.168.1.0/24"]
+  }
+}
+```
+
+### 5. トークンの有効期限を適切に設定
+
+アクセストークンは短く、リフレッシュトークンは適切な長さに設定してください：
+
+```json
+{
+  "auth": {
+    "type": "oauth2",
+    "accessTokenExpiry": "1h",
+    "refreshTokenExpiry": "7d"
+  }
+}
+```
+
+### 6. スコープを適切に設定
+
+ユーザーごとに必要最小限のスコープを設定してください：
+
+```json
+{
+  "users": [
+    {
+      "username": "readonly-user",
+      "passwordHash": "...",
+      "scopes": ["mcp:read"]
+    }
+  ]
+}
+```
+
+### 7. Mac のスリープを防止
 
 Remote MCP Server を実行している Mac がスリープすると接続が切れます:
 - システム設定 → バッテリー → 電源アダプタ
 - 「ディスプレイがオフのときにコンピュータを自動的にスリープさせない」を有効に
+
+### 8. ログイン試行回数の制限
+
+sage は自動的にログイン試行回数を制限しています（5回/15分）。ブルートフォース攻撃から保護されています。
 
 ---
 
@@ -476,9 +740,41 @@ Remote MCP Server を実行している Mac がスリープすると接続が切
 
 ### 認証エラー
 
+#### OAuth 2.0 の場合
+
+1. **issuer URL が正しいか確認**
+   ```bash
+   curl https://your-domain.com/.well-known/oauth-authorization-server
+   ```
+
+2. **パスワードハッシュが正しいか確認**
+   ```bash
+   # 新しいハッシュを生成して比較
+   npx -y bcrypt-cli hash "your-password"
+   ```
+
+3. **redirect_uri が許可リストに含まれているか確認**
+   - `allowedRedirectUris` に `https://claude.ai/api/mcp/auth_callback` が含まれていること
+
+4. **HTTPS が正しく設定されているか確認**
+   - OAuth 2.0 は HTTPS を前提としています
+
+5. **ログイン試行回数を超えていないか確認**
+   - 5回失敗すると15分間ロックされます
+   - サーバーを再起動するとリセットされます
+
+#### JWT / API Key の場合
+
 1. トークンが有効か確認
 2. シークレットキーが一致しているか確認
 3. トークンの有効期限を確認
+
+#### 共通
+
+```bash
+# サーバーログを確認
+tail -f ~/.sage/server.log
+```
 
 ### Apple Reminders が動作しない
 
