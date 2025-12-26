@@ -6,6 +6,8 @@
  * to determine the server mode and configuration.
  */
 
+import { VERSION } from '../version.js';
+
 /**
  * CLI Options interface
  */
@@ -197,5 +199,5 @@ Examples:
  * @returns Version string
  */
 export function getVersion(): string {
-  return '0.3.0';
+  return VERSION;
 }

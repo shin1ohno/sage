@@ -7,12 +7,14 @@
  */
 
 import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
+import { VERSION } from '../version.js';
 import {
   loadRemoteConfig,
   RemoteConfig,
   DEFAULT_REMOTE_CONFIG_PATH,
 } from './remote-config-loader.js';
 import { createSecretAuthenticator, SecretAuthenticator } from './secret-auth.js';
+import { createMCPHandler, MCPHandler, MCPRequest } from './mcp-handler.js';
 
 /**
  * Options for creating the server
@@ -63,6 +65,7 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   private effectivePort: number;
   private effectiveHost: string;
   private authenticator: SecretAuthenticator | null = null;
+  private mcpHandler: MCPHandler | null = null;
 
   constructor(config: RemoteConfig, options: HTTPServerWithConfigOptions) {
     this.config = config;
@@ -71,15 +74,19 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     this.effectivePort = options.port ?? config.remote.port;
     this.effectiveHost = options.host ?? config.remote.host;
 
-    // Setup authenticator if JWT auth is enabled
-    if (config.remote.auth.type === 'jwt') {
-      const secret = options.authSecret ?? config.remote.auth.secret;
-      if (secret) {
-        this.authenticator = createSecretAuthenticator({
-          secret,
-          expiresIn: config.remote.auth.expiresIn ?? '24h',
-        });
-      }
+    // Setup authenticator if JWT auth is enabled or authSecret is provided
+    // If authSecret is provided via CLI/env, enable JWT auth regardless of config
+    const secret = options.authSecret ?? config.remote.auth.secret;
+    const shouldEnableAuth = config.remote.auth.type === 'jwt' || !!options.authSecret;
+
+    if (shouldEnableAuth && secret) {
+      this.authenticator = createSecretAuthenticator({
+        secret,
+        expiresIn: config.remote.auth.expiresIn ?? '24h',
+      });
+      // Update config to reflect auth is enabled
+      this.config.remote.auth.type = 'jwt';
+      this.config.remote.auth.secret = secret;
     }
   }
 
@@ -88,6 +95,9 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       return;
     }
 
+    // Initialize MCP handler
+    this.mcpHandler = await createMCPHandler();
+
     return new Promise((resolve, reject) => {
       try {
         this.server = createServer(this.handleRequest.bind(this));
@@ -95,6 +105,9 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         this.server.listen(this.effectivePort, this.effectiveHost, () => {
           this.running = true;
           this.startTime = new Date();
+          console.error(`[sage] Server started on ${this.effectiveHost}:${this.effectivePort}`);
+          console.error(`[sage] Auth enabled: ${this.isAuthEnabled()}`);
+          console.error(`[sage] CORS origins: ${this.config.remote.cors.allowedOrigins.join(', ')}`);
           resolve();
         });
 
@@ -143,6 +156,10 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     const url = req.url || '/';
     const method = req.method || 'GET';
     const origin = req.headers.origin;
+    const clientIP = req.socket.remoteAddress;
+
+    // Debug log
+    console.error(`[sage] ${new Date().toISOString()} ${method} ${url} from ${clientIP}`);
 
     // Add CORS headers
     const corsHeaders = this.getCORSHeaders(origin);
@@ -171,6 +188,7 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
     // MCP endpoint (auth required if enabled)
     if (url === '/mcp' && method === 'POST') {
+      console.error(`[sage] MCP endpoint hit, authEnabled: ${this.isAuthEnabled()}`);
       this.handleMCPRequest(req, res);
       return;
     }
@@ -206,7 +224,7 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     const health: HealthCheckResponse = {
       status: this.running ? 'ok' : 'error',
       uptime,
-      version: '0.3.0',
+      version: VERSION,
       timestamp: new Date().toISOString(),
       authEnabled: this.isAuthEnabled(),
     };
@@ -329,25 +347,33 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       body += chunk.toString();
     });
 
-    req.on('end', () => {
+    req.on('end', async () => {
+      console.error(`[sage] MCP request body: ${body.substring(0, 500)}`);
+
       try {
         const request = this.parseJSONRPCRequest(body);
+        console.error(`[sage] MCP method: ${request.method}, id: ${request.id}`);
 
-        // Placeholder response - actual MCP handling would go here
-        const response = {
+        // Process request through MCP handler
+        if (!this.mcpHandler) {
+          throw new Error('MCP handler not initialized');
+        }
+
+        const mcpRequest: MCPRequest = {
           jsonrpc: '2.0',
           id: request.id,
-          result: {
-            message: 'MCP request received',
-            method: request.method,
-            params: request.params,
-          },
+          method: request.method,
+          params: request.params,
         };
+
+        const response = await this.mcpHandler.handleRequest(mcpRequest);
+        console.error(`[sage] MCP response id: ${response.id}, hasError: ${!!response.error}`);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(response));
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`[sage] MCP error: ${errorMessage}`);
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({

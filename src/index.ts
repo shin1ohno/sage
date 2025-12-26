@@ -20,10 +20,7 @@ import { TodoListManager } from "./integrations/todo-list-manager.js";
 import { TaskSynchronizer } from "./integrations/task-synchronizer.js";
 import type { UserConfig } from "./types/index.js";
 import type { Priority } from "./types/index.js";
-
-// Server metadata
-const SERVER_NAME = "sage";
-const SERVER_VERSION = "0.3.1";
+import { VERSION, SERVER_NAME } from "./version.js";
 
 // Global state
 let config: UserConfig | null = null;
@@ -196,7 +193,7 @@ function initializeServices(userConfig: UserConfig): void {
 async function createServer(): Promise<McpServer> {
   const server = new McpServer({
     name: SERVER_NAME,
-    version: SERVER_VERSION,
+    version: VERSION,
   });
 
   // Try to load existing config
@@ -1768,7 +1765,7 @@ async function main(): Promise<void> {
     }
 
     console.error(
-      `${SERVER_NAME} v${SERVER_VERSION} started in HTTP mode on ${result.host}:${result.port}`
+      `${SERVER_NAME} v${VERSION} started in HTTP mode on ${result.host}:${result.port}`
     );
 
     // Keep the process running
@@ -1787,7 +1784,7 @@ async function main(): Promise<void> {
   const server = await createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`${SERVER_NAME} v${SERVER_VERSION} started in Stdio mode`);
+  console.error(`${SERVER_NAME} v${VERSION} started in Stdio mode`);
 }
 
 main().catch((error) => {

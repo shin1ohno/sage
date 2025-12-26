@@ -6,6 +6,7 @@
  */
 
 import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
+import { VERSION } from '../version.js';
 import { createServer as createHttpsServer, Server as HttpsServer } from 'https';
 import { randomUUID } from 'crypto';
 
@@ -261,7 +262,7 @@ class HTTPServer implements HTTPServerInstance {
     const health: HealthCheckResponse = {
       status: this.running ? 'ok' : 'error',
       uptime,
-      version: '0.3.0',
+      version: VERSION,
       timestamp: new Date().toISOString(),
     };
 
