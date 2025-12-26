@@ -5,7 +5,6 @@
  */
 
 import { AppleRemindersService } from './apple-reminders.js';
-import { NotionMCPService } from './notion-mcp.js';
 import type { Priority } from '../types/index.js';
 
 /**
@@ -33,17 +32,31 @@ export interface ReminderRequest {
 }
 
 /**
+ * Notion request info for delegation to Claude Code
+ */
+export interface NotionDelegationRequest {
+  databaseId: string;
+  dataSourceId?: string;
+  title: string;
+  properties: Record<string, any>;
+}
+
+/**
  * Reminder result
  */
 export interface ReminderResult {
   success: boolean;
   destination: 'apple_reminders' | 'notion_mcp';
-  method?: 'native' | 'applescript' | 'mcp' | 'fallback';
+  method?: 'native' | 'applescript' | 'mcp' | 'fallback' | 'delegate';
   reminderId?: string;
   reminderUrl?: string;
   pageUrl?: string;
   error?: string;
   fallbackText?: string;
+  /** When true, Claude Code should use Notion MCP directly */
+  delegateToNotion?: boolean;
+  /** Request info for Notion MCP delegation */
+  notionRequest?: NotionDelegationRequest;
 }
 
 /**
@@ -57,16 +70,15 @@ export interface ReminderTime {
 /**
  * Reminder Manager
  * Decides where to create reminders based on deadline
+ * Note: Notion integration is delegated to Claude Code (MCP servers cannot call other MCP servers)
  */
 export class ReminderManager {
   private config: ReminderConfig;
   private appleReminders: AppleRemindersService;
-  private notionMCP: NotionMCPService;
 
   constructor(config: ReminderConfig) {
     this.config = config;
     this.appleReminders = new AppleRemindersService();
-    this.notionMCP = new NotionMCPService();
   }
 
   /**
@@ -139,47 +151,42 @@ export class ReminderManager {
 
   /**
    * Create Notion entry
+   * Delegates to Claude Code to use Notion MCP directly
+   * sage cannot call other MCP servers, so we return delegation info
    */
   private async createNotionEntry(request: ReminderRequest): Promise<ReminderResult> {
-    const properties = this.notionMCP.buildNotionProperties({
-      title: request.taskTitle,
-      priority: request.priority,
-      deadline: request.targetDate,
-      stakeholders: request.stakeholders,
-      estimatedMinutes: request.estimatedMinutes,
-    });
+    // Build properties in a format compatible with Notion MCP
+    const notionProperties: Record<string, any> = {
+      'Project Name': request.taskTitle,
+    };
 
-    const result = await this.notionMCP.createPage({
-      databaseId: this.config.notionDatabaseId,
-      title: request.taskTitle,
-      properties,
-    });
-
-    if (result.success) {
-      return {
-        success: true,
-        destination: 'notion_mcp',
-        method: 'mcp',
-        reminderId: result.pageId,
-        pageUrl: result.pageUrl,
-      };
+    if (request.priority) {
+      notionProperties['Priority'] = request.priority;
     }
 
-    // Generate fallback template
-    const fallbackText = this.notionMCP.generateFallbackTemplate({
-      title: request.taskTitle,
-      priority: request.priority,
-      deadline: request.targetDate,
-      stakeholders: request.stakeholders,
-      estimatedMinutes: request.estimatedMinutes,
-    });
+    if (request.targetDate) {
+      notionProperties['date:Target Date:start'] = request.targetDate;
+      notionProperties['date:Target Date:is_datetime'] = 0;
+    }
 
+    notionProperties['Status'] = 'Planning';
+
+    if (request.notes) {
+      notionProperties['Key Milestones'] = request.notes;
+    }
+
+    // Return delegation info instead of trying to call Notion MCP directly
+    // Claude Code will use this info to call notion-create-pages tool
     return {
-      success: false,
+      success: true,
       destination: 'notion_mcp',
-      method: 'fallback',
-      error: result.error,
-      fallbackText,
+      method: 'delegate',
+      delegateToNotion: true,
+      notionRequest: {
+        databaseId: this.config.notionDatabaseId,
+        title: request.taskTitle,
+        properties: notionProperties,
+      },
     };
   }
 

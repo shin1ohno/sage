@@ -666,6 +666,32 @@ async function createServer(): Promise<McpServer> {
         });
 
         if (result.success) {
+          // Check if this is a delegation request for Notion
+          if (result.delegateToNotion && result.notionRequest) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      success: true,
+                      destination: 'notion_mcp',
+                      method: 'delegate',
+                      delegateToNotion: true,
+                      notionRequest: result.notionRequest,
+                      message: `Notionへの追加はClaude Codeが直接notion-create-pagesツールを使用してください。`,
+                      instruction: `notion-create-pagesツールを以下のパラメータで呼び出してください:
+- parent: { "type": "data_source_id", "data_source_id": "${result.notionRequest.databaseId.replace(/-/g, '')}" }
+- pages: [{ "properties": ${JSON.stringify(result.notionRequest.properties)} }]`,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+
           return {
             content: [
               {

@@ -1,9 +1,9 @@
 {
-  "manifest_version": "1",
+  "manifest_version": "0.2",
   "id": "@shin1ohno/sage",
   "name": "sage - AI Task Manager",
   "description": "AI Task Management Assistant for Claude. Analyze tasks, set priorities, manage reminders, and integrate with Apple Reminders, Notion, and Calendar.",
-  "version": "0.1.0",
+  "version": "0.2.4",
   "author": {
     "name": "shin1ohno"
   },
