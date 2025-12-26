@@ -1984,6 +1984,243 @@ class BatchEventResponseProcessor {
 }
 ```
 
+## カレンダーイベント削除機能
+
+### 15. CalendarEventDeleterService
+
+カレンダーイベントの削除をCalendar.app AppleScript経由で実行するサービス。
+
+```typescript
+interface DeleteCalendarEventRequest {
+  eventId: string;                  // 必須: イベントID（UUIDまたはフルID）
+  calendarName?: string;            // オプション: カレンダー名
+}
+
+interface DeleteCalendarEventResult {
+  success: boolean;
+  eventId: string;
+  title?: string;
+  calendarName?: string;
+  error?: string;
+  message: string;
+}
+
+interface DeleteCalendarEventsBatchRequest {
+  eventIds: string[];
+  calendarName?: string;
+}
+
+interface DeleteCalendarEventsBatchResult {
+  success: boolean;
+  summary: {
+    total: number;
+    succeeded: number;
+    failed: number;
+  };
+  results: Array<{
+    eventId: string;
+    title?: string;
+    success: boolean;
+    error?: string;
+  }>;
+  message: string;
+}
+
+interface CalendarEventDeleterService {
+  deleteEvent(request: DeleteCalendarEventRequest): Promise<DeleteCalendarEventResult>;
+  deleteEventsBatch(request: DeleteCalendarEventsBatchRequest): Promise<DeleteCalendarEventsBatchResult>;
+  extractUid(eventId: string): string;
+}
+```
+
+### イベントID抽出ロジック
+
+`list_calendar_events`から取得したIDはフルID形式の場合があるため、UUIDを抽出する。
+
+```typescript
+/**
+ * フルIDからUUIDを抽出
+ * 例: "218F62EC-7F99-49A0-8344-1C75CB06F13D:CB9F0431-7EA1-4122-83A6-240AE1339429"
+ *     → "CB9F0431-7EA1-4122-83A6-240AE1339429"
+ */
+function extractUid(eventId: string): string {
+  if (eventId.includes(':')) {
+    return eventId.split(':').pop() || eventId;
+  }
+  return eventId;
+}
+```
+
+### Calendar.app AppleScript削除スクリプト
+
+#### カレンダー指定時
+
+```applescript
+tell application "Calendar"
+    tell calendar "${calendarName}"
+        try
+            set targetEvent to first event whose uid is "${eventId}"
+            set eventTitle to summary of targetEvent
+            delete targetEvent
+            return "SUCCESS|" & eventTitle
+        on error
+            return "ERROR|イベントが見つかりません"
+        end try
+    end tell
+end tell
+```
+
+#### 全カレンダー検索時
+
+```applescript
+tell application "Calendar"
+    repeat with cal in calendars
+        try
+            set targetEvent to first event of cal whose uid is "${eventId}"
+            set eventTitle to summary of targetEvent
+            set calName to name of cal
+            delete targetEvent
+            return "SUCCESS|" & eventTitle & "|" & calName
+        end try
+    end repeat
+    return "ERROR|イベントが見つかりません"
+end tell
+```
+
+### CalendarEventDeleterService実装
+
+```typescript
+class CalendarEventDeleterServiceImpl implements CalendarEventDeleterService {
+  private runAppleScript: ((script: string) => Promise<string>) | null = null;
+
+  async deleteEvent(request: DeleteCalendarEventRequest): Promise<DeleteCalendarEventResult> {
+    const uid = this.extractUid(request.eventId);
+
+    try {
+      if (!this.runAppleScript) {
+        const module = await import('run-applescript');
+        this.runAppleScript = module.runAppleScript;
+      }
+
+      const script = this.buildDeleteScript(uid, request.calendarName);
+      const result = await this.runAppleScript(script);
+
+      return this.parseDeleteResult(result, request.eventId);
+    } catch (error) {
+      return {
+        success: false,
+        eventId: request.eventId,
+        error: `削除エラー: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: 'イベントの削除に失敗しました',
+      };
+    }
+  }
+
+  async deleteEventsBatch(request: DeleteCalendarEventsBatchRequest): Promise<DeleteCalendarEventsBatchResult> {
+    const results: Array<{eventId: string; title?: string; success: boolean; error?: string}> = [];
+
+    for (const eventId of request.eventIds) {
+      const result = await this.deleteEvent({
+        eventId,
+        calendarName: request.calendarName,
+      });
+
+      results.push({
+        eventId,
+        title: result.title,
+        success: result.success,
+        error: result.error,
+      });
+
+      // Rate limiting: 100ms delay between deletions
+      await this.delay(100);
+    }
+
+    const succeeded = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+    const total = results.length;
+
+    return {
+      success: failed === 0,
+      summary: { total, succeeded, failed },
+      results,
+      message: this.buildBatchMessage(succeeded, failed, total),
+    };
+  }
+
+  extractUid(eventId: string): string {
+    if (eventId.includes(':')) {
+      return eventId.split(':').pop() || eventId;
+    }
+    return eventId;
+  }
+
+  private buildDeleteScript(uid: string, calendarName?: string): string {
+    if (calendarName) {
+      const escapedCalendar = calendarName.replace(/"/g, '\\"');
+      return `
+tell application "Calendar"
+    tell calendar "${escapedCalendar}"
+        try
+            set targetEvent to first event whose uid is "${uid}"
+            set eventTitle to summary of targetEvent
+            delete targetEvent
+            return "SUCCESS|" & eventTitle
+        on error
+            return "ERROR|イベントが見つかりません"
+        end try
+    end tell
+end tell`;
+    } else {
+      return `
+tell application "Calendar"
+    repeat with cal in calendars
+        try
+            set targetEvent to first event of cal whose uid is "${uid}"
+            set eventTitle to summary of targetEvent
+            set calName to name of cal
+            delete targetEvent
+            return "SUCCESS|" & eventTitle & "|" & calName
+        end try
+    end repeat
+    return "ERROR|イベントが見つかりません"
+end tell`;
+    }
+  }
+
+  private parseDeleteResult(result: string, eventId: string): DeleteCalendarEventResult {
+    if (result.startsWith('SUCCESS|')) {
+      const parts = result.split('|');
+      return {
+        success: true,
+        eventId,
+        title: parts[1],
+        calendarName: parts[2],
+        message: `イベント「${parts[1]}」を削除しました`,
+      };
+    }
+
+    return {
+      success: false,
+      eventId,
+      error: result.replace('ERROR|', ''),
+      message: 'イベントの削除に失敗しました',
+    };
+  }
+
+  private buildBatchMessage(succeeded: number, failed: number, total: number): string {
+    if (failed === 0) {
+      return `${total}件中${succeeded}件のイベントを削除しました`;
+    }
+    return `${total}件中${succeeded}件のイベントを削除しました。${failed}件失敗。`;
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+```
+
 ### Google Calendar OAuth2設定
 
 Google Calendar APIを使用するには、OAuth2認証が必要です。

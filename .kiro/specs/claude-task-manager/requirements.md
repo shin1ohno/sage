@@ -454,9 +454,124 @@ interface CreateCalendarEventResult {
 > }
 > ```
 
+### 要件19: カレンダーイベントの削除
+
+**ユーザーストーリー:** カレンダーを整理したいユーザーとして、不要なイベントや重複イベントを会話の中で削除したい。手動でカレンダーアプリを操作せずにスケジュールをクリーンに保てるようにするため。
+
+#### 受け入れ基準
+
+1. `delete_calendar_event`ツールが呼び出されたとき、システムは指定されたイベントを削除すること
+2. 入力パラメータとして`eventId`（必須）を受け付けること
+3. オプションパラメータとして`calendarName`を受け付けること（指定時は該当カレンダーのみ検索）
+4. `eventId`は`list_calendar_events`から取得したID（フルID または UUIDのみ）を受け付けること
+5. フルID形式（例: `218F62EC-...:CB9F0431-...`）の場合、システムは最後のコロン以降のUUIDを抽出すること
+6. `calendarName`が未指定の場合、システムはすべてのカレンダーからイベントを検索すること
+7. イベントが見つからない場合、システムは適切なエラーメッセージを返すこと
+8. 読み取り専用カレンダーの場合、システムは適切なエラーメッセージを返すこと
+9. 削除が成功したとき、システムは削除されたイベントのタイトルを返すこと
+10. `delete_calendar_events_batch`ツールで複数イベントの一括削除をサポートすること
+11. バッチ削除時、システムは成功/失敗件数のサマリーを返すこと
+12. 繰り返しイベントの場合、該当インスタンスのみを削除すること（シリーズ全体ではない）
+
+#### 技術的詳細
+
+- **Calendar.app AppleScript使用**: `delete`コマンドで削除
+- **UUID抽出**: フルIDからUUID部分を抽出して使用
+- **Google Calendar同期**: Calendar.appでの削除はGoogle Calendarに同期される
+
+#### 入力スキーマ
+
+```typescript
+// 単一イベント削除
+interface DeleteCalendarEventRequest {
+  eventId: string;                  // 必須: イベントID（UUIDまたはフルID）
+  calendarName?: string;            // オプション: カレンダー名（未指定時は全カレンダー検索）
+}
+
+// バッチ削除
+interface DeleteCalendarEventsBatchRequest {
+  eventIds: string[];               // 必須: イベントIDの配列
+  calendarName?: string;            // オプション: カレンダー名
+}
+```
+
+#### 出力スキーマ
+
+```typescript
+// 単一イベント削除の結果
+interface DeleteCalendarEventResult {
+  success: boolean;
+  eventId: string;
+  title?: string;                   // 削除されたイベントのタイトル
+  calendarName?: string;            // 削除元カレンダー名
+  error?: string;                   // エラーメッセージ
+  message: string;                  // 結果メッセージ
+}
+
+// バッチ削除の結果
+interface DeleteCalendarEventsBatchResult {
+  success: boolean;
+  summary: {
+    total: number;
+    succeeded: number;
+    failed: number;
+  };
+  results: Array<{
+    eventId: string;
+    title?: string;
+    success: boolean;
+    error?: string;
+  }>;
+  message: string;                  // 例: "10件中10件のイベントを削除しました"
+}
+```
+
+#### 使用例
+
+> **単一削除:**
+> ```
+> User: 明日の「Project CLEAR kickoff」ミーティングを削除して
+>
+> Sage:
+> delete_calendar_event(
+>   eventId: "CB9F0431-7EA1-4122-83A6-240AE1339429"
+> )
+> ```
+
+> **出力例:**
+> ```json
+> {
+>   "success": true,
+>   "eventId": "CB9F0431-7EA1-4122-83A6-240AE1339429",
+>   "title": "Project CLEAR kickoff",
+>   "calendarName": "sh1@mercari.com",
+>   "message": "イベント「Project CLEAR kickoff」を削除しました"
+> }
+> ```
+
+> **バッチ削除:**
+> ```
+> User: 重複している10件のイベントをすべて削除して
+>
+> Sage:
+> delete_calendar_events_batch(
+>   eventIds: ["DED889F3-...", "30C86C85-...", ...]
+> )
+> ```
+
+> **出力例:**
+> ```json
+> {
+>   "success": true,
+>   "summary": { "total": 10, "succeeded": 10, "failed": 0 },
+>   "results": [...],
+>   "message": "10件中10件のイベントを削除しました"
+> }
+> ```
+
 #### 将来の拡張（現時点ではスコープ外）
 
 - `update_calendar_event` - 既存イベントの更新
-- `delete_calendar_event` - イベントの削除
 - `create_recurring_event` - 繰り返しルール付きイベント
+- `deleteAllOccurrences` - 繰り返しイベントのシリーズ全体削除
 - 参加者管理（招待状の送信）

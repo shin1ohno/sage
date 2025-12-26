@@ -501,11 +501,58 @@
     - ✅ エラーハンドリングテスト
     - ✅ 結果メッセージ生成テスト
 
+## 未実装タスク
+
+- [ ] 36. カレンダーイベント削除機能の実装
+- [ ] 36.1 CalendarEventDeleterService基盤の実装
+  - 📋 `DeleteCalendarEventRequest`/`DeleteCalendarEventResult` 型定義
+  - 📋 `DeleteCalendarEventsBatchRequest`/`DeleteCalendarEventsBatchResult` 型定義
+  - 📋 `CalendarEventDeleterService` クラスの作成
+  - 📋 入力パラメータ検証ロジック
+  - _要件: 19.1, 19.2, 19.3_
+
+- [ ] 36.2 イベントID抽出ロジック
+  - 📋 `extractUid()` - フルIDからUUID抽出
+  - 📋 フルID/UUIDどちらも受け付ける
+  - _要件: 19.4, 19.5_
+
+- [ ] 36.3 Calendar.app AppleScript削除
+  - 📋 カレンダー指定時の削除スクリプト
+  - 📋 全カレンダー検索時の削除スクリプト
+  - 📋 結果パース処理
+  - _要件: 19.6, 19.9_
+
+- [ ] 36.4 エラーハンドリング
+  - 📋 イベントが見つからない場合のエラー
+  - 📋 読み取り専用カレンダーのエラー
+  - 📋 AppleScript実行エラーの処理
+  - _要件: 19.7, 19.8_
+
+- [ ] 36.5 バッチ削除機能
+  - 📋 `deleteEventsBatch()` メソッド実装
+  - 📋 順次処理（レート制限: 100ms間隔）
+  - 📋 結果集計とサマリー生成
+  - _要件: 19.10, 19.11_
+
+- [ ] 36.6 MCPツールの登録
+  - 📋 `delete_calendar_event` ツールを index.ts に追加
+  - 📋 `delete_calendar_events_batch` ツールを index.ts に追加
+  - 📋 mcp-handler.ts への追加（HTTPモード対応）
+  - _要件: 19.1, 19.10_
+
+- [ ] 36.7 テストの実装
+  - 📋 UUID抽出テスト（フルID/UUIDのみ両方）
+  - 📋 単一イベント削除テスト
+  - 📋 バッチ削除テスト
+  - 📋 イベント未発見エラーテスト
+  - 📋 AppleScript生成テスト
+  - _要件: 19.12_
+
 ## 実装完了サマリー
 
-- **完了タスク**: 35タスク（全タスク完了！）
-- **未実装タスク**: なし
-- **テスト**: 41 suites, 761 tests passing
+- **完了タスク**: 35タスク
+- **未実装タスク**: 1タスク（Task 36: カレンダーイベント削除）
+- **テスト**: 41 suites, 766 tests passing
 - **プラットフォーム**: macOS 専用（AppleScript/EventKit のため）
 - **ドキュメント**: SETUP-LOCAL.md, SETUP-REMOTE.md, CONFIGURATION.md, ARCHITECTURE.md, TROUBLESHOOTING.md
 
