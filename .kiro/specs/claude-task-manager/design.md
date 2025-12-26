@@ -536,6 +536,7 @@ interface ReminderResult {
 interface CalendarService {
   findAvailableSlots(request: SlotRequest, config: CalendarConfig): Promise<AvailableSlot[]>;
   fetchEvents(startDate: string, endDate: string): Promise<CalendarEvent[]>;
+  listEvents(request: ListEventsRequest): Promise<ListEventsResponse>;
   calculateSuitability(slot: TimeSlot, config: CalendarConfig): SlotSuitability;
   detectCalendarPlatform(): Promise<CalendarPlatformInfo>;
   isCalendarAccessible(): Promise<boolean>;
@@ -577,7 +578,24 @@ interface CalendarEvent {
   start: string;
   end: string;
   isAllDay: boolean;
+  calendar: string;
+  location?: string;
   source: CalendarMethod;
+}
+
+interface ListEventsRequest {
+  startDate: string;  // ISO 8601形式 (例: "2025-01-15")
+  endDate: string;    // ISO 8601形式 (例: "2025-01-20")
+  calendarName?: string;  // 特定カレンダーでフィルタ（省略時は全カレンダー）
+}
+
+interface ListEventsResponse {
+  events: CalendarEvent[];
+  period: {
+    start: string;
+    end: string;
+  };
+  totalEvents: number;
 }
 ```
 

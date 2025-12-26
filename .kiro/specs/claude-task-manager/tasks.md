@@ -353,28 +353,65 @@
   - ✅ JWT認証フローのテスト
   - _要件: 15.1-15.10_
 
+## 完了済み追加タスク (続き)
+
+- [x] 32. Remote MCP Server の実際の MCP ハンドリング実装
+- [x] 32.1 HTTP Server に MCP ツール処理を統合
+  - ✅ **テスト**: `tests/unit/mcp-handler.test.ts`実装済み（16 tests）
+  - ✅ `MCPHandler`クラス実装済み（`src/cli/mcp-handler.ts`）
+  - ✅ `tools/list` メソッド実装済み
+  - ✅ `tools/call` メソッド実装済み
+  - ✅ `initialize` メソッド実装済み
+  - ✅ `http-server-with-config.ts` への統合完了
+  - ✅ 全13ツール（analyze_tasks, set_reminder, list_todos等）がHTTP経由で利用可能
+  - ✅ **E2Eテスト**: `tests/e2e/mcp-over-http.test.ts`実装済み（8 tests）
+  - _要件: 13.1, 13.4, 13.5_
+
+- [x] 32.2 Claude iOS App 互換性の確認
+  - ⚠️ Claude iOS は OAuth 2.0 認証のみサポート
+  - ✅ 現状は JWT認証または認証なしモードで使用（ローカルネットワーク限定）
+  - 📋 OAuth 2.0 対応は将来対応
+  - _要件: 13.2_
+
 ## 未実装タスク
 
-- [ ] 32. Remote MCP Server の実際の MCP ハンドリング実装
-- [ ] 32.1 HTTP Server に MCP ツール処理を統合
-  - ⚠️ **問題**: `http-server-with-config.ts` の `processMCPRequest` がプレースホルダー実装
-  - ⚠️ 現状は `{ message: 'MCP request received' }` を返すのみ
-  - 📋 `src/index.ts` の MCP サーバーロジック（ツール定義・ハンドラー）を再利用
-  - 📋 `tools/list`, `tools/call` などの MCP メソッドを実装
-  - 📋 analyze_tasks, set_reminder, list_todos 等の全ツールを HTTP 経由で利用可能に
-  - _要件: 13.1, 13.5_
+- [ ] 33. カレンダーイベント一覧取得ツールの実装
+- [ ] 33.1 list_calendar_events MCPツールの実装
+  - 📋 `CalendarService.listEvents()` メソッドの追加
+  - 📋 入力パラメータ検証（startDate, endDate, calendarName）
+  - 📋 ISO 8601形式の日付パース
+  - 📋 カレンダー名によるフィルタリング
+  - _要件: 16.1, 16.2, 16.3, 16.4, 16.5_
 
-- [ ] 32.2 Claude iOS App 互換性の確認
-  - ⚠️ **問題**: Claude iOS は OAuth 2.0 認証のみサポート
-  - ⚠️ 現状は認証なしモードで使用（ローカルネットワーク限定）
-  - 📋 OAuth 2.0 対応の検討（将来対応）
-  - _要件: 13.2_
+- [ ] 33.2 繰り返しイベントの展開処理
+  - 📋 EventKitの繰り返しイベント取得
+  - 📋 指定期間内の各occurrence を個別イベントとして返却
+  - _要件: 16.6_
+
+- [ ] 33.3 特殊イベントの処理
+  - 📋 終日イベント（isAllDay: true）の処理
+  - 📋 複数日にまたがるイベントの処理
+  - 📋 タイムゾーン処理（JST/Asia/Tokyo デフォルト）
+  - _要件: 16.7, 16.8, 16.9_
+
+- [ ] 33.4 レスポンスフォーマットとエラーハンドリング
+  - 📋 CalendarEvent型の拡張（calendar, location フィールド追加）
+  - 📋 ListEventsResponse 形式での返却
+  - 📋 カレンダーアクセス不可時のエラーメッセージ
+  - _要件: 16.10, 16.11, 16.12_
+
+- [ ] 33.5 テストの実装
+  - 📋 単一日のイベント取得テスト
+  - 📋 1週間のイベント取得テスト
+  - 📋 特定カレンダーでのフィルタリングテスト
+  - 📋 繰り返しイベント展開テスト
+  - 📋 タイムゾーン処理テスト
 
 ## 実装完了サマリー
 
-- **完了タスク**: 31タスク
-- **未実装タスク**: 1タスク（Remote MCP の MCP ハンドリング）
-- **テスト**: 36 suites, 653 tests passing
+- **完了タスク**: 32タスク
+- **未実装タスク**: 1タスク（Task 33: list_calendar_events）
+- **テスト**: 38 suites, 677 tests passing
 - **プラットフォーム**: macOS 専用（AppleScript/EventKit のため）
 - **ドキュメント**: SETUP-LOCAL.md, SETUP-REMOTE.md, CONFIGURATION.md, ARCHITECTURE.md, TROUBLESHOOTING.md
 
