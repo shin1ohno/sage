@@ -18,6 +18,7 @@ import { CalendarService } from "./integrations/calendar-service.js";
 import { NotionMCPService } from "./integrations/notion-mcp.js";
 import { TodoListManager } from "./integrations/todo-list-manager.js";
 import { TaskSynchronizer } from "./integrations/task-synchronizer.js";
+import { CalendarEventResponseService } from "./integrations/calendar-event-response.js";
 import type { UserConfig } from "./types/index.js";
 import type { Priority } from "./types/index.js";
 import { VERSION, SERVER_NAME } from "./version.js";
@@ -30,6 +31,7 @@ let calendarService: CalendarService | null = null;
 let notionService: NotionMCPService | null = null;
 let todoListManager: TodoListManager | null = null;
 let taskSynchronizer: TaskSynchronizer | null = null;
+let calendarEventResponseService: CalendarEventResponseService | null = null;
 
 /**
  * Validation result type
@@ -185,6 +187,7 @@ function initializeServices(userConfig: UserConfig): void {
   notionService = new NotionMCPService();
   todoListManager = new TodoListManager();
   taskSynchronizer = new TaskSynchronizer();
+  calendarEventResponseService = new CalendarEventResponseService();
 }
 
 /**
@@ -1102,6 +1105,257 @@ async function createServer(): Promise<McpServer> {
                 {
                   error: true,
                   message: `カレンダーイベントの取得に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  /**
+   * respond_to_calendar_event - Respond to a single calendar event
+   * Requirement: 17.1, 17.2, 17.5-17.11
+   */
+  server.tool(
+    "respond_to_calendar_event",
+    "Respond to a calendar event with accept, decline, or tentative. Use this to RSVP to meeting invitations.",
+    {
+      eventId: z.string().describe("The ID of the calendar event to respond to"),
+      response: z
+        .enum(["accept", "decline", "tentative"])
+        .describe("Response type: accept (承諾), decline (辞退), or tentative (仮承諾)"),
+      comment: z
+        .string()
+        .optional()
+        .describe("Optional comment to include with the response (e.g., '年末年始休暇のため')"),
+    },
+    async ({ eventId, response, comment }) => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message:
+                    "sageが設定されていません。check_setup_statusを実行してください。",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!calendarEventResponseService) {
+        initializeServices(config);
+      }
+
+      try {
+        // Check platform availability
+        const isAvailable = await calendarEventResponseService!.isEventKitAvailable();
+
+        if (!isAvailable) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    message:
+                      "カレンダーイベント返信機能はmacOSでのみ利用可能です。",
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        // Respond to the event
+        const result = await calendarEventResponseService!.respondToEvent({
+          eventId,
+          response,
+          comment,
+        });
+
+        if (result.success) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    eventId: result.eventId,
+                    eventTitle: result.eventTitle,
+                    newStatus: result.newStatus,
+                    method: result.method,
+                    instanceOnly: result.instanceOnly,
+                    message: result.message,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        // Handle skipped or failed response
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: false,
+                  eventId: result.eventId,
+                  eventTitle: result.eventTitle,
+                  skipped: result.skipped,
+                  reason: result.reason,
+                  error: result.error,
+                  message: result.skipped
+                    ? `イベントをスキップしました: ${result.reason}`
+                    : `イベント返信に失敗しました: ${result.error}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `カレンダーイベント返信に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  /**
+   * respond_to_calendar_events_batch - Respond to multiple calendar events
+   * Requirement: 17.3, 17.4, 17.12
+   */
+  server.tool(
+    "respond_to_calendar_events_batch",
+    "Respond to multiple calendar events at once. Useful for declining all events during vacation or leave periods.",
+    {
+      eventIds: z
+        .array(z.string())
+        .describe("Array of event IDs to respond to"),
+      response: z
+        .enum(["accept", "decline", "tentative"])
+        .describe("Response type: accept (承諾), decline (辞退), or tentative (仮承諾)"),
+      comment: z
+        .string()
+        .optional()
+        .describe("Optional comment to include with all responses (e.g., '年末年始休暇のため')"),
+    },
+    async ({ eventIds, response, comment }) => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message:
+                    "sageが設定されていません。check_setup_statusを実行してください。",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!calendarEventResponseService) {
+        initializeServices(config);
+      }
+
+      try {
+        // Check platform availability
+        const isAvailable = await calendarEventResponseService!.isEventKitAvailable();
+
+        if (!isAvailable) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    message:
+                      "カレンダーイベント返信機能はmacOSでのみ利用可能です。",
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        // Respond to all events in batch
+        const result = await calendarEventResponseService!.respondToEventsBatch({
+          eventIds,
+          response,
+          comment,
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: result.success,
+                  summary: result.summary,
+                  details: {
+                    succeeded: result.details.succeeded,
+                    skipped: result.details.skipped,
+                    failed: result.details.failed,
+                  },
+                  message: result.message,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `カレンダーイベント一括返信に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
                 },
                 null,
                 2,

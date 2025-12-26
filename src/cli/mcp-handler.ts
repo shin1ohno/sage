@@ -14,6 +14,7 @@ import { CalendarService } from '../integrations/calendar-service.js';
 import { NotionMCPService } from '../integrations/notion-mcp.js';
 import { TodoListManager, type TodoStatus, type TaskSource } from '../integrations/todo-list-manager.js';
 import { TaskSynchronizer } from '../integrations/task-synchronizer.js';
+import { CalendarEventResponseService, type EventResponseType } from '../integrations/calendar-event-response.js';
 import type { UserConfig, Priority } from '../types/index.js';
 
 // Protocol version
@@ -87,6 +88,7 @@ class MCPHandlerImpl implements MCPHandler {
   private notionService: NotionMCPService | null = null;
   private todoListManager: TodoListManager | null = null;
   private taskSynchronizer: TaskSynchronizer | null = null;
+  private calendarEventResponseService: CalendarEventResponseService | null = null;
   private initialized: boolean = false;
 
   private tools: Map<string, { definition: ToolDefinition; handler: ToolHandler }> = new Map();
@@ -129,6 +131,7 @@ class MCPHandlerImpl implements MCPHandler {
     this.notionService = new NotionMCPService();
     this.todoListManager = new TodoListManager();
     this.taskSynchronizer = new TaskSynchronizer();
+    this.calendarEventResponseService = new CalendarEventResponseService();
   }
 
   /**
@@ -1982,6 +1985,282 @@ class MCPHandlerImpl implements MCPHandler {
                   {
                     error: true,
                     message: `重複検出に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+      }
+    );
+
+    // respond_to_calendar_event
+    this.registerTool(
+      {
+        name: 'respond_to_calendar_event',
+        description:
+          'Respond to a calendar event with accept, decline, or tentative. Use this to RSVP to meeting invitations.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            eventId: {
+              type: 'string',
+              description: 'The ID of the calendar event to respond to',
+            },
+            response: {
+              type: 'string',
+              enum: ['accept', 'decline', 'tentative'],
+              description:
+                'Response type: accept (承諾), decline (辞退), or tentative (仮承諾)',
+            },
+            comment: {
+              type: 'string',
+              description:
+                "Optional comment to include with the response (e.g., '年末年始休暇のため')",
+            },
+          },
+          required: ['eventId', 'response'],
+        },
+      },
+      async (args) => {
+        if (!this.config) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        if (!this.calendarEventResponseService) {
+          this.initializeServices(this.config);
+        }
+
+        try {
+          const eventId = args.eventId as string;
+          const response = args.response as EventResponseType;
+          const comment = args.comment as string | undefined;
+
+          const isAvailable =
+            await this.calendarEventResponseService!.isEventKitAvailable();
+
+          if (!isAvailable) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      success: false,
+                      message:
+                        'カレンダーイベント返信機能はmacOSでのみ利用可能です。',
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+
+          const result = await this.calendarEventResponseService!.respondToEvent({
+            eventId,
+            response,
+            comment,
+          });
+
+          if (result.success) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      success: true,
+                      eventId: result.eventId,
+                      eventTitle: result.eventTitle,
+                      newStatus: result.newStatus,
+                      method: result.method,
+                      instanceOnly: result.instanceOnly,
+                      message: result.message,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    eventId: result.eventId,
+                    eventTitle: result.eventTitle,
+                    skipped: result.skipped,
+                    reason: result.reason,
+                    error: result.error,
+                    message: result.skipped
+                      ? `イベントをスキップしました: ${result.reason}`
+                      : `イベント返信に失敗しました: ${result.error}`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message: `カレンダーイベント返信に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+      }
+    );
+
+    // respond_to_calendar_events_batch
+    this.registerTool(
+      {
+        name: 'respond_to_calendar_events_batch',
+        description:
+          'Respond to multiple calendar events at once. Useful for declining all events during vacation or leave periods.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            eventIds: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Array of event IDs to respond to',
+            },
+            response: {
+              type: 'string',
+              enum: ['accept', 'decline', 'tentative'],
+              description:
+                'Response type: accept (承諾), decline (辞退), or tentative (仮承諾)',
+            },
+            comment: {
+              type: 'string',
+              description:
+                "Optional comment to include with all responses (e.g., '年末年始休暇のため')",
+            },
+          },
+          required: ['eventIds', 'response'],
+        },
+      },
+      async (args) => {
+        if (!this.config) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        if (!this.calendarEventResponseService) {
+          this.initializeServices(this.config);
+        }
+
+        try {
+          const eventIds = args.eventIds as string[];
+          const response = args.response as EventResponseType;
+          const comment = args.comment as string | undefined;
+
+          const isAvailable =
+            await this.calendarEventResponseService!.isEventKitAvailable();
+
+          if (!isAvailable) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      success: false,
+                      message:
+                        'カレンダーイベント返信機能はmacOSでのみ利用可能です。',
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+
+          const result =
+            await this.calendarEventResponseService!.respondToEventsBatch({
+              eventIds,
+              response,
+              comment,
+            });
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: result.success,
+                    summary: result.summary,
+                    details: {
+                      succeeded: result.details.succeeded,
+                      skipped: result.details.skipped,
+                      failed: result.details.failed,
+                    },
+                    message: result.message,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message: `カレンダーイベント一括返信に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
                   },
                   null,
                   2

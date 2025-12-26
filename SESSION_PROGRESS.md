@@ -1,13 +1,84 @@
 # Session Progress - sage
 
-## Current Session: 2025-12-26 (Part 3) ✅ COMPLETED
+## Current Session: 2025-12-26 (Part 4) ✅ COMPLETED
+
+### Session Goals
+タスク34（カレンダーイベント返信機能の実装）をTDDで実装
+
+### Final Status
+- **完了タスク**: 34タスク（全タスク完了！）
+- **未実装タスク**: なし
+- **テスト**: 40 suites, 727 tests passing
+
+### Task 34: カレンダーイベント返信機能の実装 ✅ COMPLETED
+
+#### 34.1 CalendarEventResponseService基盤の実装 ✅
+- [x] `EventResponseType` 型定義（accept/decline/tentative）
+- [x] `EventResponseRequest`/`EventResponseResult` インターフェース
+- [x] `CalendarEventResponseService` クラスの作成
+- [x] イベント返信可否チェック（`canRespondToEvent`）
+- _要件: 17.1, 17.7, 17.9, 17.10_
+
+#### 34.2 カレンダータイプ検出と返信戦略 ✅
+- [x] イベントIDからカレンダータイプ検出（Google/iCloud/Exchange/Local）
+- [x] カレンダータイプに応じた返信メソッド選択
+- [x] 主催者/出席者/読み取り専用チェック
+- _要件: 17.5, 17.6, 17.7, 17.9, 17.10_
+
+#### 34.3 EventKit経由の返信 ✅
+- [x] AppleScriptObjCを使用したEventKitアクセス
+- [x] EKParticipant読み取り専用制約への対応
+- [x] Calendar.appフォールバック処理
+- _要件: 17.6_
+
+#### 34.4 バッチ処理機能 ✅
+- [x] `respond_to_calendar_events_batch` MCPツール実装
+- [x] 順次処理（各イベントごと）
+- [x] 結果の集計とサマリー生成
+- _要件: 17.3, 17.4, 17.12_
+
+#### 34.5 MCPツールの登録 ✅
+- [x] `respond_to_calendar_event` ツールを index.ts に追加
+- [x] `respond_to_calendar_events_batch` ツールを index.ts に追加
+- [x] mcp-handler.ts への追加（HTTPモード対応）
+- _要件: 17.1, 17.3, 17.11_
+
+#### 34.6 エッジケース処理 ✅
+- [x] 繰り返しイベントの単一インスタンス処理
+- [x] 終日イベントの処理
+- [x] 個人の予定（出席者なし）のスキップ
+- _要件: 17.8, 17.9_
+
+#### 34.7 テスト ✅
+- [x] テスト作成: `tests/unit/calendar-event-response.test.ts` (29 tests)
+- [x] 単一イベント返信テスト
+- [x] バッチ返信テスト
+- [x] 主催者イベントスキップテスト
+- [x] 出席者なしイベントスキップテスト
+- [x] 読み取り専用カレンダーエラーテスト
+
+### New Files Created
+- `src/integrations/calendar-event-response.ts` - カレンダーイベント返信サービス
+- `tests/unit/calendar-event-response.test.ts` - カレンダーイベント返信テスト (29 tests)
+
+### Modified Files
+- `src/index.ts` - respond_to_calendar_event, respond_to_calendar_events_batch MCPツール追加
+- `src/cli/mcp-handler.ts` - respond_to_calendar_event, respond_to_calendar_events_batch ツール追加
+
+### New MCP Tools Added
+- `respond_to_calendar_event` - カレンダーイベントへの返信（承諾/辞退/仮承諾）
+- `respond_to_calendar_events_batch` - 複数カレンダーイベントへの一括返信
+
+---
+
+## Previous Session: 2025-12-26 (Part 3) ✅ COMPLETED
 
 ### Session Goals
 タスク33（list_calendar_events MCPツールの実装）をTDDで実装
 
 ### Final Status
-- **完了タスク**: 33タスク（全タスク完了！）
-- **未実装タスク**: 0タスク
+- **完了タスク**: 33タスク
+- **未実装タスク**: 1タスク
 - **テスト**: 39 suites, 698 tests passing
 
 ### Task 33: list_calendar_events MCPツールの実装 ✅ COMPLETED
