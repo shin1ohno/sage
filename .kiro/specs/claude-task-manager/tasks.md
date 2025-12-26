@@ -161,6 +161,30 @@
   - ✅ Notionのタスクステータス更新実装（MCP経由）
   - _要件: 12.5, 12.6_
 
+- [x] 19.4 AppleScriptカレンダー日付フォーマット修正
+  - ✅ **バグ修正**: `src/integrations/calendar-service.ts`のISO 8601日付解析問題
+  - ✅ AppleScriptがISO 8601形式（`2025-12-26`）を正しく解析できない問題を修正
+  - ✅ 日付をコンポーネント（年、月、日）に分解してAppleScript内で組み立てる方式に変更
+  - ✅ 全テスト通過（27 suites, 495 tests）
+  - _要件: 6.2, 6.3_
+
+- [x] 19.5 繰り返しイベントのフィルタリング問題を修正
+  - ✅ **バグ修正**: Calendar.appのAppleScriptは繰り返しイベントの「マスター」のみ返す問題
+  - ✅ EventKit (AppleScriptObjC)を使用した実装に変更
+  - ✅ EventKitが繰り返しイベントを個々の発生（occurrence）に自動展開
+  - ✅ isAllDayフィールドのサポートを追加
+  - _要件: 6.2, 6.3, 6.4_
+
+- [x] 19.6 Calendar統合をEventKitに完全移行（TDD）
+  - ✅ **リファクタリング**: Calendar.appのAppleScriptからEventKitへ完全移行
+  - ✅ `CalendarMethod`型から`'applescript'`を削除し`'eventkit'`に置換
+  - ✅ メソッド名を`fetchAppleScriptEvents`→`fetchEventKitEvents`に変更
+  - ✅ メソッド名を`parseAppleScriptResult`→`parseEventKitResult`に変更
+  - ✅ `source`フィールドをすべて`'eventkit'`に統一
+  - ✅ コメントとドキュメントを更新
+  - ✅ 全テスト通過（27 suites, 498 tests）
+  - _要件: 6.1, 6.2, 6.3, 6.4_
+
 ## 将来実装予定のタスク
 
 - [x] 20. Remote MCPサーバーの実装

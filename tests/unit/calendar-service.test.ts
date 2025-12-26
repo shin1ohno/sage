@@ -1,12 +1,14 @@
 /**
  * Calendar Service Unit Tests
  * Requirements: 6.1-6.9
+ *
+ * Tests for EventKit-based calendar integration on macOS
  */
 
 import { CalendarService } from '../../src/integrations/calendar-service.js';
 import type { CalendarEvent, AvailableSlot } from '../../src/integrations/calendar-service.js';
 
-// Mock run-applescript
+// Mock run-applescript (used to execute EventKit via AppleScriptObjC)
 jest.mock('run-applescript', () => ({
   runAppleScript: jest.fn(),
 }));
@@ -20,14 +22,15 @@ describe('CalendarService', () => {
   });
 
   describe('detectPlatform', () => {
-    it('should detect macOS platform', async () => {
+    it('should detect macOS platform with EventKit method', async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
 
       const info = await service.detectPlatform();
 
       expect(info.platform).toBe('macos');
-      expect(info.recommendedMethod).toBe('applescript');
+      expect(info.recommendedMethod).toBe('eventkit');
+      expect(info.availableMethods).toContain('eventkit');
       expect(info.hasNativeAccess).toBe(true);
 
       Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
@@ -70,21 +73,42 @@ describe('CalendarService', () => {
   });
 
   describe('fetchEvents', () => {
-    it('should fetch events via AppleScript on macOS', async () => {
+    it('should fetch events via EventKit on macOS', async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
 
       const runAppleScriptModule = require('run-applescript');
+      // EventKit format includes isAllDay field
       runAppleScriptModule.runAppleScript.mockResolvedValue(
-        'Meeting|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1\n' +
-          'Lunch|2025-01-15T12:00:00|2025-01-15T13:00:00|event-2'
+        'Meeting|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1|false\n' +
+          'Lunch|2025-01-15T12:00:00|2025-01-15T13:00:00|event-2|false'
       );
 
       const events = await service.fetchEvents('2025-01-15', '2025-01-16');
 
       expect(events).toHaveLength(2);
       expect(events[0].title).toBe('Meeting');
+      expect(events[0].source).toBe('eventkit');
+      expect(events[0].isAllDay).toBe(false);
       expect(events[1].title).toBe('Lunch');
+      expect(events[1].source).toBe('eventkit');
+
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    });
+
+    it('should correctly parse isAllDay field from EventKit', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+
+      const runAppleScriptModule = require('run-applescript');
+      runAppleScriptModule.runAppleScript.mockResolvedValue(
+        'Holiday|2025-01-15T00:00:00|2025-01-15T23:59:59|event-allday|true'
+      );
+
+      const events = await service.fetchEvents('2025-01-15', '2025-01-16');
+
+      expect(events).toHaveLength(1);
+      expect(events[0].isAllDay).toBe(true);
 
       Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
     });
@@ -100,7 +124,7 @@ describe('CalendarService', () => {
       Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
     });
 
-    it('should handle AppleScript errors gracefully', async () => {
+    it('should handle EventKit errors gracefully', async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
 
@@ -123,7 +147,7 @@ describe('CalendarService', () => {
         start: '2025-01-15T09:00:00',
         end: '2025-01-15T10:00:00',
         isAllDay: false,
-        source: 'applescript',
+        source: 'eventkit',
       },
       {
         id: 'event-2',
@@ -131,7 +155,7 @@ describe('CalendarService', () => {
         start: '2025-01-15T12:00:00',
         end: '2025-01-15T13:00:00',
         isAllDay: false,
-        source: 'applescript',
+        source: 'eventkit',
       },
     ];
 
@@ -144,6 +168,7 @@ describe('CalendarService', () => {
       // Check that we found a slot after the first meeting (10:00)
       const firstSlot = slots[0];
       expect(firstSlot.durationMinutes).toBeGreaterThanOrEqual(60);
+      expect(firstSlot.source).toBe('eventkit');
     });
 
     it('should respect task duration', () => {
@@ -153,6 +178,7 @@ describe('CalendarService', () => {
       // 3-hour slots are harder to find
       slots.forEach((slot) => {
         expect(slot.durationMinutes).toBeGreaterThanOrEqual(180);
+        expect(slot.source).toBe('eventkit');
       });
     });
 
@@ -164,7 +190,7 @@ describe('CalendarService', () => {
           start: '2025-01-15T00:00:00',
           end: '2025-01-15T23:59:59',
           isAllDay: true,
-          source: 'applescript',
+          source: 'eventkit',
         },
       ];
 
@@ -185,7 +211,7 @@ describe('CalendarService', () => {
         reason: '',
         conflicts: [],
         dayType: 'normal',
-        source: 'applescript',
+        source: 'eventkit',
       };
 
       const config = {
@@ -209,7 +235,7 @@ describe('CalendarService', () => {
         reason: '',
         conflicts: [],
         dayType: 'normal',
-        source: 'applescript',
+        source: 'eventkit',
       };
 
       const config = {
@@ -224,24 +250,42 @@ describe('CalendarService', () => {
     });
   });
 
-  describe('parseAppleScriptResult', () => {
-    it('should parse AppleScript output correctly', () => {
-      const output = 'Meeting|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1';
-      const events = service.parseAppleScriptResult(output);
+  describe('parseEventKitResult', () => {
+    it('should parse EventKit output correctly with isAllDay field', () => {
+      const output = 'Meeting|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1|false';
+      const events = service.parseEventKitResult(output);
 
       expect(events).toHaveLength(1);
       expect(events[0].title).toBe('Meeting');
       expect(events[0].id).toBe('event-1');
+      expect(events[0].isAllDay).toBe(false);
+      expect(events[0].source).toBe('eventkit');
+    });
+
+    it('should parse EventKit output with isAllDay true', () => {
+      const output = 'Holiday|2025-01-15T00:00:00|2025-01-15T23:59:59|event-holiday|true';
+      const events = service.parseEventKitResult(output);
+
+      expect(events).toHaveLength(1);
+      expect(events[0].isAllDay).toBe(true);
+    });
+
+    it('should handle legacy format without isAllDay field', () => {
+      const output = 'Meeting|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1';
+      const events = service.parseEventKitResult(output);
+
+      expect(events).toHaveLength(1);
+      expect(events[0].isAllDay).toBe(false); // defaults to false
     });
 
     it('should handle empty output', () => {
-      const events = service.parseAppleScriptResult('');
+      const events = service.parseEventKitResult('');
       expect(events).toHaveLength(0);
     });
 
     it('should handle malformed lines', () => {
-      const output = 'Meeting|2025-01-15T10:00:00\nValid|2025-01-15T12:00:00|2025-01-15T13:00:00|event-2';
-      const events = service.parseAppleScriptResult(output);
+      const output = 'Meeting|2025-01-15T10:00:00\nValid|2025-01-15T12:00:00|2025-01-15T13:00:00|event-2|false';
+      const events = service.parseEventKitResult(output);
 
       // Should only parse valid lines
       expect(events).toHaveLength(1);

@@ -1,9 +1,11 @@
 /**
  * Calendar Service
- * macOS AppleScript integration for Calendar.app
+ * macOS EventKit integration via AppleScriptObjC
  * Requirements: 6.1-6.9
  *
- * 現行実装: macOS AppleScript経由
+ * 現行実装: macOS EventKit経由（AppleScriptObjCを使用）
+ * - EventKitは繰り返しイベントを個々の発生（occurrence）に自動展開
+ * - Calendar.appのネイティブAppleScriptでは不可能な機能を提供
  * 将来対応予定: iOS/iPadOS ネイティブ統合（Claude Skills APIがデバイスAPIへのアクセスを提供した時点）
  */
 
@@ -33,7 +35,7 @@ export interface CalendarPlatformInfo {
   hasNativeAccess: boolean;
 }
 
-export type CalendarMethod = 'native' | 'applescript' | 'caldav' | 'ical_url' | 'manual_input' | 'outlook';
+export type CalendarMethod = 'native' | 'eventkit' | 'caldav' | 'ical_url' | 'manual_input' | 'outlook';
 
 /**
  * Calendar event
@@ -105,8 +107,8 @@ export class CalendarService {
     if (typeof process !== 'undefined' && process.platform === 'darwin') {
       return {
         platform: 'macos',
-        availableMethods: ['applescript', 'caldav'],
-        recommendedMethod: 'applescript',
+        availableMethods: ['eventkit', 'caldav'],
+        recommendedMethod: 'eventkit',
         requiresPermission: true,
         hasNativeAccess: true,
       };
@@ -174,8 +176,8 @@ export class CalendarService {
       case 'native':
         return this.fetchNativeEvents(startDate, endDate);
 
-      case 'applescript':
-        return this.fetchAppleScriptEvents(startDate, endDate);
+      case 'eventkit':
+        return this.fetchEventKitEvents(startDate, endDate);
 
       case 'manual_input':
       default:
@@ -199,20 +201,21 @@ export class CalendarService {
   }
 
   /**
-   * Fetch events via AppleScript (macOS)
+   * Fetch events via EventKit (macOS)
+   * Uses AppleScriptObjC to access EventKit framework
    * Requirement: 6.3
    */
-  private async fetchAppleScriptEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
+  private async fetchEventKitEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
     try {
-      // Lazy load run-applescript
+      // Lazy load run-applescript (used to execute AppleScriptObjC with EventKit)
       if (!this.runAppleScript) {
         const module = await import('run-applescript');
         this.runAppleScript = module.runAppleScript;
       }
 
-      const script = this.buildFetchEventsScript(startDate, endDate);
+      const script = this.buildEventKitScript(startDate, endDate);
 
-      // Use retry with exponential backoff for AppleScript execution
+      // Use retry with exponential backoff for EventKit execution
       const result = await retryWithBackoff(
         async () => {
           return await this.runAppleScript!(script);
@@ -220,44 +223,102 @@ export class CalendarService {
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`AppleScript Calendar retry attempt ${attempt}: ${error.message}`);
+            console.error(`EventKit Calendar retry attempt ${attempt}: ${error.message}`);
           },
         }
       );
 
-      return this.parseAppleScriptResult(result);
+      return this.parseEventKitResult(result);
     } catch (error) {
-      console.error('AppleScript カレンダーエラー:', error);
+      console.error('EventKit カレンダーエラー:', error);
       return [];
     }
   }
 
   /**
-   * Build AppleScript for fetching events
+   * Parse ISO 8601 date string into components
    */
-  private buildFetchEventsScript(startDate: string, endDate: string): string {
-    return `
-tell application "Calendar"
-  set startDate to date "${startDate}"
-  set endDate to date "${endDate}"
-  set eventList to ""
-
-  repeat with cal in calendars
-    set calEvents to (every event of cal whose start date ≥ startDate and start date ≤ endDate)
-    repeat with evt in calEvents
-      set eventInfo to (summary of evt) & "|" & (start date of evt as string) & "|" & (end date of evt as string) & "|" & (uid of evt)
-      set eventList to eventList & eventInfo & linefeed
-    end repeat
-  end repeat
-
-  return eventList
-end tell`;
+  private parseDateComponents(dateStr: string): { year: number; month: number; day: number } {
+    const date = new Date(dateStr);
+    return {
+      year: date.getFullYear(),
+      month: date.getMonth() + 1,
+      day: date.getDate(),
+    };
   }
 
   /**
-   * Parse AppleScript result into events
+   * Build AppleScriptObjC script for fetching events using EventKit
+   * Note: Uses EventKit framework to properly handle recurring events
+   * EventKit expands recurring events into individual occurrences, unlike Calendar.app's native AppleScript
    */
-  parseAppleScriptResult(output: string): CalendarEvent[] {
+  private buildEventKitScript(startDate: string, endDate: string): string {
+    const start = this.parseDateComponents(startDate);
+    const end = this.parseDateComponents(endDate);
+
+    return `
+use AppleScript version "2.7"
+use framework "Foundation"
+use framework "EventKit"
+use scripting additions
+
+-- Build start date
+set startDate to current date
+set year of startDate to ${start.year}
+set month of startDate to ${start.month}
+set day of startDate to ${start.day}
+set hours of startDate to 0
+set minutes of startDate to 0
+set seconds of startDate to 0
+
+-- Build end date (end of day)
+set endDate to current date
+set year of endDate to ${end.year}
+set month of endDate to ${end.month}
+set day of endDate to ${end.day}
+set hours of endDate to 23
+set minutes of endDate to 59
+set seconds of endDate to 59
+
+-- Create EventKit store
+set theStore to current application's EKEventStore's alloc()'s init()
+
+-- Request calendar access (synchronously wait for completion)
+set accessGranted to false
+theStore's requestFullAccessToEventsWithCompletion:(missing value)
+delay 0.5
+
+-- Convert AppleScript dates to NSDate
+set startNSDate to current application's NSDate's dateWithTimeIntervalSince1970:((startDate - (date "Thursday, January 1, 1970 at 9:00:00")) / 1)
+set endNSDate to current application's NSDate's dateWithTimeIntervalSince1970:((endDate - (date "Thursday, January 1, 1970 at 9:00:00")) / 1)
+
+-- Create predicate for events in date range (all calendars)
+set thePredicate to theStore's predicateForEventsWithStartDate:startNSDate endDate:endNSDate calendars:(missing value)
+
+-- Fetch events (EventKit automatically expands recurring events into occurrences)
+set theEvents to theStore's eventsMatchingPredicate:thePredicate
+
+-- Build result string
+set eventList to ""
+repeat with anEvent in theEvents
+  set eventTitle to (anEvent's title()) as text
+  set eventStart to (anEvent's startDate()) as date
+  set eventEnd to (anEvent's endDate()) as date
+  set eventId to (anEvent's eventIdentifier()) as text
+  set isAllDay to (anEvent's isAllDay()) as boolean
+
+  set eventInfo to eventTitle & "|" & (eventStart as string) & "|" & (eventEnd as string) & "|" & eventId & "|" & (isAllDay as string)
+  set eventList to eventList & eventInfo & linefeed
+end repeat
+
+return eventList`;
+  }
+
+  /**
+   * Parse EventKit result into events
+   * Format: title|start|end|id|isAllDay
+   */
+  parseEventKitResult(output: string): CalendarEvent[] {
     if (!output || output.trim() === '') {
       return [];
     }
@@ -273,8 +334,8 @@ end tell`;
           title: parts[0],
           start: parts[1],
           end: parts[2],
-          isAllDay: false,
-          source: 'applescript',
+          isAllDay: parts.length >= 5 ? parts[4].toLowerCase() === 'true' : false,
+          source: 'eventkit',
         });
       }
     }
@@ -337,7 +398,7 @@ end tell`;
           reason: `${Math.floor(gapMinutes)}分の空き時間`,
           conflicts: [],
           dayType: 'normal',
-          source: 'applescript',
+          source: 'eventkit',
         });
       }
 
@@ -355,7 +416,7 @@ end tell`;
         reason: `${Math.floor(remainingMinutes)}分の空き時間`,
         conflicts: [],
         dayType: 'normal',
-        source: 'applescript',
+        source: 'eventkit',
       });
     }
 
