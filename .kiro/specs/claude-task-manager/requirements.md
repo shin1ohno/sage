@@ -611,3 +611,43 @@ Access-Control-Allow-Headers: Content-Type, Authorization
 ```
 
 > **背景:** Claude.aiからMCPサーバーに接続する際、Streamable HTTP仕様に従ってGETリクエストが送信されます。GETリクエストはサーバー→クライアントの通知用SSEストリームを確立し、POSTリクエストはJSON-RPCリクエスト/レスポンス用として使用されます。
+
+### 要件21-31: OAuth 2.1 認証
+
+> **詳細仕様:** `.kiro/specs/claude-task-manager/oauth-spec.md` を参照
+
+**ユーザーストーリー:** Claude iOS/iPadOS/Webからsageに接続するユーザーとして、OAuth 2.1による安全な認証を行いたい。Claudeアプリの標準的な認証フローで簡単にアクセスできるようにするため。
+
+#### 概要
+
+OAuth 2.1認証により、Claude iOS/iPadOS/Webアプリケーションからsageへのセキュアなアクセスが可能になります。
+
+#### 主要要件
+
+| 要件 | 説明 | 優先度 |
+|------|------|--------|
+| 21 | OAuth 2.1 Authorization Code + PKCE (S256) | MUST |
+| 22 | Protected Resource Metadata (RFC 9728) | MUST |
+| 23 | Authorization Server Metadata (RFC 8414) | MUST |
+| 24 | Dynamic Client Registration (RFC 7591) | SHOULD |
+| 25 | Authorization Endpoint | MUST |
+| 26 | Token Endpoint | MUST |
+| 27 | Token Validation | MUST |
+| 28 | Consent UI | MUST |
+| 29 | User Authentication | MUST |
+| 30 | Security Requirements | MUST |
+| 31 | Claude固有の互換性 | MUST |
+
+#### Claude互換性要件
+
+1. コールバックURL `https://claude.ai/api/mcp/auth_callback` を許可すること
+2. 将来のURL `https://claude.com/api/mcp/auth_callback` も許可すること
+
+#### 参照規格
+
+- OAuth 2.1 (draft-ietf-oauth-v2-1-13)
+- RFC 8414 (Authorization Server Metadata)
+- RFC 7591 (Dynamic Client Registration)
+- RFC 9728 (Protected Resource Metadata)
+- RFC 8707 (Resource Indicators)
+- RFC 7636 (PKCE)
