@@ -23,7 +23,7 @@ import type { Priority } from "./types/index.js";
 
 // Server metadata
 const SERVER_NAME = "sage";
-const SERVER_VERSION = "0.3.0";
+const SERVER_VERSION = "0.3.1";
 
 // Global state
 let config: UserConfig | null = null;
