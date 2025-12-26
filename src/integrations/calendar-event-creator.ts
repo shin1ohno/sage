@@ -575,16 +575,19 @@ end if`;
 
   /**
    * Format date string to YYYY-MM-DD
+   * Parses ISO string directly to preserve original timezone
    * @internal
    */
   private formatDateOnly(dateStr?: string): string {
     if (!dateStr) return '';
 
-    // Handle date-only format
-    if (dateStr.length === 10) {
-      return dateStr;
+    // Handle date-only format (YYYY-MM-DD)
+    const dateOnlyMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (dateOnlyMatch) {
+      return dateOnlyMatch[1];
     }
 
+    // Fallback to Date object
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) {
       return dateStr;
@@ -599,11 +602,19 @@ end if`;
 
   /**
    * Format time string to HH:mm
+   * Parses ISO string directly to preserve original timezone
    * @internal
    */
   private formatTime(dateStr?: string): string {
     if (!dateStr) return '';
 
+    // Extract time from ISO 8601 format (e.g., "2025-01-01T14:00:00+09:00")
+    const timeMatch = dateStr.match(/T(\d{2}):(\d{2})/);
+    if (timeMatch) {
+      return `${timeMatch[1]}:${timeMatch[2]}`;
+    }
+
+    // Fallback to Date object
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) {
       return '';
