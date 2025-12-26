@@ -47,7 +47,9 @@ async function startHTTPServer(
   additionalArgs: string[] = []
 ): Promise<{ proc: ChildProcess; stop: () => Promise<void> }> {
   return new Promise((resolve, reject) => {
-    const proc = spawn('node', [CLI_PATH, '--remote', '--port', port.toString(), ...additionalArgs], {
+    // Use non-existent config path to fall back to defaults (no auth)
+    const testConfigPath = join(PROJECT_ROOT, 'test-nonexistent-config.json');
+    const proc = spawn('node', [CLI_PATH, '--remote', '--port', port.toString(), '--config', testConfigPath, ...additionalArgs], {
       cwd: PROJECT_ROOT,
       env: { ...process.env },
     });

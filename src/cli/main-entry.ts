@@ -6,7 +6,7 @@
  */
 
 import { CLIOptions, getHelpMessage, getVersion } from './parser.js';
-import { createHTTPServer } from './http-server.js';
+import { createHTTPServerWithConfig } from './http-server-with-config.js';
 
 /**
  * Server mode type
@@ -64,29 +64,22 @@ export async function startServer(options: CLIOptions): Promise<ServerStartResul
   // Start in HTTP mode if remote flag is set
   if (options.remote) {
     try {
-      const authEnabled = !!options.authSecret;
-      const httpConfig = {
+      const server = await createHTTPServerWithConfig({
+        configPath: options.config,
         port: options.port,
         host: options.host,
-        configPath: options.config,
-        auth: authEnabled
-          ? {
-              enabled: true,
-              jwtSecret: options.authSecret,
-              apiKeys: [], // API keys can be configured later
-            }
-          : undefined,
-      };
+        authSecret: options.authSecret,
+      });
 
-      const server = await createHTTPServer(httpConfig);
+      await server.start();
 
       return {
         mode: 'http',
         success: true,
-        port: options.port,
-        host: options.host,
+        port: server.getPort(),
+        host: server.getHost(),
         configPath: options.config,
-        authEnabled,
+        authEnabled: server.isAuthEnabled(),
         stop: async () => {
           await server.stop();
         },

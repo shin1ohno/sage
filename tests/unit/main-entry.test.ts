@@ -125,7 +125,7 @@ describe('Main Entry Point', () => {
           host: '127.0.0.1',
           help: false,
           version: false,
-          authSecret: 'test-secret',
+          authSecret: 'test-secret-key-that-is-at-least-32-characters-long',
         };
 
         const result = await startServer(options);
