@@ -575,3 +575,39 @@ interface DeleteCalendarEventsBatchResult {
 - `create_recurring_event` - 繰り返しルール付きイベント
 - `deleteAllOccurrences` - 繰り返しイベントのシリーズ全体削除
 - 参加者管理（招待状の送信）
+
+### 要件20: Streamable HTTP Transport対応
+
+**ユーザーストーリー:** Claude.aiからRemote MCPサーバーに接続するユーザーとして、Streamable HTTP仕様に準拠した接続を行いたい。クライアント側の実装に依存せず安定した接続を確立できるようにするため。
+
+#### 受け入れ基準
+
+1. `/mcp`エンドポイントがGETリクエストを受け付けたとき、システムはSSE（Server-Sent Events）ストリームを返すこと
+2. GETレスポンスのContent-Typeは`text/event-stream`であること
+3. SSEストリームは接続維持のため30秒間隔でkeepaliveコメント（`: keepalive\n\n`）を送信すること
+4. GETレスポンスには適切なCORSヘッダーを含めること（`Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`）
+5. GETレスポンスのCache-Controlは`no-cache`であること
+6. GETレスポンスのConnectionは`keep-alive`であること
+7. クライアントが接続を切断したとき、システムはkeepaliveタイマーをクリアすること
+8. 既存のPOST `/mcp`の動作は変更しないこと
+9. OPTIONSリクエスト（CORS preflight）も引き続きサポートすること
+10. `authEnabled: false`の設定時は認証なしでGET `/mcp`にアクセスできること
+
+#### 技術的詳細
+
+**SSEフォーマット:**
+- コメント行: `: keepalive\n\n`
+- データ行: `data: {JSON}\n\n`
+- イベント行: `event: message\ndata: {JSON}\n\n`
+
+**レスポンスヘッダー:**
+```
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization
+```
+
+> **背景:** Claude.aiからMCPサーバーに接続する際、Streamable HTTP仕様に従ってGETリクエストが送信されます。GETリクエストはサーバー→クライアントの通知用SSEストリームを確立し、POSTリクエストはJSON-RPCリクエスト/レスポンス用として使用されます。

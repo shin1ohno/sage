@@ -171,8 +171,80 @@ async function main(): Promise<void> {
 | エンドポイント | メソッド | 説明 |
 |---------------|---------|------|
 | `/health` | GET | ヘルスチェック |
-| `/mcp` | POST | MCPリクエスト処理 |
+| `/mcp` | GET | SSEストリーム（Streamable HTTP transport） |
+| `/mcp` | POST | MCPリクエスト処理（JSON-RPC） |
+| `/mcp` | OPTIONS | CORSプリフライト |
 | `/auth/token` | POST | JWT認証トークン生成 |
+
+#### Streamable HTTP Transport
+
+MCP Streamable HTTP仕様に準拠したエンドポイント実装。Claude.aiからの接続をサポートします。
+
+**GET /mcp - SSEストリーム:**
+
+```typescript
+interface SSEStreamHandler {
+  // SSEストリームを開始
+  startStream(res: ServerResponse): void;
+  // keepaliveを送信（30秒間隔）
+  sendKeepalive(res: ServerResponse): void;
+  // サーバーからクライアントへ通知を送信
+  sendEvent(res: ServerResponse, event: string, data: any): void;
+  // ストリームをクリーンアップ
+  cleanup(res: ServerResponse): void;
+}
+```
+
+**レスポンスヘッダー:**
+```
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization
+```
+
+**SSEフォーマット:**
+```
+# コメント（keepalive用）
+: keepalive
+
+# データ送信
+data: {"jsonrpc":"2.0","method":"notifications/message","params":{...}}
+
+# イベント付きデータ送信
+event: message
+data: {"jsonrpc":"2.0","method":"notifications/message","params":{...}}
+```
+
+**実装例:**
+```typescript
+function handleSSEStream(req: IncomingMessage, res: ServerResponse): void {
+  // SSEヘッダーを設定
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  res.writeHead(200);
+
+  // 接続維持のためkeepaliveを送信（30秒間隔）
+  const keepAliveInterval = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 30000);
+
+  // 接続切断時のクリーンアップ
+  req.on('close', () => {
+    clearInterval(keepAliveInterval);
+  });
+}
+```
+
+**POST /mcp - JSON-RPCリクエスト:**
+既存の実装を維持。リクエストボディのJSON-RPCメッセージを処理し、レスポンスを返します。
 
 #### Remote MCP設定ファイル
 
