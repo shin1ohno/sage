@@ -174,6 +174,78 @@ async function main(): Promise<void> {
 | `/mcp` | POST | MCPリクエスト処理 |
 | `/auth/token` | POST | JWT認証トークン生成 |
 
+#### Remote MCP設定ファイル
+
+HTTPサーバーモードで起動時、システムは`~/.sage/remote-config.json`から設定を読み込みます。
+
+```typescript
+interface RemoteConfig {
+  remote: {
+    enabled: boolean;
+    port: number;
+    host: string;
+    auth: {
+      type: 'jwt' | 'none';
+      secret?: string;       // JWT署名用シークレット（32文字以上推奨）
+      expiresIn?: string;    // トークン有効期限（例: "24h", "7d"）
+    };
+    cors: {
+      allowedOrigins: string[];  // ["*"] または ["https://example.com"]
+    };
+  };
+}
+```
+
+**設定ファイル例** (`~/.sage/remote-config.json`):
+```json
+{
+  "remote": {
+    "enabled": true,
+    "port": 3000,
+    "host": "0.0.0.0",
+    "auth": {
+      "type": "jwt",
+      "secret": "hwy1XJQ2Sef7mHVATyrpE8XPhchCIY6UojPyOeHeWkA=",
+      "expiresIn": "24h"
+    },
+    "cors": {
+      "allowedOrigins": ["*"]
+    }
+  }
+}
+```
+
+#### 認証フロー
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     認証フロー                                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. クライアントがsecretを使ってトークン取得                      │
+│     POST /auth/token                                            │
+│     Body: {"secret": "設定されたsecret"}                         │
+│     Response: {"token": "jwt...", "expiresIn": 86400}          │
+│                                                                 │
+│  2. トークンを使ってMCPリクエスト                                 │
+│     POST /mcp                                                   │
+│     Headers: Authorization: Bearer <token>                      │
+│     Body: {"jsonrpc": "2.0", "method": "...", ...}             │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  エラーレスポンス:                                               │
+│    401 - Invalid secret / Invalid or expired token             │
+│    403 - IP not allowed (IP whitelist設定時)                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 設定読み込み優先順位
+
+1. CLIオプション (`--port`, `--host`, etc.)
+2. 環境変数 (`SAGE_PORT`, `SAGE_HOST`, etc.)
+3. リモート設定ファイル (`~/.sage/remote-config.json`)
+4. デフォルト値
+
 ### レイヤー構成
 
 #### 1. MCP Interface Layer

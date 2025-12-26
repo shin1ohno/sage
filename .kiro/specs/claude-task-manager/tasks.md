@@ -315,10 +315,64 @@
   - ✅ MCPエンドポイントのテスト
   - _要件: 14.1-14.10_
 
+## 完了済み追加タスク (続き)
+
+- [x] 31. Remote MCP設定ファイルと認証の実装
+- [x] 31.1 リモート設定ファイルローダーの実装
+  - ✅ **テスト**: `tests/unit/remote-config-loader.test.ts`実装済み（17 tests）
+  - ✅ `~/.sage/remote-config.json`の読み込み
+  - ✅ 設定ファイルのバリデーション
+  - ✅ デフォルト値のマージ
+  - _要件: 15.1, 15.2, 15.3, 15.10_
+
+- [x] 31.2 Secret認証の実装
+  - ✅ **テスト**: `tests/unit/secret-auth.test.ts`実装済み（23 tests）
+  - ✅ `/auth/token`エンドポイントでsecret認証
+  - ✅ JWTトークン生成（有効期限付き）
+  - ✅ 不正なsecretへの401エラーレスポンス
+  - _要件: 15.4, 15.5, 15.6_
+
+- [x] 31.3 JWT認証ミドルウェアの実装
+  - ✅ **テスト**: `tests/unit/jwt-middleware.test.ts`実装済み（19 tests）
+  - ✅ `Authorization: Bearer <token>`ヘッダーの検証
+  - ✅ トークン有効期限チェック
+  - ✅ 認証エラーハンドリング
+  - _要件: 15.7, 15.8_
+
+- [x] 31.4 HTTPサーバーとの統合
+  - ✅ **テスト**: `tests/unit/http-server-auth.test.ts`実装済み（14 tests）
+  - ✅ 起動時に設定ファイルを読み込み
+  - ✅ 設定に基づいてCORSヘッダーを設定
+  - ✅ CLIオプション > 環境変数 > 設定ファイル > デフォルト値の優先順位
+  - _要件: 15.9_
+
+- [x] 31.5 E2Eテストの追加
+  - ✅ **テスト**: `tests/e2e/remote-auth.test.ts`実装済み（9 tests）
+  - ✅ 設定ファイルからの起動テスト
+  - ✅ Secret認証フローのテスト
+  - ✅ JWT認証フローのテスト
+  - _要件: 15.1-15.10_
+
+## 未実装タスク
+
+なし（すべてのタスクが完了しました）
+
 ## 実装完了サマリー
 
-- **完了タスク**: 30タスク（全タスク完了）
-- **未実装タスク**: 0タスク
-- **テスト**: 31 suites, 571 tests passing
+- **完了タスク**: 31タスク（全タスク完了）
+- **未実装タスク**: なし
+- **テスト**: 36 suites, 653 tests passing
 - **プラットフォーム**: macOS 専用（AppleScript/EventKit のため）
 - **ドキュメント**: SETUP-LOCAL.md, SETUP-REMOTE.md, CONFIGURATION.md, ARCHITECTURE.md, TROUBLESHOOTING.md
+
+### Task 31で追加されたファイル
+
+- `src/cli/remote-config-loader.ts` - Remote MCP設定ファイルローダー
+- `src/cli/secret-auth.ts` - Secret認証とJWTトークン生成
+- `src/cli/jwt-middleware.ts` - JWT認証ミドルウェア
+- `src/cli/http-server-with-config.ts` - 設定統合HTTPサーバー
+- `tests/unit/remote-config-loader.test.ts` - 17 tests
+- `tests/unit/secret-auth.test.ts` - 23 tests
+- `tests/unit/jwt-middleware.test.ts` - 19 tests
+- `tests/unit/http-server-auth.test.ts` - 14 tests
+- `tests/e2e/remote-auth.test.ts` - 9 tests
