@@ -7,5 +7,5 @@
 
 // Version is updated by npm version command and build process
 // Keep in sync with package.json
-export const VERSION = '0.5.1';
+export const VERSION = '0.5.2';
 export const SERVER_NAME = 'sage';
