@@ -38,7 +38,7 @@ export interface CalendarPlatformInfo {
 export type CalendarMethod = 'native' | 'eventkit' | 'caldav' | 'ical_url' | 'manual_input' | 'outlook';
 
 /**
- * Calendar event
+ * Calendar event (basic)
  */
 export interface CalendarEvent {
   id: string;
@@ -47,6 +47,38 @@ export interface CalendarEvent {
   end: string;
   isAllDay: boolean;
   source: string;
+}
+
+/**
+ * Calendar event with additional details
+ * Requirement: 16.10
+ */
+export interface CalendarEventDetailed extends CalendarEvent {
+  calendar: string;
+  location?: string;
+}
+
+/**
+ * Request for listing calendar events
+ * Requirement: 16.2, 16.3, 16.4
+ */
+export interface ListEventsRequest {
+  startDate: string; // ISO 8601 format (e.g., '2025-01-15')
+  endDate: string;   // ISO 8601 format (e.g., '2025-01-20')
+  calendarName?: string; // Optional: filter by calendar name
+}
+
+/**
+ * Response for listing calendar events
+ * Requirement: 16.10
+ */
+export interface ListEventsResponse {
+  events: CalendarEventDetailed[];
+  period: {
+    start: string;
+    end: string;
+  };
+  totalEvents: number;
 }
 
 /**
@@ -473,5 +505,253 @@ return eventList`;
 - ランチ: 12:00 - 13:00
 
 これにより、空き時間を計算して最適なタスク実行時間を提案します。`;
+  }
+
+  /**
+   * List calendar events for a specified period
+   * Requirement: 16.1
+   */
+  async listEvents(request: ListEventsRequest): Promise<ListEventsResponse> {
+    // Validate date format (ISO 8601)
+    if (!this.isValidDateFormat(request.startDate)) {
+      throw new Error(`無効な日付形式です: ${request.startDate}。ISO 8601形式（例: 2025-01-15）を使用してください。`);
+    }
+    if (!this.isValidDateFormat(request.endDate)) {
+      throw new Error(`無効な日付形式です: ${request.endDate}。ISO 8601形式（例: 2025-01-15）を使用してください。`);
+    }
+
+    // Validate date range
+    const startDate = new Date(request.startDate);
+    const endDate = new Date(request.endDate);
+    if (endDate < startDate) {
+      throw new Error('終了日は開始日より後である必要があります。');
+    }
+
+    // Check calendar availability
+    const isAvailable = await this.isAvailable();
+    if (!isAvailable) {
+      throw new Error('カレンダー統合がこのプラットフォームで利用できません。macOSで実行してください。');
+    }
+
+    // Fetch events with detailed information
+    const events = await this.fetchEventsDetailed(request.startDate, request.endDate);
+
+    // Filter by calendar name if specified
+    let filteredEvents = events;
+    if (request.calendarName) {
+      filteredEvents = events.filter(e => e.calendar === request.calendarName);
+    }
+
+    return {
+      events: filteredEvents,
+      period: {
+        start: request.startDate,
+        end: request.endDate,
+      },
+      totalEvents: filteredEvents.length,
+    };
+  }
+
+  /**
+   * Validate ISO 8601 date format (YYYY-MM-DD)
+   */
+  private isValidDateFormat(dateStr: string): boolean {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateStr)) {
+      return false;
+    }
+    const date = new Date(dateStr);
+    return !isNaN(date.getTime());
+  }
+
+  /**
+   * Fetch events with detailed information (calendar, location)
+   * Requirement: 16.10, 16.11
+   */
+  async fetchEventsDetailed(startDate: string, endDate: string): Promise<CalendarEventDetailed[]> {
+    const platform = await this.detectPlatform();
+
+    switch (platform.recommendedMethod) {
+      case 'eventkit':
+        return this.fetchEventKitEventsDetailed(startDate, endDate);
+
+      case 'native':
+      case 'manual_input':
+      default:
+        return [];
+    }
+  }
+
+  /**
+   * Fetch events via EventKit with detailed information
+   * Requirement: 16.10, 16.11
+   */
+  private async fetchEventKitEventsDetailed(startDate: string, endDate: string): Promise<CalendarEventDetailed[]> {
+    try {
+      // Lazy load run-applescript
+      if (!this.runAppleScript) {
+        const module = await import('run-applescript');
+        this.runAppleScript = module.runAppleScript;
+      }
+
+      const script = this.buildEventKitScriptWithDetails(startDate, endDate);
+
+      // Use retry with exponential backoff for EventKit execution
+      const result = await retryWithBackoff(
+        async () => {
+          return await this.runAppleScript!(script);
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            console.error(`EventKit Calendar retry attempt ${attempt}: ${error.message}`);
+          },
+        }
+      );
+
+      return this.parseEventKitResultWithDetails(result);
+    } catch (error) {
+      console.error('EventKit カレンダーエラー:', error);
+      throw new Error(`カレンダーイベントの取得に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Build AppleScriptObjC script for fetching events with details
+   * Includes calendar name and location
+   * Requirement: 16.10
+   */
+  buildEventKitScriptWithDetails(startDate: string, endDate: string): string {
+    const start = this.parseDateComponents(startDate);
+    const end = this.parseDateComponents(endDate);
+
+    return `
+use AppleScript version "2.7"
+use framework "Foundation"
+use framework "EventKit"
+use scripting additions
+
+-- Build start date
+set startDate to current date
+set year of startDate to ${start.year}
+set month of startDate to ${start.month}
+set day of startDate to ${start.day}
+set hours of startDate to 0
+set minutes of startDate to 0
+set seconds of startDate to 0
+
+-- Build end date (end of day)
+set endDate to current date
+set year of endDate to ${end.year}
+set month of endDate to ${end.month}
+set day of endDate to ${end.day}
+set hours of endDate to 23
+set minutes of endDate to 59
+set seconds of endDate to 59
+
+-- Create EventKit store
+set theStore to current application's EKEventStore's alloc()'s init()
+
+-- Request calendar access (synchronously wait for completion)
+set accessGranted to false
+theStore's requestFullAccessToEventsWithCompletion:(missing value)
+delay 0.5
+
+-- Convert AppleScript dates to NSDate
+set startNSDate to current application's NSDate's dateWithTimeIntervalSince1970:((startDate - (date "Thursday, January 1, 1970 at 9:00:00")) / 1)
+set endNSDate to current application's NSDate's dateWithTimeIntervalSince1970:((endDate - (date "Thursday, January 1, 1970 at 9:00:00")) / 1)
+
+-- Create predicate for events in date range (all calendars)
+set thePredicate to theStore's predicateForEventsWithStartDate:startNSDate endDate:endNSDate calendars:(missing value)
+
+-- Fetch events (EventKit automatically expands recurring events into occurrences)
+set theEvents to theStore's eventsMatchingPredicate:thePredicate
+
+-- Build result string with calendar and location
+set eventList to ""
+repeat with anEvent in theEvents
+  set eventTitle to (anEvent's title()) as text
+  set eventStart to (anEvent's startDate()) as date
+  set eventEnd to (anEvent's endDate()) as date
+  set eventId to (anEvent's eventIdentifier()) as text
+  set isAllDay to (anEvent's isAllDay()) as boolean
+
+  -- Get calendar name
+  set eventCalendar to (anEvent's calendar()'s title()) as text
+
+  -- Get location (may be missing value)
+  set eventLocation to ""
+  try
+    set locationValue to anEvent's location()
+    if locationValue is not missing value then
+      set eventLocation to locationValue as text
+    end if
+  end try
+
+  set eventInfo to eventTitle & "|" & (eventStart as string) & "|" & (eventEnd as string) & "|" & eventId & "|" & (isAllDay as string) & "|" & eventCalendar & "|" & eventLocation
+  set eventList to eventList & eventInfo & linefeed
+end repeat
+
+return eventList`;
+  }
+
+  /**
+   * Parse EventKit result with detailed information
+   * Format: title|start|end|id|isAllDay|calendar|location
+   * Requirement: 16.10
+   */
+  parseEventKitResultWithDetails(output: string): CalendarEventDetailed[] {
+    if (!output || output.trim() === '') {
+      return [];
+    }
+
+    const events: CalendarEventDetailed[] = [];
+    const lines = output.trim().split('\n');
+
+    for (const line of lines) {
+      const parts = line.split('|');
+      if (parts.length >= 6) {
+        const location = parts.length >= 7 && parts[6].trim() !== '' ? parts[6] : undefined;
+
+        events.push({
+          id: parts[3],
+          title: parts[0],
+          start: this.formatDateToJST(parts[1]),
+          end: this.formatDateToJST(parts[2]),
+          isAllDay: parts[4].toLowerCase() === 'true',
+          source: 'eventkit',
+          calendar: parts[5],
+          location,
+        });
+      }
+    }
+
+    return events;
+  }
+
+  /**
+   * Format AppleScript date string to JST ISO 8601 format
+   * Requirement: 16.9
+   */
+  private formatDateToJST(appleScriptDate: string): string {
+    try {
+      // Parse AppleScript date format and convert to JST ISO 8601
+      const date = new Date(appleScriptDate);
+      if (isNaN(date.getTime())) {
+        return appleScriptDate; // Return as-is if parsing fails
+      }
+
+      // Format with JST offset (+09:00)
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const seconds = String(date.getSeconds()).padStart(2, '0');
+
+      return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+09:00`;
+    } catch {
+      return appleScriptDate;
+    }
   }
 }

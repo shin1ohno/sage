@@ -1085,6 +1085,140 @@ class MCPHandlerImpl implements MCPHandler {
       }
     );
 
+    // list_calendar_events
+    this.registerTool(
+      {
+        name: 'list_calendar_events',
+        description:
+          'List calendar events for a specified period. Returns events with details including calendar name and location.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            startDate: {
+              type: 'string',
+              description: 'Start date in ISO 8601 format (e.g., 2025-01-15)',
+            },
+            endDate: {
+              type: 'string',
+              description: 'End date in ISO 8601 format (e.g., 2025-01-20)',
+            },
+            calendarName: {
+              type: 'string',
+              description: 'Optional: filter events by calendar name',
+            },
+          },
+          required: ['startDate', 'endDate'],
+        },
+      },
+      async (args) => {
+        if (!this.config) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        if (!this.calendarService) {
+          this.initializeServices(this.config);
+        }
+
+        try {
+          const startDate = args.startDate as string;
+          const endDate = args.endDate as string;
+          const calendarName = args.calendarName as string | undefined;
+
+          const platformInfo = await this.calendarService!.detectPlatform();
+          const isAvailable = await this.calendarService!.isAvailable();
+
+          if (!isAvailable) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      success: false,
+                      platform: platformInfo.platform,
+                      method: platformInfo.recommendedMethod,
+                      message:
+                        'カレンダー統合がこのプラットフォームで利用できません。macOSで実行してください。',
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+
+          const result = await this.calendarService!.listEvents({
+            startDate,
+            endDate,
+            calendarName,
+          });
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    platform: platformInfo.platform,
+                    method: platformInfo.recommendedMethod,
+                    events: result.events.map((event) => ({
+                      id: event.id,
+                      title: event.title,
+                      start: event.start,
+                      end: event.end,
+                      isAllDay: event.isAllDay,
+                      calendar: event.calendar,
+                      location: event.location,
+                    })),
+                    period: result.period,
+                    totalEvents: result.totalEvents,
+                    message:
+                      result.totalEvents > 0
+                        ? `${result.totalEvents}件のイベントが見つかりました。`
+                        : '指定した期間にイベントが見つかりませんでした。',
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message: `カレンダーイベントの取得に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+      }
+    );
+
     // sync_to_notion
     this.registerTool(
       {

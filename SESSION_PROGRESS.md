@@ -1,6 +1,93 @@
 # Session Progress - sage
 
-## Current Session: 2025-12-26 ✅ COMPLETED
+## Current Session: 2025-12-26 (Part 3) ✅ COMPLETED
+
+### Session Goals
+タスク33（list_calendar_events MCPツールの実装）をTDDで実装
+
+### Final Status
+- **完了タスク**: 33タスク（全タスク完了！）
+- **未実装タスク**: 0タスク
+- **テスト**: 39 suites, 698 tests passing
+
+### Task 33: list_calendar_events MCPツールの実装 ✅ COMPLETED
+
+#### 33.1 CalendarService拡張 ✅
+- [x] `CalendarEventDetailed` 型の追加（calendar, location フィールド）
+- [x] `ListEventsRequest` / `ListEventsResponse` 型の追加
+- [x] `listEvents()` メソッドの実装
+- [x] `fetchEventsDetailed()` メソッドの実装
+- [x] `buildEventKitScriptWithDetails()` - カレンダー名・場所を含むAppleScript
+- [x] `parseEventKitResultWithDetails()` - 拡張パース処理
+- _要件: 16.1-16.12_
+
+#### 33.2 MCPツール登録 ✅
+- [x] `index.ts` に `list_calendar_events` ツール追加
+- [x] `mcp-handler.ts` に `list_calendar_events` ツール追加
+- [x] 入力パラメータ: startDate, endDate, calendarName (optional)
+- [x] ISO 8601形式の日付検証
+- [x] カレンダー名によるフィルタリング
+
+#### 33.3 テスト ✅
+- [x] テスト作成: `tests/unit/list-calendar-events.test.ts` (21 tests)
+- [x] 入力バリデーションテスト
+- [x] カレンダーフィルタリングテスト
+- [x] イベントタイプテスト（終日、複数日）
+- [x] レスポンスフォーマットテスト
+- [x] エラーハンドリングテスト
+- [x] EventKit統合テスト
+- [x] タイムゾーン処理テスト
+
+### New Files Created
+- `tests/unit/list-calendar-events.test.ts` - list_calendar_eventsテスト
+
+### Modified Files
+- `src/integrations/calendar-service.ts` - listEvents(), fetchEventsDetailed() 追加
+- `src/index.ts` - list_calendar_events MCPツール追加
+- `src/cli/mcp-handler.ts` - list_calendar_events ツール追加
+
+---
+
+## Previous Session: 2025-12-26 (Part 2) ✅ COMPLETED
+
+### Session Goals
+タスク32（Remote MCP ServerのMCPハンドリング実装）をTDDで実装
+
+### Final Status
+- **完了タスク**: 32タスク（全タスク完了！）
+- **未実装タスク**: 0タスク
+- **テスト**: 38 suites, 677 tests passing
+
+### Task 32: Remote MCP Server の実際の MCP ハンドリング実装 ✅ COMPLETED
+
+#### 32.1 HTTP Server に MCP ツール処理を統合 ✅
+- [x] テスト作成: `tests/unit/mcp-handler.test.ts` (16 tests)
+- [x] MCPHandler クラスの実装 (`src/cli/mcp-handler.ts`)
+- [x] `tools/list` メソッド実装
+- [x] `tools/call` メソッド実装
+- [x] `initialize` メソッド実装
+- [x] http-server-with-config.ts への統合
+- [x] E2Eテスト作成: `tests/e2e/mcp-over-http.test.ts` (8 tests)
+- _要件: 13.1, 13.4, 13.5_
+
+#### 32.2 Claude iOS App 互換性の確認
+- ⚠️ Claude iOS は OAuth 2.0 認証のみサポート
+- ✅ JWT認証または認証なしモードで使用可能（ローカルネットワーク限定）
+- 📋 OAuth 2.0 対応は将来対応
+- _要件: 13.2_
+
+### New Files Created
+- `src/cli/mcp-handler.ts` - MCPリクエストハンドラー
+- `tests/unit/mcp-handler.test.ts` - MCPハンドラーユニットテスト
+- `tests/e2e/mcp-over-http.test.ts` - MCP over HTTP E2Eテスト
+
+### Final Status
+- **完了タスク**: 32タスク（全タスク完了！）
+- **テスト**: 38 suites, 677 tests passing
+
+---
+
+## Previous Session: 2025-12-26 (Part 1) ✅ COMPLETED
 
 ### Session Goals
 タスク30（CLIオプションとRemote MCPサーバー起動機能）をTDDで実装

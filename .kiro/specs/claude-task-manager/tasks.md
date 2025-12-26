@@ -373,45 +373,46 @@
   - 📋 OAuth 2.0 対応は将来対応
   - _要件: 13.2_
 
-## 未実装タスク
+## 完了済み追加タスク (続き)
 
-- [ ] 33. カレンダーイベント一覧取得ツールの実装
-- [ ] 33.1 list_calendar_events MCPツールの実装
-  - 📋 `CalendarService.listEvents()` メソッドの追加
-  - 📋 入力パラメータ検証（startDate, endDate, calendarName）
-  - 📋 ISO 8601形式の日付パース
-  - 📋 カレンダー名によるフィルタリング
+- [x] 33. カレンダーイベント一覧取得ツールの実装
+- [x] 33.1 list_calendar_events MCPツールの実装
+  - ✅ `CalendarService.listEvents()` メソッドの追加
+  - ✅ 入力パラメータ検証（startDate, endDate, calendarName）
+  - ✅ ISO 8601形式の日付パース
+  - ✅ カレンダー名によるフィルタリング
   - _要件: 16.1, 16.2, 16.3, 16.4, 16.5_
 
-- [ ] 33.2 繰り返しイベントの展開処理
-  - 📋 EventKitの繰り返しイベント取得
-  - 📋 指定期間内の各occurrence を個別イベントとして返却
+- [x] 33.2 繰り返しイベントの展開処理
+  - ✅ EventKitの繰り返しイベント取得
+  - ✅ 指定期間内の各occurrence を個別イベントとして返却
   - _要件: 16.6_
 
-- [ ] 33.3 特殊イベントの処理
-  - 📋 終日イベント（isAllDay: true）の処理
-  - 📋 複数日にまたがるイベントの処理
-  - 📋 タイムゾーン処理（JST/Asia/Tokyo デフォルト）
+- [x] 33.3 特殊イベントの処理
+  - ✅ 終日イベント（isAllDay: true）の処理
+  - ✅ 複数日にまたがるイベントの処理
+  - ✅ タイムゾーン処理（JST/Asia/Tokyo デフォルト）
   - _要件: 16.7, 16.8, 16.9_
 
-- [ ] 33.4 レスポンスフォーマットとエラーハンドリング
-  - 📋 CalendarEvent型の拡張（calendar, location フィールド追加）
-  - 📋 ListEventsResponse 形式での返却
-  - 📋 カレンダーアクセス不可時のエラーメッセージ
+- [x] 33.4 レスポンスフォーマットとエラーハンドリング
+  - ✅ CalendarEventDetailed型の追加（calendar, location フィールド追加）
+  - ✅ ListEventsResponse 形式での返却
+  - ✅ カレンダーアクセス不可時のエラーメッセージ
   - _要件: 16.10, 16.11, 16.12_
 
-- [ ] 33.5 テストの実装
-  - 📋 単一日のイベント取得テスト
-  - 📋 1週間のイベント取得テスト
-  - 📋 特定カレンダーでのフィルタリングテスト
-  - 📋 繰り返しイベント展開テスト
-  - 📋 タイムゾーン処理テスト
+- [x] 33.5 テストの実装
+  - ✅ **テスト**: `tests/unit/list-calendar-events.test.ts`実装済み（21 tests）
+  - ✅ 単一日のイベント取得テスト
+  - ✅ 1週間のイベント取得テスト
+  - ✅ 特定カレンダーでのフィルタリングテスト
+  - ✅ 繰り返しイベント展開テスト
+  - ✅ タイムゾーン処理テスト
 
 ## 実装完了サマリー
 
-- **完了タスク**: 32タスク
-- **未実装タスク**: 1タスク（Task 33: list_calendar_events）
-- **テスト**: 38 suites, 677 tests passing
+- **完了タスク**: 33タスク
+- **未実装タスク**: 0タスク
+- **テスト**: 39 suites, 698 tests passing
 - **プラットフォーム**: macOS 専用（AppleScript/EventKit のため）
 - **ドキュメント**: SETUP-LOCAL.md, SETUP-REMOTE.md, CONFIGURATION.md, ARCHITECTURE.md, TROUBLESHOOTING.md
 

@@ -987,6 +987,133 @@ async function createServer(): Promise<McpServer> {
   );
 
   /**
+   * list_calendar_events - List calendar events for a specified period
+   * Requirement: 16.1-16.12
+   */
+  server.tool(
+    "list_calendar_events",
+    "List calendar events for a specified period. Returns events with details including calendar name and location.",
+    {
+      startDate: z
+        .string()
+        .describe("Start date in ISO 8601 format (e.g., 2025-01-15)"),
+      endDate: z
+        .string()
+        .describe("End date in ISO 8601 format (e.g., 2025-01-20)"),
+      calendarName: z
+        .string()
+        .optional()
+        .describe("Optional: filter events by calendar name"),
+    },
+    async ({ startDate, endDate, calendarName }) => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message:
+                    "sageが設定されていません。check_setup_statusを実行してください。",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!calendarService) {
+        initializeServices(config);
+      }
+
+      try {
+        // Check platform availability
+        const platformInfo = await calendarService!.detectPlatform();
+        const isAvailable = await calendarService!.isAvailable();
+
+        if (!isAvailable) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    platform: platformInfo.platform,
+                    method: platformInfo.recommendedMethod,
+                    message:
+                      "カレンダー統合がこのプラットフォームで利用できません。macOSで実行してください。",
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        // List events
+        const result = await calendarService!.listEvents({
+          startDate,
+          endDate,
+          calendarName,
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  platform: platformInfo.platform,
+                  method: platformInfo.recommendedMethod,
+                  events: result.events.map((event) => ({
+                    id: event.id,
+                    title: event.title,
+                    start: event.start,
+                    end: event.end,
+                    isAllDay: event.isAllDay,
+                    calendar: event.calendar,
+                    location: event.location,
+                  })),
+                  period: result.period,
+                  totalEvents: result.totalEvents,
+                  message:
+                    result.totalEvents > 0
+                      ? `${result.totalEvents}件のイベントが見つかりました。`
+                      : "指定した期間にイベントが見つかりませんでした。",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `カレンダーイベントの取得に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  /**
    * sync_to_notion - Sync a task to Notion
    * Requirement: 8.1-8.5
    */
