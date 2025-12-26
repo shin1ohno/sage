@@ -372,3 +372,91 @@ sage（賢者）は、Claude DesktopとClaude Code向けのMCPサーバーとし
 >   "message": "15件中12件のイベントを辞退しました。3件はスキップされました。"
 > }
 > ```
+
+### 要件18: カレンダーイベントの作成
+
+**ユーザーストーリー:** 効率的に仕事を進めたいユーザーとして、会話の中でカレンダーにイベントを直接作成したい。別のアプリを開かずにスケジュールを管理できるようにするため。
+
+#### 受け入れ基準
+
+1. `create_calendar_event`ツールが呼び出されたとき、システムはカレンダーに新しいイベントを作成すること
+2. 入力パラメータとして`title`（必須）、`startDate`（必須: ISO 8601形式）、`endDate`（必須: ISO 8601形式）を受け付けること
+3. オプションパラメータとして`location`、`notes`、`calendarName`、`alarms`を受け付けること
+4. `alarms`は相対時間文字列の配列（例: `["-15m", "-1h", "-1d"]`）で指定すること
+5. `calendarName`が指定されていない場合、システムはデフォルトカレンダーを使用すること
+6. イベント作成時、システムはEventKit経由でカレンダーに書き込むこと
+7. 終日イベントの場合（開始・終了時刻が00:00:00）、システムは`isAllDay: true`として作成すること
+8. 指定されたカレンダーが存在しない場合、システムは適切なエラーメッセージを返すこと
+9. 読み取り専用カレンダーの場合、システムは適切なエラーメッセージを返すこと
+10. イベント作成が成功したとき、システムは作成されたイベントのID、タイトル、日時を返すこと
+11. カレンダーアクセス権限がない場合、システムは適切なエラーメッセージを返すこと
+
+#### 技術的詳細
+
+- **EventKit使用**: AppleScriptObjC経由でEventKitフレームワークを使用
+- **日付フォーマット**: ISO 8601形式（例: `2025-01-15T10:00:00+09:00`）
+- **アラーム相対時間**: マイナス符号で開始前を表す（`-15m`=15分前、`-1h`=1時間前、`-1d`=1日前）
+
+#### 入力スキーマ
+
+```typescript
+interface CreateCalendarEventRequest {
+  title: string;                    // 必須: イベントタイトル
+  startDate: string;                // 必須: ISO 8601形式の開始日時
+  endDate: string;                  // 必須: ISO 8601形式の終了日時
+  location?: string;                // オプション: 場所
+  notes?: string;                   // オプション: メモ
+  calendarName?: string;            // オプション: カレンダー名（未指定時はデフォルト）
+  alarms?: string[];                // オプション: アラーム設定（例: ["-15m", "-1h"]）
+}
+```
+
+#### 出力スキーマ
+
+```typescript
+interface CreateCalendarEventResult {
+  success: boolean;
+  eventId?: string;                 // 作成されたイベントID
+  title?: string;                   // イベントタイトル
+  startDate?: string;               // 開始日時
+  endDate?: string;                 // 終了日時
+  calendarName?: string;            // 作成先カレンダー名
+  isAllDay?: boolean;               // 終日イベントかどうか
+  error?: string;                   // エラーメッセージ
+  message: string;                  // 結果メッセージ
+}
+```
+
+> **使用例:**
+> ```
+> ユーザー: "来週の火曜日14時から15時まで、田中さんとの1on1をカレンダーに入れて"
+>
+> Sage:
+> create_calendar_event(
+>   title: "田中さんとの1on1",
+>   startDate: "2025-01-14T14:00:00+09:00",
+>   endDate: "2025-01-14T15:00:00+09:00",
+>   alarms: ["-15m"]
+> )
+> ```
+
+> **出力例:**
+> ```json
+> {
+>   "success": true,
+>   "eventId": "E1234-5678-ABCD",
+>   "title": "田中さんとの1on1",
+>   "startDate": "2025-01-14T14:00:00+09:00",
+>   "endDate": "2025-01-14T15:00:00+09:00",
+>   "calendarName": "Work",
+>   "isAllDay": false,
+>   "message": "カレンダーに「田中さんとの1on1」を作成しました（2025-01-14 14:00-15:00）"
+> }
+> ```
+
+#### 将来の拡張（現時点ではスコープ外）
+
+- `update_calendar_event` - 既存イベントの更新
+- `delete_calendar_event` - イベントの削除
+- `create_recurring_event` - 繰り返しルール付きイベント
+- 参加者管理（招待状の送信）
