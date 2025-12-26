@@ -76,8 +76,10 @@ describe('Remote Config Loader', () => {
       expect(loaded.remote.port).toBe(8080);
       expect(loaded.remote.host).toBe('127.0.0.1');
       expect(loaded.remote.auth.type).toBe('jwt');
-      expect(loaded.remote.auth.secret).toBe('test-secret-key-at-least-32-characters-long');
-      expect(loaded.remote.auth.expiresIn).toBe('1h');
+      if (loaded.remote.auth.type === 'jwt') {
+        expect(loaded.remote.auth.secret).toBe('test-secret-key-at-least-32-characters-long');
+        expect(loaded.remote.auth.expiresIn).toBe('1h');
+      }
       expect(loaded.remote.cors.allowedOrigins).toContain('https://example.com');
     });
 

@@ -1,9 +1,9 @@
 /**
  * HTTP Server with Remote Config Integration
- * Requirements: 15.1, 15.4, 15.5, 15.6, 15.7, 15.8, 15.9
+ * Requirements: 15.1, 15.4, 15.5, 15.6, 15.7, 15.8, 15.9, 21-31 (OAuth)
  *
  * Creates an HTTP server with configuration loaded from remote-config.json
- * and integrates JWT-based authentication.
+ * and integrates JWT-based authentication and OAuth 2.1.
  */
 
 import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
@@ -12,10 +12,12 @@ import {
   loadRemoteConfig,
   RemoteConfig,
   DEFAULT_REMOTE_CONFIG_PATH,
+  OAuthAuthConfig,
 } from './remote-config-loader.js';
 import { createSecretAuthenticator, SecretAuthenticator } from './secret-auth.js';
 import { createMCPHandler, MCPHandler, MCPRequest } from './mcp-handler.js';
 import { createSSEStreamHandler, SSEStreamHandler } from './sse-stream-handler.js';
+import { OAuthServer, OAuthHandler } from '../oauth/index.js';
 
 /**
  * Options for creating the server
@@ -68,6 +70,8 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   private authenticator: SecretAuthenticator | null = null;
   private mcpHandler: MCPHandler | null = null;
   private sseHandler: SSEStreamHandler | null = null;
+  private oauthServer: OAuthServer | null = null;
+  private oauthHandler: OAuthHandler | null = null;
 
   constructor(config: RemoteConfig, options: HTTPServerWithConfigOptions) {
     this.config = config;
@@ -76,19 +80,32 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     this.effectivePort = options.port ?? config.remote.port;
     this.effectiveHost = options.host ?? config.remote.host;
 
-    // Setup authenticator if JWT auth is enabled or authSecret is provided
-    // If authSecret is provided via CLI/env, enable JWT auth regardless of config
-    const secret = options.authSecret ?? config.remote.auth.secret;
-    const shouldEnableAuth = config.remote.auth.type === 'jwt' || !!options.authSecret;
+    // Setup authentication based on type
+    if (config.remote.auth.type === 'oauth2') {
+      // OAuth will be initialized in start()
+    } else if (config.remote.auth.type === 'jwt') {
+      // Setup JWT authenticator from config
+      const jwtConfig = config.remote.auth;
+      const secret = options.authSecret ?? jwtConfig.secret;
 
-    if (shouldEnableAuth && secret) {
+      if (secret) {
+        this.authenticator = createSecretAuthenticator({
+          secret,
+          expiresIn: jwtConfig.expiresIn ?? '24h',
+        });
+      }
+    } else if (options.authSecret) {
+      // Setup JWT authenticator from CLI option (overrides 'none' type)
       this.authenticator = createSecretAuthenticator({
-        secret,
-        expiresIn: config.remote.auth.expiresIn ?? '24h',
+        secret: options.authSecret,
+        expiresIn: '24h',
       });
-      // Update config to reflect auth is enabled
-      this.config.remote.auth.type = 'jwt';
-      this.config.remote.auth.secret = secret;
+      // Update auth type to reflect that auth is now enabled
+      this.config.remote.auth = {
+        type: 'jwt',
+        secret: options.authSecret,
+        expiresIn: '24h',
+      };
     }
   }
 
@@ -102,6 +119,38 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
     // Initialize SSE handler for Streamable HTTP Transport (Requirement 20)
     this.sseHandler = createSSEStreamHandler();
+
+    // Initialize OAuth if configured (Requirements 21-31)
+    if (this.config.remote.auth.type === 'oauth2') {
+      const oauthConfig = this.config.remote.auth as OAuthAuthConfig;
+      const issuer = oauthConfig.issuer || `http://${this.effectiveHost}:${this.effectivePort}`;
+
+      // Convert user config to OAuth users
+      const users = oauthConfig.users.map((u, i) => ({
+        id: `user_${i}`,
+        username: u.username,
+        passwordHash: u.passwordHash,
+        createdAt: Date.now(),
+      }));
+
+      this.oauthServer = new OAuthServer({
+        issuer,
+        accessTokenExpiry: oauthConfig.accessTokenExpiry || '1h',
+        refreshTokenExpiry: oauthConfig.refreshTokenExpiry || '30d',
+        authorizationCodeExpiry: '10m',
+        allowedRedirectUris: oauthConfig.allowedRedirectUris || [],
+        users,
+      });
+
+      await this.oauthServer.initialize();
+      this.oauthHandler = new OAuthHandler(this.oauthServer, {
+        issuer,
+        accessTokenExpiry: oauthConfig.accessTokenExpiry || '1h',
+        refreshTokenExpiry: oauthConfig.refreshTokenExpiry || '30d',
+        allowedRedirectUris: oauthConfig.allowedRedirectUris || [],
+        users,
+      });
+    }
 
     return new Promise((resolve, reject) => {
       try {
@@ -152,7 +201,14 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   }
 
   isAuthEnabled(): boolean {
-    return this.config.remote.auth.type === 'jwt' && this.authenticator !== null;
+    return (
+      (this.config.remote.auth.type === 'jwt' && this.authenticator !== null) ||
+      (this.config.remote.auth.type === 'oauth2' && this.oauthServer !== null)
+    );
+  }
+
+  isOAuthEnabled(): boolean {
+    return this.config.remote.auth.type === 'oauth2' && this.oauthServer !== null;
   }
 
   getConfig(): RemoteConfig {
@@ -183,8 +239,29 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       return;
     }
 
-    // Auth token endpoint
-    if (url === '/auth/token' && method === 'POST') {
+    // OAuth endpoints (Requirements 21-31)
+    if (this.oauthHandler) {
+      const path = url.split('?')[0];
+      const oauthPaths = [
+        '/.well-known/oauth-protected-resource',
+        '/.well-known/oauth-authorization-server',
+        '/oauth/register',
+        '/oauth/authorize',
+        '/oauth/login',
+        '/oauth/token',
+      ];
+
+      if (oauthPaths.includes(path)) {
+        this.oauthHandler.handleRequest(req, res).catch(() => {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Internal server error' }));
+        });
+        return;
+      }
+    }
+
+    // Auth token endpoint (for JWT mode)
+    if (url === '/auth/token' && method === 'POST' && !this.isOAuthEnabled()) {
       this.handleAuthToken(req, res);
       return;
     }
@@ -289,46 +366,51 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   }
 
   /**
+   * Verify Bearer token (supports both JWT and OAuth)
+   */
+  private async verifyBearerToken(authHeader: string | undefined): Promise<{ valid: boolean; error?: string }> {
+    if (!authHeader) {
+      return { valid: false, error: 'Authentication required' };
+    }
+
+    const parts = authHeader.split(' ');
+    if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
+      return { valid: false, error: 'Invalid Authorization header' };
+    }
+
+    const token = parts[1];
+
+    // Use OAuth verification if OAuth is enabled
+    if (this.isOAuthEnabled() && this.oauthServer) {
+      const result = await this.oauthServer.verifyAccessToken(token);
+      return { valid: result.valid, error: result.error };
+    }
+
+    // Fall back to JWT verification
+    if (this.authenticator) {
+      const result = await this.authenticator.verifyToken(token);
+      return { valid: result.valid, error: result.error };
+    }
+
+    return { valid: false, error: 'No authentication configured' };
+  }
+
+  /**
    * Handle GET /mcp request for SSE stream (Streamable HTTP Transport)
-   * Requirement 20.1, 20.10
+   * Requirement 20.1, 20.10, 31.5 (OAuth Bearer auth for SSE)
    */
   private handleMCPSSERequest(req: IncomingMessage, res: ServerResponse): void {
-    // Requirement 20.10: Check authentication if enabled
+    // Requirement 20.10, 31.5: Check authentication if enabled
     if (this.isAuthEnabled()) {
-      const authHeader = req.headers.authorization;
-
-      if (!authHeader) {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            error: 'Authentication required',
-          })
-        );
-        return;
+      // Add WWW-Authenticate header for OAuth (Requirement 22.4)
+      if (this.isOAuthEnabled() && this.oauthServer) {
+        res.setHeader('WWW-Authenticate', this.oauthServer.getWWWAuthenticateHeader());
       }
 
-      const parts = authHeader.split(' ');
-      if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            error: 'Invalid Authorization header',
-          })
-        );
-        return;
-      }
-
-      const token = parts[1];
-
-      // Verify token then establish SSE connection
-      this.authenticator!.verifyToken(token).then((verifyResult) => {
-        if (!verifyResult.valid) {
+      this.verifyBearerToken(req.headers.authorization).then((result) => {
+        if (!result.valid) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              error: verifyResult.error || 'Invalid token',
-            })
-          );
+          res.end(JSON.stringify({ error: result.error || 'Invalid token' }));
           return;
         }
 
@@ -356,52 +438,21 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   private handleMCPRequest(req: IncomingMessage, res: ServerResponse): void {
     // Check authentication if enabled
     if (this.isAuthEnabled()) {
-      const authHeader = req.headers.authorization;
-
-      if (!authHeader) {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: null,
-            error: {
-              code: -32002,
-              message: 'Authentication required',
-            },
-          })
-        );
-        return;
+      // Add WWW-Authenticate header for OAuth (Requirement 22.4)
+      if (this.isOAuthEnabled() && this.oauthServer) {
+        res.setHeader('WWW-Authenticate', this.oauthServer.getWWWAuthenticateHeader());
       }
 
-      const parts = authHeader.split(' ');
-      if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: null,
-            error: {
-              code: -32002,
-              message: 'Invalid Authorization header',
-            },
-          })
-        );
-        return;
-      }
-
-      const token = parts[1];
-
-      // Verify token synchronously for simplicity
-      this.authenticator!.verifyToken(token).then((verifyResult) => {
-        if (!verifyResult.valid) {
+      this.verifyBearerToken(req.headers.authorization).then((result) => {
+        if (!result.valid) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           res.end(
             JSON.stringify({
               jsonrpc: '2.0',
               id: null,
               error: {
-                code: -32003,
-                message: verifyResult.error || 'Invalid token',
+                code: -32002,
+                message: result.error || 'Invalid token',
               },
             })
           );

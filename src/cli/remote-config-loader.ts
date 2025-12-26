@@ -10,6 +10,48 @@ import { join } from 'path';
 import { homedir } from 'os';
 
 /**
+ * OAuth User Configuration
+ */
+export interface OAuthUserConfig {
+  username: string;
+  passwordHash: string;
+}
+
+/**
+ * OAuth Configuration
+ */
+export interface OAuthAuthConfig {
+  type: 'oauth2';
+  issuer: string;
+  accessTokenExpiry?: string;
+  refreshTokenExpiry?: string;
+  allowedRedirectUris?: string[];
+  users: OAuthUserConfig[];
+  scopes?: Record<string, string>;
+}
+
+/**
+ * JWT Configuration
+ */
+export interface JWTAuthConfig {
+  type: 'jwt';
+  secret?: string;
+  expiresIn?: string;
+}
+
+/**
+ * No Auth Configuration
+ */
+export interface NoAuthConfig {
+  type: 'none';
+}
+
+/**
+ * Auth Configuration Union Type
+ */
+export type AuthConfig = OAuthAuthConfig | JWTAuthConfig | NoAuthConfig;
+
+/**
  * Remote MCP Server Configuration
  */
 export interface RemoteConfig {
@@ -17,11 +59,7 @@ export interface RemoteConfig {
     enabled: boolean;
     port: number;
     host: string;
-    auth: {
-      type: 'jwt' | 'none';
-      secret?: string;
-      expiresIn?: string;
-    };
+    auth: AuthConfig;
     cors: {
       allowedOrigins: string[];
     };
