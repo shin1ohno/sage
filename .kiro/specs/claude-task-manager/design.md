@@ -1079,6 +1079,179 @@ interface NotionBlock {
 }
 ```
 
+### 16. WorkingCadenceService
+
+**責任:** ユーザーの勤務リズム（Working Cadence）の取得と推奨事項の生成
+
+```typescript
+interface WorkingCadenceService {
+  getWorkingCadence(request?: GetWorkingCadenceRequest): Promise<WorkingCadenceResult>;
+  getDayType(dayOfWeek: string): 'deep-work' | 'meeting-heavy' | 'normal';
+  getDayOfWeek(date: string): string;
+  generateRecommendations(config: CalendarConfig): SchedulingRecommendation[];
+}
+
+interface GetWorkingCadenceRequest {
+  /** 特定の曜日の情報のみを取得 */
+  dayOfWeek?: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
+  /** 特定の日付の勤務パターンを取得（曜日から判定） */
+  date?: string; // ISO 8601形式 (例: "2025-01-15")
+}
+
+interface WorkingCadenceResult {
+  success: boolean;
+
+  /** ユーザー情報 */
+  user: {
+    name: string;
+    timezone: string;
+  };
+
+  /** 勤務時間 */
+  workingHours: {
+    start: string;        // 例: "09:00"
+    end: string;          // 例: "18:00"
+    totalMinutes: number; // 例: 540
+  };
+
+  /** 週間パターン */
+  weeklyPattern: {
+    deepWorkDays: string[];       // 例: ["Monday", "Wednesday", "Friday"]
+    meetingHeavyDays: string[];   // 例: ["Tuesday", "Thursday"]
+    normalDays: string[];         // どちらにも分類されない日
+  };
+
+  /** Deep Workブロック */
+  deepWorkBlocks: DeepWorkBlockInfo[];
+
+  /** 週次レビュー */
+  weeklyReview?: {
+    enabled: boolean;
+    day: string;
+    time: string;
+    description: string;
+  };
+
+  /** 特定日の情報（date/dayOfWeekが指定された場合） */
+  specificDay?: {
+    date?: string;
+    dayOfWeek: string;
+    dayType: 'deep-work' | 'meeting-heavy' | 'normal';
+    deepWorkBlocks: DeepWorkBlockInfo[];
+    recommendations: string[];
+  };
+
+  /** スケジューリング推奨事項 */
+  recommendations: SchedulingRecommendation[];
+
+  /** 生成されたサマリーメッセージ */
+  summary: string;
+}
+
+interface DeepWorkBlockInfo {
+  day: string;
+  startHour: number;
+  endHour: number;
+  startTime: string;     // 例: "09:00"
+  endTime: string;       // 例: "12:00"
+  durationMinutes: number;
+  description: string;
+}
+
+interface SchedulingRecommendation {
+  type: 'deep-work' | 'meeting' | 'quick-task' | 'review';
+  recommendation: string;
+  bestDays: string[];
+  bestTimeSlots?: string[];
+  reason: string;
+}
+```
+
+### 実装例
+
+```typescript
+class WorkingCadenceServiceImpl implements WorkingCadenceService {
+  constructor(private configLoader: ConfigLoader) {}
+
+  async getWorkingCadence(request?: GetWorkingCadenceRequest): Promise<WorkingCadenceResult> {
+    const config = await this.configLoader.load();
+
+    // 勤務時間の計算
+    const workingHours = this.calculateWorkingHours(config.calendar.workingHours);
+
+    // 週間パターンの構築
+    const weeklyPattern = this.buildWeeklyPattern(config.calendar);
+
+    // Deep Workブロックの変換
+    const deepWorkBlocks = this.transformDeepWorkBlocks(config.calendar.deepWorkBlocks);
+
+    // 推奨事項の生成
+    const recommendations = this.generateRecommendations(config.calendar);
+
+    // 特定日の情報（指定時）
+    let specificDay: WorkingCadenceResult['specificDay'];
+    if (request?.dayOfWeek || request?.date) {
+      const dayOfWeek = request.dayOfWeek || this.getDayOfWeek(request.date!);
+      specificDay = this.buildSpecificDayInfo(dayOfWeek, request.date, config.calendar);
+    }
+
+    return {
+      success: true,
+      user: { name: config.user.name, timezone: config.user.timezone },
+      workingHours,
+      weeklyPattern,
+      deepWorkBlocks,
+      weeklyReview: config.reminders.weeklyReview,
+      specificDay,
+      recommendations,
+      summary: this.generateSummary(workingHours, weeklyPattern, config.reminders.weeklyReview),
+    };
+  }
+
+  getDayType(dayOfWeek: string): 'deep-work' | 'meeting-heavy' | 'normal' {
+    // 設定から曜日タイプを判定
+  }
+
+  getDayOfWeek(date: string): string {
+    const d = new Date(date);
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return days[d.getDay()];
+  }
+
+  generateRecommendations(config: CalendarConfig): SchedulingRecommendation[] {
+    const recommendations: SchedulingRecommendation[] = [];
+
+    if (config.deepWorkDays.length > 0) {
+      recommendations.push({
+        type: 'deep-work',
+        recommendation: `複雑なタスクは${this.formatDays(config.deepWorkDays)}にスケジュールしてください`,
+        bestDays: config.deepWorkDays,
+        reason: 'これらの日はDeep Work日として設定されており、集中作業に適しています',
+      });
+    }
+
+    if (config.meetingHeavyDays.length > 0) {
+      recommendations.push({
+        type: 'meeting',
+        recommendation: `ミーティングは${this.formatDays(config.meetingHeavyDays)}に集中させることを推奨します`,
+        bestDays: config.meetingHeavyDays,
+        reason: 'これらの日はミーティング集中日として設定されています',
+      });
+    }
+
+    return recommendations;
+  }
+
+  private formatDays(days: string[]): string {
+    const dayMap: Record<string, string> = {
+      Monday: '月', Tuesday: '火', Wednesday: '水',
+      Thursday: '木', Friday: '金', Saturday: '土', Sunday: '日'
+    };
+    return days.map(d => dayMap[d] || d).join('・');
+  }
+}
+```
+
 ## データモデル
 
 ### Core Models

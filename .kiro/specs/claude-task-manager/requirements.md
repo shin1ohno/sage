@@ -612,6 +612,84 @@ Access-Control-Allow-Headers: Content-Type, Authorization
 
 > **背景:** Claude.aiからMCPサーバーに接続する際、Streamable HTTP仕様に従ってGETリクエストが送信されます。GETリクエストはサーバー→クライアントの通知用SSEストリームを確立し、POSTリクエストはJSON-RPCリクエスト/レスポンス用として使用されます。
 
+### 要件32: 勤務リズム（Working Cadence）の取得
+
+**ユーザーストーリー:** 効果的にタスクをスケジュールしたいユーザーとして、自分の勤務リズム（Deep Work日、ミーティング集中日、勤務時間など）を確認したい。最適な時間帯にタスクを配置できるようにするため。
+
+#### 受け入れ基準
+
+1. `get_working_cadence`ツールが呼び出されたとき、システムは設定ファイルから勤務リズム情報を返すこと
+2. 返却情報には勤務時間（開始・終了時刻、総勤務時間）を含むこと
+3. 返却情報にはDeep Work日（集中作業に適した曜日）のリストを含むこと
+4. 返却情報にはミーティング集中日のリストを含むこと
+5. 返却情報にはDeep Workブロック（特定の時間帯の集中作業枠）を含むこと
+6. オプションパラメータ`dayOfWeek`が指定されたとき、その曜日の詳細情報と推奨事項を返すこと
+7. オプションパラメータ`date`が指定されたとき、その日付の曜日を判定して詳細情報を返すこと
+8. 返却情報にはスケジューリング推奨事項（複雑なタスクの最適日、ミーティング推奨日など）を含むこと
+9. 設定ファイルが存在しない場合、システムはデフォルト値を使用すること
+10. 週次レビュー設定が有効な場合、その情報も返すこと
+
+#### 入力スキーマ
+
+```typescript
+interface GetWorkingCadenceRequest {
+  dayOfWeek?: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
+  date?: string; // ISO 8601形式 (例: "2025-01-15")
+}
+```
+
+#### 出力スキーマ
+
+```typescript
+interface WorkingCadenceResult {
+  success: boolean;
+  user: { name: string; timezone: string; };
+  workingHours: { start: string; end: string; totalMinutes: number; };
+  weeklyPattern: {
+    deepWorkDays: string[];
+    meetingHeavyDays: string[];
+    normalDays: string[];
+  };
+  deepWorkBlocks: Array<{
+    day: string;
+    startHour: number;
+    endHour: number;
+    description: string;
+  }>;
+  weeklyReview?: { enabled: boolean; day: string; time: string; };
+  specificDay?: {
+    date?: string;
+    dayOfWeek: string;
+    dayType: 'deep-work' | 'meeting-heavy' | 'normal';
+    recommendations: string[];
+  };
+  recommendations: Array<{
+    type: 'deep-work' | 'meeting' | 'quick-task' | 'review';
+    recommendation: string;
+    bestDays: string[];
+    reason: string;
+  }>;
+  summary: string;
+}
+```
+
+> **使用例:**
+> ```
+> ユーザー: "私のworking cadenceを教えて"
+>
+> Sage:
+> get_working_cadence({})
+>
+> 勤務時間: 09:00-18:00 (9時間)
+> Deep Work日: 月・水・金
+> ミーティング集中日: 火・木
+> 週次レビュー: 金曜 17:00
+>
+> 推奨事項:
+> - 複雑なタスクは月・水・金の午前中にスケジュールしてください
+> - ミーティングは火・木に集中させることを推奨します
+> ```
+
 ### 要件21-31: OAuth 2.1 認証
 
 > **詳細仕様:** `.kiro/specs/claude-task-manager/oauth-spec.md` を参照
