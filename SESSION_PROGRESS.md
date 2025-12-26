@@ -1,6 +1,61 @@
 # Session Progress - sage
 
-## Current Session: 2025-12-25
+## Current Session: 2025-12-26 ✅ COMPLETED
+
+### Session Goals
+タスク30（CLIオプションとRemote MCPサーバー起動機能）をTDDで実装
+
+### Final Status
+- **完了タスク**: 30タスク（全タスク完了！）
+- **未実装タスク**: 0タスク
+- **テスト**: 31 suites, 571 tests passing
+
+### Task 30: CLIオプションとRemote MCPサーバー起動機能 ✅ COMPLETED
+
+#### 30.1 CLIオプションパーサーの実装 ✅
+- [x] テスト作成: `tests/unit/cli-parser.test.ts` (32 tests)
+- [x] `--remote`オプションの解析
+- [x] `--config <path>`オプションの解析
+- [x] `--port <number>`オプションの解析
+- [x] `--host <address>`オプションの解析
+- [x] `--help`と`--version`オプションの実装
+- [x] 環境変数のサポート
+
+#### 30.2 HTTPサーバーモードの実装 ✅
+- [x] テスト作成: `tests/unit/http-server.test.ts` (20 tests)
+- [x] HTTPサーバー起動ロジック
+- [x] `/health`エンドポイント
+- [x] `/mcp`エンドポイント
+- [x] `/auth/token`エンドポイント
+- [x] RemoteMCPServerとの統合
+
+#### 30.3 メイン関数のリファクタリング ✅
+- [x] テスト作成: `tests/unit/main-entry.test.ts` (10 tests)
+- [x] StdioモードとHTTPモードの切り替え
+- [x] 設定ファイルパスの動的読み込み
+
+#### 30.4 E2Eテストの追加 ✅
+- [x] テスト作成: `tests/e2e/cli-modes.test.ts` (11 tests)
+- [x] Stdioモードの起動テスト
+- [x] HTTPモードの起動テスト
+- [x] ヘルスチェックエンドポイントのテスト
+- [x] MCPエンドポイントのテスト
+
+### New Files Created
+- `src/cli/parser.ts` - CLIオプションパーサー
+- `src/cli/http-server.ts` - HTTPサーバーモード
+- `src/cli/main-entry.ts` - メインエントリポイント
+- `tests/unit/cli-parser.test.ts` - CLIパーサーテスト
+- `tests/unit/http-server.test.ts` - HTTPサーバーテスト
+- `tests/unit/main-entry.test.ts` - メインエントリテスト
+- `tests/e2e/cli-modes.test.ts` - CLIモードE2Eテスト
+
+### Modified Files
+- `src/index.ts` - CLIオプションとHTTPモードの統合
+
+---
+
+## Previous Session: 2025-12-25
 
 ### Session Goals
 specの更新を反映した実装の継続

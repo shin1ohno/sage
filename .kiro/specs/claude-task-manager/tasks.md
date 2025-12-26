@@ -278,9 +278,47 @@
   - ⏭️ Docker設定は削除（macOS必須のため）
   - _要件: 7.1, 7.2, 7.3_
 
+## 完了済み追加タスク
+
+- [x] 30. CLIオプションとRemote MCPサーバー起動機能の実装
+- [x] 30.1 CLIオプションパーサーの実装
+  - ✅ **テスト**: `tests/unit/cli-parser.test.ts`実装済み（32 tests）
+  - ✅ `--remote`オプションの解析
+  - ✅ `--config <path>`オプションの解析
+  - ✅ `--port <number>`オプションの解析
+  - ✅ `--host <address>`オプションの解析
+  - ✅ `--help`と`--version`オプションの実装
+  - ✅ 環境変数（SAGE_REMOTE_MODE, SAGE_PORT等）のサポート
+  - _要件: 14.1, 14.2, 14.3, 14.4, 14.5, 14.6, 14.7, 14.8_
+
+- [x] 30.2 HTTPサーバーモードの実装
+  - ✅ **テスト**: `tests/unit/http-server.test.ts`実装済み（20 tests）
+  - ✅ `--remote`オプション時にHTTPサーバーを起動
+  - ✅ `/health`エンドポイントの実装
+  - ✅ `/mcp`エンドポイントでMCPリクエスト処理
+  - ✅ `/auth/token`エンドポイントでJWTトークン生成
+  - ✅ 既存の`RemoteMCPServer`クラスとの統合
+  - _要件: 14.1, 14.9, 14.10, 13.1_
+
+- [x] 30.3 メイン関数のリファクタリング
+  - ✅ **テスト**: `tests/unit/main-entry.test.ts`実装済み（10 tests）
+  - ✅ `src/index.ts`のメイン関数を更新
+  - ✅ オプションに基づいてStdioモードまたはHTTPモードを選択
+  - ✅ 設定ファイルパスの動的読み込み
+  - _要件: 14.1, 14.2, 14.3_
+
+- [x] 30.4 E2Eテストの追加
+  - ✅ **テスト**: `tests/e2e/cli-modes.test.ts`実装済み（11 tests）
+  - ✅ Stdioモードの起動テスト
+  - ✅ HTTPモードの起動テスト
+  - ✅ ヘルスチェックエンドポイントのテスト
+  - ✅ MCPエンドポイントのテスト
+  - _要件: 14.1-14.10_
+
 ## 実装完了サマリー
 
-- **全29タスク完了**
-- **テスト**: 27 suites, 495 tests passing
-- **プラットフォーム**: macOS 専用（AppleScript のため）
+- **完了タスク**: 30タスク（全タスク完了）
+- **未実装タスク**: 0タスク
+- **テスト**: 31 suites, 571 tests passing
+- **プラットフォーム**: macOS 専用（AppleScript/EventKit のため）
 - **ドキュメント**: SETUP-LOCAL.md, SETUP-REMOTE.md, CONFIGURATION.md, ARCHITECTURE.md, TROUBLESHOOTING.md
