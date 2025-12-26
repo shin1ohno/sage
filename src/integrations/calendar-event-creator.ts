@@ -412,11 +412,9 @@ ${notesSection}
 ${alarmsSection}
 
 -- Save event
-set saveError to missing value
-set saveSuccess to theStore's saveEvent:theEvent span:0 |error|:(reference)
+set saveSuccess to theStore's saveEvent:theEvent span:0 |error|:(missing value)
 
--- saveSuccess is the boolean result from ObjC method
-if (saveSuccess as boolean) then
+if saveSuccess then
   set eventId to (theEvent's eventIdentifier()) as text
   set calendarName to (targetCalendar's title()) as text
   return "SUCCESS|" & eventId & "|" & calendarName
