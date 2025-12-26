@@ -15,6 +15,7 @@ import { NotionMCPService } from '../integrations/notion-mcp.js';
 import { TodoListManager, type TodoStatus, type TaskSource } from '../integrations/todo-list-manager.js';
 import { TaskSynchronizer } from '../integrations/task-synchronizer.js';
 import { CalendarEventResponseService, type EventResponseType } from '../integrations/calendar-event-response.js';
+import { CalendarEventCreatorService } from '../integrations/calendar-event-creator.js';
 import type { UserConfig, Priority } from '../types/index.js';
 
 // Protocol version
@@ -89,6 +90,7 @@ class MCPHandlerImpl implements MCPHandler {
   private todoListManager: TodoListManager | null = null;
   private taskSynchronizer: TaskSynchronizer | null = null;
   private calendarEventResponseService: CalendarEventResponseService | null = null;
+  private calendarEventCreatorService: CalendarEventCreatorService | null = null;
   private initialized: boolean = false;
 
   private tools: Map<string, { definition: ToolDefinition; handler: ToolHandler }> = new Map();
@@ -132,6 +134,7 @@ class MCPHandlerImpl implements MCPHandler {
     this.todoListManager = new TodoListManager();
     this.taskSynchronizer = new TaskSynchronizer();
     this.calendarEventResponseService = new CalendarEventResponseService();
+    this.calendarEventCreatorService = new CalendarEventCreatorService();
   }
 
   /**
@@ -2261,6 +2264,163 @@ class MCPHandlerImpl implements MCPHandler {
                   {
                     error: true,
                     message: `カレンダーイベント一括返信に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+      }
+    );
+
+    // create_calendar_event
+    this.registerTool(
+      {
+        name: 'create_calendar_event',
+        description:
+          'Create a new calendar event with optional location, notes, and alarms.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Event title' },
+            startDate: {
+              type: 'string',
+              description:
+                'Start date/time in ISO 8601 format (e.g., 2025-01-15T10:00:00+09:00)',
+            },
+            endDate: {
+              type: 'string',
+              description:
+                'End date/time in ISO 8601 format (e.g., 2025-01-15T11:00:00+09:00)',
+            },
+            location: { type: 'string', description: 'Event location' },
+            notes: { type: 'string', description: 'Event notes/description' },
+            calendarName: {
+              type: 'string',
+              description: 'Calendar name to create the event in (uses default if not specified)',
+            },
+            alarms: {
+              type: 'array',
+              items: { type: 'string' },
+              description: "Optional: Override default alarms with custom settings (e.g., ['-15m', '-1h']). If omitted, calendar's default alarm settings apply.",
+            },
+          },
+          required: ['title', 'startDate', 'endDate'],
+        },
+      },
+      async (args) => {
+        if (!this.config) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        if (!this.calendarEventCreatorService) {
+          this.initializeServices(this.config);
+        }
+
+        try {
+          const title = args.title as string;
+          const startDate = args.startDate as string;
+          const endDate = args.endDate as string;
+          const location = args.location as string | undefined;
+          const notes = args.notes as string | undefined;
+          const calendarName = args.calendarName as string | undefined;
+          const alarms = args.alarms as string[] | undefined;
+
+          const isAvailable = await this.calendarEventCreatorService!.isEventKitAvailable();
+
+          if (!isAvailable) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      success: false,
+                      message: 'カレンダーイベント作成機能はmacOSでのみ利用可能です。',
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+
+          const result = await this.calendarEventCreatorService!.createEvent({
+            title,
+            startDate,
+            endDate,
+            location,
+            notes,
+            calendarName,
+            alarms,
+          });
+
+          if (result.success) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      success: true,
+                      eventId: result.eventId,
+                      title: result.title,
+                      startDate: result.startDate,
+                      endDate: result.endDate,
+                      calendarName: result.calendarName,
+                      isAllDay: result.isAllDay,
+                      message: result.message,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    error: result.error,
+                    message: result.message,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message: `カレンダーイベント作成に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
                   },
                   null,
                   2

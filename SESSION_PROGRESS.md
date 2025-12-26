@@ -1,13 +1,86 @@
 # Session Progress - sage
 
-## Current Session: 2025-12-26 (Part 4) ✅ COMPLETED
+## Current Session: 2025-12-26 (Part 5) ✅ COMPLETED
+
+### Session Goals
+タスク35（カレンダーイベント作成機能の実装）をTDDで実装
+
+### Final Status
+- **完了タスク**: 35タスク（全タスク完了！）
+- **未実装タスク**: なし
+- **テスト**: 41 suites, 761 tests passing
+
+### Task 35: カレンダーイベント作成機能の実装 ✅ COMPLETED
+
+#### 35.1 CalendarEventCreatorService基盤の実装 ✅
+- [x] `CreateCalendarEventRequest` 型定義（title, startDate, endDate, location, notes, calendarName, alarms）
+- [x] `CreateCalendarEventResult` 型定義（success, eventId, title, startDate, endDate, calendarName, isAllDay, error, message）
+- [x] `CalendarEventCreatorService` クラスの作成
+- [x] 入力バリデーション（タイトル必須、日時形式チェック、終了日時>開始日時チェック）
+- _要件: 18.1, 18.2, 18.3_
+
+#### 35.2 アラーム設定機能 ✅
+- [x] `parseAlarmString()` - 相対時間文字列をパース（-15m, -1h, -1d, -1w）
+- [x] AppleScriptでEKAlarmオブジェクトを作成
+- [x] 複数アラームのサポート
+- _要件: 18.4_
+
+#### 35.3 終日イベント検出 ✅
+- [x] `isAllDayEvent()` - 開始・終了が00:00:00の場合に終日イベントとして検出
+- [x] 複数日終日イベントの対応
+- [x] AppleScriptで`setAllDay:true`フラグを設定
+- _要件: 18.7_
+
+#### 35.4 EventKit経由のイベント作成 ✅
+- [x] `buildCreateEventScript()` - AppleScriptObjC生成
+- [x] `createEventViaEventKit()` - イベント作成実行
+- [x] カレンダー名による作成先指定
+- [x] デフォルトカレンダー使用
+- _要件: 18.5, 18.6_
+
+#### 35.5 エラーハンドリング ✅
+- [x] 存在しないカレンダーのエラー
+- [x] 読み取り専用カレンダーのエラー
+- [x] カレンダーアクセス権限エラー
+- [x] リトライ処理（retryWithBackoff使用）
+- _要件: 18.8, 18.9_
+
+#### 35.6 MCPツールの登録 ✅
+- [x] `create_calendar_event` ツールを index.ts に追加
+- [x] `create_calendar_event` ツールを mcp-handler.ts に追加（HTTPモード対応）
+- _要件: 18.1, 18.10, 18.11_
+
+#### 35.7 テスト ✅
+- [x] テスト作成: `tests/unit/calendar-event-creator.test.ts` (34 tests)
+- [x] 入力バリデーションテスト
+- [x] 終日イベント検出テスト
+- [x] アラーム文字列パーステスト
+- [x] AppleScript生成テスト
+- [x] エラーハンドリングテスト
+- [x] 結果メッセージ生成テスト
+- [x] 日時コンポーネントパーステスト
+
+### New Files Created
+- `src/integrations/calendar-event-creator.ts` - カレンダーイベント作成サービス
+- `tests/unit/calendar-event-creator.test.ts` - カレンダーイベント作成テスト (34 tests)
+
+### Modified Files
+- `src/index.ts` - create_calendar_event MCPツール追加
+- `src/cli/mcp-handler.ts` - create_calendar_event ツール追加
+
+### New MCP Tools Added
+- `create_calendar_event` - カレンダーイベントの作成（タイトル、日時、場所、メモ、アラーム対応）
+
+---
+
+## Previous Session: 2025-12-26 (Part 4) ✅ COMPLETED
 
 ### Session Goals
 タスク34（カレンダーイベント返信機能の実装）をTDDで実装
 
 ### Final Status
-- **完了タスク**: 34タスク（全タスク完了！）
-- **未実装タスク**: なし
+- **完了タスク**: 34タスク
+- **未実装タスク**: 1タスク
 - **テスト**: 40 suites, 727 tests passing
 
 ### Task 34: カレンダーイベント返信機能の実装 ✅ COMPLETED
