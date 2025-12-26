@@ -543,48 +543,46 @@
     - ✅ AppleScript生成テスト
     - _要件: 19.12_
 
-## 未実装タスク
+## 完了済みタスク (続き)
 
-- [ ] 37. Streamable HTTP Transport対応の実装
-- [ ] 37.1 SSEストリームハンドラーの実装
-  - ⬜ **テスト**: `tests/unit/sse-stream-handler.test.ts`
-  - ⬜ GET /mcp エンドポイントの追加
-  - ⬜ Content-Type: text/event-stream レスポンス
-  - ⬜ Cache-Control: no-cache ヘッダー
-  - ⬜ Connection: keep-alive ヘッダー
-  - _要件: 20.1, 20.2, 20.5, 20.6_
-
-- [ ] 37.2 Keepalive機能の実装
-  - ⬜ 30秒間隔のkeepaliveコメント送信
-  - ⬜ 接続切断時のタイマークリーンアップ
-  - _要件: 20.3, 20.7_
-
-- [ ] 37.3 CORSヘッダー対応
-  - ⬜ Access-Control-Allow-Origin: * ヘッダー
-  - ⬜ Access-Control-Allow-Methods: GET, POST, OPTIONS ヘッダー
-  - ⬜ Access-Control-Allow-Headers: Content-Type, Authorization ヘッダー
-  - ⬜ OPTIONSリクエスト（CORS preflight）のサポート
-  - _要件: 20.4, 20.9_
-
-- [ ] 37.4 HTTPサーバーへの統合
-  - ⬜ `src/cli/http-server-with-config.ts` の更新
-  - ⬜ GET /mcp ルートハンドラーの追加
-  - ⬜ 既存POST /mcpの動作維持確認
-  - ⬜ authEnabled: false 時の認証スキップ
-  - _要件: 20.8, 20.10_
-
-- [ ] 37.5 E2Eテストの実装
-  - ⬜ **テスト**: `tests/e2e/streamable-http.test.ts`
-  - ⬜ GETリクエストでSSEストリームが返ることを確認
-  - ⬜ keepalive送信の確認
-  - ⬜ 接続切断後のクリーンアップ確認
-  - _要件: 20.1-20.10_
+- [x] 37. Streamable HTTP Transport対応の実装 ✅
+  - ✅ 37.1 SSEストリームハンドラーの実装
+    - ✅ **テスト**: `tests/unit/sse-stream-handler.test.ts` (25 tests)
+    - ✅ GET /mcp エンドポイントの追加
+    - ✅ Content-Type: text/event-stream レスポンス
+    - ✅ Cache-Control: no-cache ヘッダー
+    - ✅ Connection: keep-alive ヘッダー
+    - _要件: 20.1, 20.2, 20.5, 20.6_
+  - ✅ 37.2 Keepalive機能の実装
+    - ✅ 30秒間隔のkeepaliveコメント送信（`: keepalive\n\n`）
+    - ✅ 接続切断時のタイマークリーンアップ
+    - ✅ 複数接続のトラッキング
+    - _要件: 20.3, 20.7_
+  - ✅ 37.3 CORSヘッダー対応
+    - ✅ Access-Control-Allow-Origin: * ヘッダー
+    - ✅ Access-Control-Allow-Methods: GET, POST, OPTIONS ヘッダー
+    - ✅ Access-Control-Allow-Headers: Content-Type, Authorization ヘッダー
+    - ✅ OPTIONSリクエスト（CORS preflight）のサポート
+    - _要件: 20.4, 20.9_
+  - ✅ 37.4 HTTPサーバーへの統合
+    - ✅ `src/cli/http-server-with-config.ts` の更新
+    - ✅ GET /mcp ルートハンドラーの追加
+    - ✅ 既存POST /mcpの動作維持確認
+    - ✅ authEnabled: false 時の認証スキップ
+    - _要件: 20.8, 20.10_
+  - ✅ 37.5 E2Eテストの実装
+    - ✅ **テスト**: `tests/e2e/streamable-http.test.ts` (15 tests)
+    - ✅ GETリクエストでSSEストリームが返ることを確認
+    - ✅ keepalive送信の確認
+    - ✅ 接続切断後のクリーンアップ確認
+    - ✅ 認証有効/無効両方のテスト
+    - _要件: 20.1-20.10_
 
 ## 実装完了サマリー
 
-- **完了タスク**: 36タスク
-- **未実装タスク**: 1タスク（Streamable HTTP Transport対応）
-- **テスト**: 42 suites, 794 tests passing
+- **完了タスク**: 37タスク（全タスク完了！）
+- **未実装タスク**: なし
+- **テスト**: 44 suites, 839 tests passing
 - **プラットフォーム**: macOS 専用（AppleScript/EventKit のため）
 - **ドキュメント**: SETUP-LOCAL.md, SETUP-REMOTE.md, CONFIGURATION.md, ARCHITECTURE.md, TROUBLESHOOTING.md
 

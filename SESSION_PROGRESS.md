@@ -1,6 +1,144 @@
 # Session Progress - sage
 
-## Current Session: 2025-12-26 (Part 5) ✅ COMPLETED
+## Current Session: 2025-12-26 (Part 7) ✅ COMPLETED
+
+### Session Goals
+タスク37（Streamable HTTP Transport対応）をTDDで実装
+
+### Final Status
+- **完了タスク**: 37タスク（全タスク完了！）
+- **未実装タスク**: なし
+- **テスト**: 44 suites, 839 tests passing
+
+### Task 37: Streamable HTTP Transport対応の実装 ✅ COMPLETED
+
+#### 37.1 SSEストリームハンドラーの実装 ✅
+- [x] `SSEStreamHandler` インターフェースの定義
+- [x] `createSSEStreamHandler()` ファクトリ関数
+- [x] GET /mcp でSSE接続確立
+- [x] `event: endpoint` イベント送信（sessionId含む）
+- _要件: 20.1, 20.2_
+
+#### 37.2 Keepalive機能の実装 ✅
+- [x] 30秒間隔のkeepaliveコメント送信（`: keepalive\n\n`）
+- [x] 接続切断時のタイマークリーンアップ
+- [x] 複数接続のトラッキング
+- _要件: 20.3, 20.7_
+
+#### 37.3 CORSヘッダー対応 ✅
+- [x] `Access-Control-Allow-Origin: *`
+- [x] `Access-Control-Allow-Methods: GET, POST, OPTIONS`
+- [x] `Access-Control-Allow-Headers: Content-Type, Authorization`
+- [x] OPTIONSプリフライトリクエスト対応
+- _要件: 20.4, 20.9_
+
+#### 37.4 SSEレスポンスヘッダー ✅
+- [x] `Content-Type: text/event-stream`
+- [x] `Cache-Control: no-cache`
+- [x] `Connection: keep-alive`
+- [x] `X-Accel-Buffering: no`（プロキシ対応）
+- _要件: 20.2, 20.5, 20.6_
+
+#### 37.5 HTTPサーバー統合 ✅
+- [x] `http-server-with-config.ts` にGET /mcp ルート追加
+- [x] 認証有効時のJWT検証
+- [x] `authEnabled: false` 時の認証スキップ
+- [x] 既存POST /mcpの動作維持
+- _要件: 20.8, 20.10_
+
+#### 37.6 テスト ✅
+- [x] ユニットテスト: `tests/unit/sse-stream-handler.test.ts` (25 tests)
+- [x] E2Eテスト: `tests/e2e/streamable-http.test.ts` (15 tests)
+- _要件: 20.1-20.10_
+
+### New Files Created
+- `src/cli/sse-stream-handler.ts` - SSEストリームハンドラー実装
+- `tests/unit/sse-stream-handler.test.ts` - SSEハンドラーユニットテスト (25 tests)
+- `tests/e2e/streamable-http.test.ts` - Streamable HTTP E2Eテスト (15 tests)
+
+### Modified Files
+- `src/cli/http-server-with-config.ts` - GET /mcp SSEエンドポイント追加
+
+---
+
+## Previous Session: 2025-12-26 (Part 6) ✅ COMPLETED
+
+### Session Goals
+タスク36（カレンダーイベント削除機能の実装）をTDDで実装
+
+### Final Status
+- **完了タスク**: 36タスク（全タスク完了！）
+- **未実装タスク**: なし
+- **テスト**: 42 suites, 794 tests passing
+
+### Task 36: カレンダーイベント削除機能の実装 ✅ COMPLETED
+
+#### 36.1 CalendarEventDeleterService基盤の実装 ✅
+- [x] `DeleteCalendarEventRequest` 型定義（eventId, calendarName）
+- [x] `DeleteCalendarEventResult` 型定義（success, eventId, title, calendarName, error, message）
+- [x] `DeleteCalendarEventsBatchRequest`/`DeleteCalendarEventsBatchResult` 型定義
+- [x] `CalendarEventDeleterService` クラスの作成
+- [x] 入力バリデーション（イベントID必須、空文字チェック）
+- _要件: 19.1, 19.2, 19.3_
+
+#### 36.2 イベントID抽出ロジック ✅
+- [x] `extractEventUid()` - フルIDからUUID抽出
+- [x] フルID形式（`prefix:UUID`）のパース
+- [x] UUIDのみ入力時はそのまま返却
+- _要件: 19.4, 19.5_
+
+#### 36.3 EventKit AppleScriptObjC削除スクリプト ✅
+- [x] `buildDeleteEventScript()` - AppleScriptObjC生成
+- [x] `calendarItemWithIdentifier` でイベント検索
+- [x] カレンダー名によるフィルタリング
+- [x] 読み取り専用チェック
+- _要件: 19.6, 19.9_
+
+#### 36.4 エラーハンドリング ✅
+- [x] イベントが見つからない場合のエラー
+- [x] 読み取り専用カレンダーのエラー
+- [x] カレンダーアクセス権限エラー
+- [x] リトライ処理（retryWithBackoff使用）
+- _要件: 19.7, 19.8_
+
+#### 36.5 バッチ削除機能 ✅
+- [x] `deleteEventsBatch()` メソッド実装
+- [x] 順次処理（レート制限: 100ms間隔）
+- [x] 結果集計とサマリー生成
+- _要件: 19.10, 19.11_
+
+#### 36.6 MCPツールの登録 ✅
+- [x] `delete_calendar_event` ツールを index.ts に追加
+- [x] `delete_calendar_events_batch` ツールを index.ts に追加
+- [x] `delete_calendar_event` ツールを mcp-handler.ts に追加（HTTPモード対応）
+- [x] `delete_calendar_events_batch` ツールを mcp-handler.ts に追加
+- _要件: 19.1, 19.10_
+
+#### 36.7 テスト ✅
+- [x] テスト作成: `tests/unit/calendar-event-deleter.test.ts` (33 tests)
+- [x] UUID抽出テスト（フルID/UUIDのみ両方）
+- [x] 単一イベント削除テスト
+- [x] バッチ削除テスト
+- [x] イベント未発見エラーテスト
+- [x] 読み取り専用カレンダーエラーテスト
+- [x] AppleScript生成テスト
+- _要件: 19.12_
+
+### New Files Created
+- `src/integrations/calendar-event-deleter.ts` - カレンダーイベント削除サービス
+- `tests/unit/calendar-event-deleter.test.ts` - カレンダーイベント削除テスト (33 tests)
+
+### Modified Files
+- `src/index.ts` - delete_calendar_event, delete_calendar_events_batch MCPツール追加
+- `src/cli/mcp-handler.ts` - delete_calendar_event, delete_calendar_events_batch ツール追加
+
+### New MCP Tools Added
+- `delete_calendar_event` - 単一カレンダーイベントの削除（イベントID、カレンダー名指定）
+- `delete_calendar_events_batch` - 複数カレンダーイベントの一括削除
+
+---
+
+## Previous Session: 2025-12-26 (Part 5) ✅ COMPLETED
 
 ### Session Goals
 タスク35（カレンダーイベント作成機能の実装）をTDDで実装
