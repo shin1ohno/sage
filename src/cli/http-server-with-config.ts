@@ -279,6 +279,27 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       return;
     }
 
+    // Root path - show server info
+    if ((url === '/' || url === '') && method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        name: 'sage',
+        version: VERSION,
+        status: 'running',
+        endpoints: {
+          mcp: '/mcp',
+          health: '/health',
+          oauth: this.isOAuthEnabled() ? {
+            metadata: '/.well-known/oauth-authorization-server',
+            authorize: '/oauth/authorize',
+            token: '/oauth/token',
+            register: '/oauth/register',
+          } : undefined,
+        },
+      }));
+      return;
+    }
+
     // 404 for unknown routes
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found' }));

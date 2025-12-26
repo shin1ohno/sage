@@ -253,7 +253,7 @@ export class OAuthHandler {
 
       setCookie(res, 'sage_auth_request', requestId, {
         httpOnly: true,
-        secure: true,
+        secure: false, // Allow HTTP for reverse proxy setups
         sameSite: 'Lax',
         maxAge: 600, // 10 minutes
         path: '/',
@@ -270,7 +270,7 @@ export class OAuthHandler {
 
     setCookie(res, 'sage_auth_request', requestId, {
       httpOnly: true,
-      secure: true,
+      secure: false, // Allow HTTP for reverse proxy setups
       sameSite: 'Lax',
       maxAge: 600,
       path: '/',
@@ -370,7 +370,7 @@ export class OAuthHandler {
     // Set session cookie
     setCookie(res, 'sage_session', result.session!.sessionId, {
       httpOnly: true,
-      secure: true,
+      secure: false, // Allow HTTP for reverse proxy setups
       sameSite: 'Lax',
       maxAge: 24 * 60 * 60, // 24 hours
       path: '/',
