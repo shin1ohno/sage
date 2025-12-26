@@ -64,14 +64,13 @@ export async function startServer(options: CLIOptions): Promise<ServerStartResul
   // Start in HTTP mode if remote flag is set
   if (options.remote) {
     try {
+      // createHTTPServerWithConfig already starts the server
       const server = await createHTTPServerWithConfig({
         configPath: options.config,
         port: options.port,
         host: options.host,
         authSecret: options.authSecret,
       });
-
-      await server.start();
 
       return {
         mode: 'http',
