@@ -99,6 +99,81 @@ sageは、Claude DesktopとClaude Code向けのAIタスク管理アシスタン�
 | Calendar統合 | ✅ AppleScript | ✅ Remote MCP経由 |
 | Notion統合 | ✅ Notion MCP | ✅ Notion MCP |
 
+### CLIインターフェース
+
+sageは2つの動作モードをサポートします：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       sage CLI                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  npx sage                    → Stdioモード（Local MCP）         │
+│  npx sage --remote           → HTTPモード（Remote MCP）         │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  オプション:                                                     │
+│    --remote              HTTPサーバーモードで起動               │
+│    --config <path>       設定ファイルのパスを指定               │
+│    --port <number>       HTTPサーバーのポート（デフォルト: 3000）│
+│    --host <address>      リッスンアドレス（デフォルト: 0.0.0.0） │
+│    --help                ヘルプを表示                           │
+│    --version             バージョンを表示                       │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  環境変数:                                                       │
+│    SAGE_REMOTE_MODE=true   HTTPサーバーモードで起動             │
+│    SAGE_PORT=3000          HTTPサーバーのポート                 │
+│    SAGE_HOST=0.0.0.0       リッスンアドレス                     │
+│    SAGE_AUTH_SECRET=xxx    JWT認証のシークレットキー            │
+│    SAGE_CONFIG_PATH=xxx    設定ファイルのパス                   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### CLIオプション処理
+
+```typescript
+interface CLIOptions {
+  remote: boolean;
+  config?: string;
+  port: number;
+  host: string;
+}
+
+function parseArgs(args: string[]): CLIOptions {
+  const options: CLIOptions = {
+    remote: process.env.SAGE_REMOTE_MODE === 'true' || args.includes('--remote'),
+    config: getArgValue(args, '--config') || process.env.SAGE_CONFIG_PATH,
+    port: parseInt(getArgValue(args, '--port') || process.env.SAGE_PORT || '3000'),
+    host: getArgValue(args, '--host') || process.env.SAGE_HOST || '0.0.0.0',
+  };
+  return options;
+}
+
+async function main(): Promise<void> {
+  const options = parseArgs(process.argv.slice(2));
+  const server = await createServer();
+
+  if (options.remote) {
+    // HTTPサーバーモード（Remote MCP）
+    await startHTTPServer(server, options);
+  } else {
+    // Stdioモード（Local MCP）
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+  }
+}
+```
+
+#### HTTPサーバーエンドポイント
+
+| エンドポイント | メソッド | 説明 |
+|---------------|---------|------|
+| `/health` | GET | ヘルスチェック |
+| `/mcp` | POST | MCPリクエスト処理 |
+| `/auth/token` | POST | JWT認証トークン生成 |
+
 ### レイヤー構成
 
 #### 1. MCP Interface Layer
