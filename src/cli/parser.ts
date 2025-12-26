@@ -26,6 +26,8 @@ export interface CLIOptions {
   version: boolean;
   /** JWT authentication secret */
   authSecret?: string;
+  /** Generate a bearer token for remote access */
+  generateToken: boolean;
 }
 
 /** Default port for HTTP server (used when invalid port specified) */
@@ -125,6 +127,7 @@ export function parseArgs(args: string[]): CLIOptions {
   const cliConfig = getArgValue(args, '--config', '-c');
   const cliHelp = hasFlag(args, '--help', '-h');
   const cliVersion = hasFlag(args, '--version', '-v');
+  const cliGenerateToken = hasFlag(args, '--generate-token', '-t');
 
   // CLI takes precedence over environment variables
   const remote = cliRemote || envRemote;
@@ -158,6 +161,7 @@ export function parseArgs(args: string[]): CLIOptions {
     help: cliHelp,
     version: cliVersion,
     authSecret: envAuthSecret,
+    generateToken: cliGenerateToken,
   };
 }
 
@@ -174,6 +178,7 @@ Usage:
 
 Options:
   --remote, -r           Run in HTTP server mode (Remote MCP)
+  --generate-token, -t   Generate a bearer token for remote access (use with --remote)
   --config, -c <path>    Path to configuration file
   --port, -p <number>    HTTP server port (default: 3000)
   --host, -H <address>   HTTP server host (default: 0.0.0.0)
@@ -191,7 +196,14 @@ Examples:
   npx sage                           # Run in Stdio mode (Local MCP)
   npx sage --remote                  # Run in HTTP mode (Remote MCP)
   npx sage --remote --port 8080      # Run in HTTP mode on port 8080
+  npx sage --generate-token          # Generate a bearer token for CLI access
   npx sage --config ~/.sage/custom.json  # Use custom config file
+
+Remote Access with Bearer Token:
+  1. Generate a token:  npx sage --generate-token
+  2. Add to Claude Code: claude mcp add --transport http sage \\
+       "http://your-server:3000/mcp" \\
+       --header "Authorization: Bearer <token>"
 `.trim();
 }
 

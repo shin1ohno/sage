@@ -421,6 +421,64 @@ client_id=sage_client_abc123
 | 31.3 | Dynamic Client Registrationでclient_name="Claude"を受け付けること | MUST |
 | 31.4 | Streamable HTTP Transport (GET /mcp) と併用可能であること | MUST |
 | 31.5 | SSE接続でもBearer認証を受け付けること | MUST |
+| 31.6 | localhost callbackを動的ポートで許可すること（CLI対応） | SHOULD |
+
+---
+
+### 要件32: Static Token サポート（CLIアクセス用）
+
+**ユーザーストーリー:** Claude Code等のCLIツールユーザーとして、OAuth認可フローなしでsageに接続したい。ブラウザを使用せずにCLIから直接アクセスできるようにするため。
+
+#### 受け入れ基準
+
+| ID | 要件 | 優先度 |
+|----|------|--------|
+| 32.1 | OAuth2モードでも静的JWTトークンを受け付けるオプションを提供すること | SHOULD |
+| 32.2 | `--generate-token` CLIオプションでBearerトークンを生成できること | SHOULD |
+| 32.3 | 静的トークンはOAuthトークンと同様にBearerヘッダーで送信すること | MUST |
+| 32.4 | 静的トークンは別のシークレットで署名すること | MUST |
+| 32.5 | 静的トークンの有効期限を設定可能にすること | SHOULD |
+
+#### 設定例
+
+```json
+{
+  "auth": {
+    "type": "oauth2",
+    "issuer": "https://sage.example.com",
+    "allowStaticTokens": true,
+    "staticTokenSecret": "your-secret-key-at-least-32-characters",
+    "users": [...]
+  }
+}
+```
+
+#### CLIでのトークン生成
+
+```bash
+# Bearerトークンを生成
+npx @shin1ohno/sage --generate-token
+
+# 出力例:
+# Bearer token generated successfully.
+# Token: eyJhbGciOiJIUzI1NiIs...
+# Expires in: 3600 seconds
+#
+# Usage with Claude Code:
+#   claude mcp add --transport http sage "http://your-server:3000/mcp" \
+#     --header "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..."
+```
+
+#### localhost callback サポート
+
+CLIツール（Claude Code等）は動的ポートでlocalhostにコールバックを受け取ることがあります：
+
+```
+http://localhost:12345/callback
+http://127.0.0.1:54321/callback
+```
+
+これらのURIは、クライアントがlocalhost URIを1つでも登録していれば許可されます。
 
 ---
 
@@ -532,6 +590,14 @@ https://claude.ai/api/mcp/auth_callback?
 - [ ] 44.4 トークン検証テスト
 - [ ] 44.5 セキュリティテスト
 
+### タスク45: Static Token サポート（CLIアクセス用）
+
+- [x] 45.1 `--generate-token` CLIオプションの追加
+- [x] 45.2 OAuth2設定への`allowStaticTokens`/`staticTokenSecret`追加
+- [x] 45.3 トークン検証ロジックの更新（OAuth + Static Token両方を試行）
+- [x] 45.4 localhost callback動的ポートサポート
+- [ ] 45.5 Static Tokenテスト
+
 ---
 
 ## 設定ファイル拡張
@@ -551,7 +617,8 @@ https://claude.ai/api/mcp/auth_callback?
       "refreshTokenExpiry": "30d",
       "allowedRedirectUris": [
         "https://claude.ai/api/mcp/auth_callback",
-        "https://claude.com/api/mcp/auth_callback"
+        "https://claude.com/api/mcp/auth_callback",
+        "http://localhost/callback"
       ],
       "users": [
         {
@@ -563,7 +630,9 @@ https://claude.ai/api/mcp/auth_callback?
         "mcp:read": "読み取り専用アクセス",
         "mcp:write": "読み書きアクセス",
         "mcp:admin": "管理者アクセス"
-      }
+      },
+      "allowStaticTokens": true,
+      "staticTokenSecret": "your-secret-key-at-least-32-characters"
     },
     "cors": {
       "allowedOrigins": ["https://claude.ai", "https://claude.com"]

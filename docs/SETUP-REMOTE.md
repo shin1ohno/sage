@@ -152,7 +152,24 @@ macOS のファイアウォールでポート 3000 を許可:
 
 ### Step 5: 認証トークンを取得
 
-サーバー起動時にログに表示される JWT トークンを使用するか、以下で生成:
+#### 方法1: CLI で生成（推奨）
+
+```bash
+# Bearer トークンを生成
+npx @shin1ohno/sage --generate-token
+
+# 出力例:
+# Bearer token generated successfully.
+#
+# Token: eyJhbGciOiJIUzI1NiIs...
+# Expires in: 3600 seconds
+#
+# Usage with Claude Code:
+#   claude mcp add --transport http sage "http://your-server:3000/mcp" \
+#     --header "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..."
+```
+
+#### 方法2: API で生成
 
 ```bash
 # トークン生成（サーバーが起動している状態で）
@@ -332,6 +349,32 @@ sage は **OAuth 2.1** を完全実装しており、Claude iOS App と安全に
 | `allowedRedirectUris` | ❌ | Claude URLs | 許可するリダイレクトURI |
 | `users` | ✅ | - | 認証可能なユーザーリスト |
 | `scopes` | ❌ | 標準スコープ | カスタムスコープ定義 |
+| `allowStaticTokens` | ❌ | `false` | 静的トークンも受け付けるか |
+| `staticTokenSecret` | ❌ | - | 静的トークン用シークレット（32文字以上） |
+
+#### OAuth2 + Static Token ハイブリッド設定（CLI対応）
+
+Claude Code などの CLI ツールは OAuth フローが使えないため、静的トークンを併用できます：
+
+```json
+{
+  "remote": {
+    "auth": {
+      "type": "oauth2",
+      "issuer": "https://your-domain.com",
+      "users": [...],
+      "allowStaticTokens": true,
+      "staticTokenSecret": "your-secret-key-at-least-32-characters"
+    }
+  }
+}
+```
+
+この設定で：
+- **Claude iOS/Web**: OAuth 2.0 フローで認証
+- **Claude Code/CLI**: `--generate-token` で生成した静的トークンで認証
+
+両方のトークンが同じ `/mcp` エンドポイントで受け付けられます。
 
 #### パスワードハッシュの生成
 
@@ -569,6 +612,51 @@ ipconfig getifaddr en0
 ```
 
 > **⚠️ セキュリティ注意**: 認証なしモードはローカルネットワーク内でのみ使用してください。
+
+### Claude Code での設定
+
+Claude Code (CLI) から Remote MCP Server に接続する方法です。
+
+#### Step 1: サーバー設定を更新（OAuth2 + Static Token）
+
+```json
+{
+  "remote": {
+    "auth": {
+      "type": "oauth2",
+      "issuer": "https://your-domain.com",
+      "users": [...],
+      "allowStaticTokens": true,
+      "staticTokenSecret": "your-secret-key-at-least-32-characters"
+    }
+  }
+}
+```
+
+#### Step 2: Bearer トークンを生成
+
+```bash
+npx @shin1ohno/sage --generate-token
+```
+
+#### Step 3: Claude Code に MCP サーバーを追加
+
+```bash
+claude mcp add --transport http sage \
+  "https://your-domain.com/mcp" \
+  --header "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..."
+```
+
+#### Step 4: 動作確認
+
+```bash
+claude
+# Claude Code を起動後、sage のツールが使えることを確認
+```
+
+> **ヒント**: ローカルネットワーク内であれば `http://192.168.x.x:3000/mcp` も使用可能です。
+
+---
 
 ### Claude Desktop での設定
 

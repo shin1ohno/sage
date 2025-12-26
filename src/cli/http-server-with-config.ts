@@ -83,6 +83,14 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     // Setup authentication based on type
     if (config.remote.auth.type === 'oauth2') {
       // OAuth will be initialized in start()
+      // Also setup static token authenticator if enabled
+      const oauthConfig = config.remote.auth;
+      if (oauthConfig.allowStaticTokens && oauthConfig.staticTokenSecret) {
+        this.authenticator = createSecretAuthenticator({
+          secret: oauthConfig.staticTokenSecret,
+          expiresIn: oauthConfig.accessTokenExpiry ?? '1h',
+        });
+      }
     } else if (config.remote.auth.type === 'jwt') {
       // Setup JWT authenticator from config
       const jwtConfig = config.remote.auth;
@@ -387,7 +395,7 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   }
 
   /**
-   * Verify Bearer token (supports both JWT and OAuth)
+   * Verify Bearer token (supports both JWT and OAuth, tries both if configured)
    */
   private async verifyBearerToken(authHeader: string | undefined): Promise<{ valid: boolean; error?: string }> {
     if (!authHeader) {
@@ -401,13 +409,24 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
     const token = parts[1];
 
-    // Use OAuth verification if OAuth is enabled
+    // Try OAuth verification first if OAuth is enabled
     if (this.isOAuthEnabled() && this.oauthServer) {
       const result = await this.oauthServer.verifyAccessToken(token);
-      return { valid: result.valid, error: result.error };
+      if (result.valid) {
+        return { valid: true };
+      }
+      // If OAuth fails and static tokens are enabled, try static token verification
+      if (this.authenticator) {
+        const staticResult = await this.authenticator.verifyToken(token);
+        if (staticResult.valid) {
+          return { valid: true };
+        }
+      }
+      // Return the OAuth error if both failed
+      return { valid: false, error: result.error };
     }
 
-    // Fall back to JWT verification
+    // Fall back to JWT verification only
     if (this.authenticator) {
       const result = await this.authenticator.verifyToken(token);
       return { valid: result.valid, error: result.error };

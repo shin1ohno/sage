@@ -2524,6 +2524,18 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  // Handle token generation
+  if (options.generateToken) {
+    const result = await startServer(options);
+    if (result.success) {
+      console.log(result.message);
+      process.exit(0);
+    } else {
+      console.error(`Token generation failed: ${result.error}`);
+      process.exit(1);
+    }
+  }
+
   // Start in HTTP mode if --remote flag is set
   if (options.remote) {
     const result = await startServer(options);

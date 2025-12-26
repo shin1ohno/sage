@@ -290,6 +290,22 @@ export const CLAUDE_CALLBACK_URLS = [
 ];
 
 /**
+ * Check if a redirect URI is a localhost callback (for CLI tools like Claude Code)
+ * Localhost callbacks are allowed on any port for local development/CLI usage
+ */
+export function isLocalhostCallback(uri: string): boolean {
+  try {
+    const parsed = new URL(uri);
+    const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    const isHttp = parsed.protocol === 'http:';
+    const isCallback = parsed.pathname === '/callback' || parsed.pathname.endsWith('/callback');
+    return isLocalhost && isHttp && isCallback;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Default token expiry durations
  */
 export const DEFAULT_TOKEN_EXPIRY = {

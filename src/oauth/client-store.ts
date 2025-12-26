@@ -10,6 +10,7 @@ import {
   OAuthClient,
   ClientRegistrationRequest,
   CLAUDE_CALLBACK_URLS,
+  isLocalhostCallback,
 } from './types.js';
 
 /**
@@ -54,6 +55,11 @@ function validateRedirectUris(
   for (const uri of uris) {
     // Check if URI is in Claude official URLs (always allowed)
     if (CLAUDE_CALLBACK_URLS.includes(uri)) {
+      continue;
+    }
+
+    // Check if URI is a localhost callback (allowed for CLI tools like Claude Code)
+    if (isLocalhostCallback(uri)) {
       continue;
     }
 
@@ -142,8 +148,21 @@ class InMemoryClientStore implements ClientStore {
       return false;
     }
 
-    // Requirement 30.5: Exact match validation
-    return client.redirect_uris.includes(redirectUri);
+    // Check exact match first (Requirement 30.5)
+    if (client.redirect_uris.includes(redirectUri)) {
+      return true;
+    }
+
+    // Allow localhost callbacks if client has registered any localhost URI
+    // This supports CLI tools that use dynamic ports
+    if (isLocalhostCallback(redirectUri)) {
+      const hasLocalhostRegistered = client.redirect_uris.some(uri => isLocalhostCallback(uri));
+      if (hasLocalhostRegistered) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }
 

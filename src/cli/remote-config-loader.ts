@@ -28,6 +28,10 @@ export interface OAuthAuthConfig {
   allowedRedirectUris?: string[];
   users: OAuthUserConfig[];
   scopes?: Record<string, string>;
+  /** Also accept static JWT tokens (for CLI access without OAuth flow) */
+  allowStaticTokens?: boolean;
+  /** Secret for static JWT tokens (required if allowStaticTokens is true) */
+  staticTokenSecret?: string;
 }
 
 /**
