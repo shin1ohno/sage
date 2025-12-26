@@ -364,6 +364,66 @@ ngrok http 3000
 ipconfig getifaddr en0
 ```
 
+### Claude Desktop での設定
+
+別の Mac から Remote MCP Server に接続する場合の設定方法です。
+
+**Step 1: 設定ファイルを開く**
+
+```bash
+# VS Code で開く
+code ~/Library/Application\ Support/Claude/claude_desktop_config.json
+
+# または nano で開く
+nano ~/Library/Application\ Support/Claude/claude_desktop_config.json
+```
+
+**Step 2: Remote MCP Server を追加**
+
+```json
+{
+  "mcpServers": {
+    "sage-remote": {
+      "url": "http://192.168.x.x:3000/mcp"
+    }
+  }
+}
+```
+
+> **注意**: `192.168.x.x` を Remote MCP Server を実行している Mac の IP アドレスに置き換えてください。
+
+**既存の設定がある場合:**
+
+```json
+{
+  "mcpServers": {
+    "existing-server": {
+      "command": "...",
+      "args": ["..."]
+    },
+    "sage-remote": {
+      "url": "http://192.168.x.x:3000/mcp"
+    }
+  }
+}
+```
+
+**Step 3: Claude Desktop を再起動**
+
+1. Claude Desktop を完全に終了
+2. Claude Desktop を再度起動
+
+**Step 4: 動作確認**
+
+Claude Desktop で以下のように入力:
+
+```
+check_setup_status を実行してください
+```
+
+> **ヒント**: 同じ Mac で sage を使用する場合は、Remote MCP Server を経由せず、
+> [Local MCP Setup](SETUP-LOCAL.md) の方法で直接接続することを推奨します。
+
 ---
 
 ## セキュリティのベストプラクティス
