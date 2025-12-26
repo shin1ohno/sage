@@ -105,9 +105,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         this.server.listen(this.effectivePort, this.effectiveHost, () => {
           this.running = true;
           this.startTime = new Date();
-          console.error(`[sage] Server started on ${this.effectiveHost}:${this.effectivePort}`);
-          console.error(`[sage] Auth enabled: ${this.isAuthEnabled()}`);
-          console.error(`[sage] CORS origins: ${this.config.remote.cors.allowedOrigins.join(', ')}`);
           resolve();
         });
 
@@ -156,10 +153,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     const url = req.url || '/';
     const method = req.method || 'GET';
     const origin = req.headers.origin;
-    const clientIP = req.socket.remoteAddress;
-
-    // Debug log
-    console.error(`[sage] ${new Date().toISOString()} ${method} ${url} from ${clientIP}`);
 
     // Add CORS headers
     const corsHeaders = this.getCORSHeaders(origin);
@@ -188,7 +181,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
     // MCP endpoint (auth required if enabled)
     if (url === '/mcp' && method === 'POST') {
-      console.error(`[sage] MCP endpoint hit, authEnabled: ${this.isAuthEnabled()}`);
       this.handleMCPRequest(req, res);
       return;
     }
@@ -348,11 +340,8 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     });
 
     req.on('end', async () => {
-      console.error(`[sage] MCP request body: ${body.substring(0, 500)}`);
-
       try {
         const request = this.parseJSONRPCRequest(body);
-        console.error(`[sage] MCP method: ${request.method}, id: ${request.id}`);
 
         // Process request through MCP handler
         if (!this.mcpHandler) {
@@ -367,13 +356,11 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         };
 
         const response = await this.mcpHandler.handleRequest(mcpRequest);
-        console.error(`[sage] MCP response id: ${response.id}, hasError: ${!!response.error}`);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(response));
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        console.error(`[sage] MCP error: ${errorMessage}`);
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({
