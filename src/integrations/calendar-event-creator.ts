@@ -248,24 +248,80 @@ export class CalendarEventCreatorService {
    * Requirement: 18.7
    */
   isAllDayEvent(startDate: string, endDate: string): boolean {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-
-    // Check if both start at midnight (00:00:00)
-    const startMidnight = start.getHours() === 0 && start.getMinutes() === 0 && start.getSeconds() === 0;
-    const endMidnight = end.getHours() === 0 && end.getMinutes() === 0 && end.getSeconds() === 0;
+    // Check if both times are midnight in their specified timezone
+    // Parse the time portion from the ISO string directly to avoid timezone conversion issues
+    const startMidnight = this.isMidnightInOriginalTimezone(startDate);
+    const endMidnight = this.isMidnightInOriginalTimezone(endDate);
 
     return startMidnight && endMidnight;
   }
 
   /**
+   * Check if a date string represents midnight in its original timezone
+   * This avoids issues with JavaScript Date converting to local timezone
+   */
+  private isMidnightInOriginalTimezone(dateStr: string): boolean {
+    if (!dateStr) return false;
+
+    // Date-only format (e.g., "2025-01-01") is always considered midnight
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return true;
+    }
+
+    // Extract time portion from ISO 8601 string
+    // Formats: "2025-01-01T00:00:00", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00+09:00"
+    const timeMatch = dateStr.match(/T(\d{2}):(\d{2}):(\d{2})/);
+    if (timeMatch) {
+      const hours = parseInt(timeMatch[1], 10);
+      const minutes = parseInt(timeMatch[2], 10);
+      const seconds = parseInt(timeMatch[3], 10);
+      return hours === 0 && minutes === 0 && seconds === 0;
+    }
+
+    // Fallback: use Date object (less reliable across timezones)
+    const date = new Date(dateStr);
+    return date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0;
+  }
+
+  /**
    * Parse date/time string to components
+   * Parses the date string in its original timezone, not converting to local time
    */
   parseDateTimeComponents(dateStr: string): DateTimeComponents | null {
     if (!dateStr) {
       return null;
     }
 
+    // Try to parse ISO 8601 format directly to preserve original timezone
+    // Formats: "2025-01-01", "2025-01-01T10:00:00", "2025-01-01T10:00:00Z", "2025-01-01T10:00:00+09:00"
+
+    // Date-only format: "2025-01-01"
+    const dateOnlyMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnlyMatch) {
+      return {
+        year: parseInt(dateOnlyMatch[1], 10),
+        month: parseInt(dateOnlyMatch[2], 10),
+        day: parseInt(dateOnlyMatch[3], 10),
+        hours: 0,
+        minutes: 0,
+        seconds: 0,
+      };
+    }
+
+    // DateTime format: "2025-01-01T10:00:00" with optional timezone
+    const dateTimeMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+    if (dateTimeMatch) {
+      return {
+        year: parseInt(dateTimeMatch[1], 10),
+        month: parseInt(dateTimeMatch[2], 10),
+        day: parseInt(dateTimeMatch[3], 10),
+        hours: parseInt(dateTimeMatch[4], 10),
+        minutes: parseInt(dateTimeMatch[5], 10),
+        seconds: parseInt(dateTimeMatch[6], 10),
+      };
+    }
+
+    // Fallback: use Date object (less reliable across timezones)
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) {
       return null;
