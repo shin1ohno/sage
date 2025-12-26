@@ -1,26 +1,22 @@
 {
   "manifest_version": "0.2",
-  "id": "@shin1ohno/sage",
-  "name": "sage - AI Task Manager",
-  "description": "AI Task Management Assistant for Claude. Analyze tasks, set priorities, manage reminders, and integrate with Apple Reminders, Notion, and Calendar.",
+  "name": "sage",
+  "display_name": "sage - AI Task Manager",
   "version": "0.2.4",
+  "description": "AI Task Management Assistant for Claude. Analyze tasks, set priorities, manage reminders, and integrate with Apple Reminders, Notion, and Calendar.",
   "author": {
-    "name": "shin1ohno"
+    "name": "shin1ohno",
+    "url": "https://github.com/shin1ohno"
   },
-  "website": "https://github.com/shin1ohno/sage",
   "server": {
     "type": "node",
-    "entry_point": "dist/index.js"
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {}
+    }
   },
-  "compatibility": {
-    "os": ["darwin"],
-    "arch": ["x64", "arm64"],
-    "min_claude": "1.0.0"
-  },
-  "permissions": [
-    "filesystem.read",
-    "filesystem.write"
-  ],
   "tools": [
     {
       "name": "check_setup_status",
@@ -66,9 +62,5 @@
       "name": "update_task_status",
       "description": "Update the status of a task and optionally sync across sources."
     }
-  ],
-  "update": {
-    "type": "github_release",
-    "repo": "shin1ohno/sage"
-  }
+  ]
 }
