@@ -27,12 +27,12 @@ describe('CLI Parser', () => {
 
   describe('parseArgs', () => {
     describe('default values', () => {
-      it('should return default values when no arguments provided', () => {
+      it('should return undefined port/host when no arguments provided (allows config file fallback)', () => {
         const result = parseArgs([]);
 
         expect(result.remote).toBe(false);
-        expect(result.port).toBe(3000);
-        expect(result.host).toBe('0.0.0.0');
+        expect(result.port).toBeUndefined(); // Config file fallback
+        expect(result.host).toBeUndefined(); // Config file fallback
         expect(result.config).toBeUndefined();
         expect(result.help).toBe(false);
         expect(result.version).toBe(false);
@@ -263,13 +263,13 @@ describe('CLI Parser', () => {
       const result = parseArgs(['--unknown-option']);
 
       expect(result.remote).toBe(false);
-      expect(result.port).toBe(3000);
+      expect(result.port).toBeUndefined(); // Config file fallback
     });
 
     it('should handle missing value for --port', () => {
       const result = parseArgs(['--port']);
 
-      expect(result.port).toBe(3000);
+      expect(result.port).toBeUndefined(); // Config file fallback
     });
 
     it('should handle missing value for --config', () => {
@@ -281,7 +281,7 @@ describe('CLI Parser', () => {
     it('should handle empty string values', () => {
       const result = parseArgs(['--host', '']);
 
-      expect(result.host).toBe('0.0.0.0');
+      expect(result.host).toBeUndefined(); // Empty string treated as not specified
     });
   });
 });
@@ -305,5 +305,63 @@ describe('CLIOptions interface', () => {
     expect(options.help).toBeDefined();
     expect(options.version).toBeDefined();
     expect(options.authSecret).toBeDefined();
+  });
+
+  it('should allow undefined port to enable config file fallback', () => {
+    // BUG FIX: When no port is specified via CLI or env, port should be undefined
+    // so that the config file's port can be used as fallback
+    const options: CLIOptions = {
+      remote: true,
+      port: undefined,
+      host: undefined,
+      help: false,
+      version: false,
+    };
+
+    expect(options.port).toBeUndefined();
+    expect(options.host).toBeUndefined();
+  });
+});
+
+describe('parseArgs config file fallback', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.SAGE_PORT;
+    delete process.env.SAGE_HOST;
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('should return undefined port when no port specified via CLI or env', () => {
+    // This is the BUG: port should be undefined, not 3000
+    // When undefined, http-server-with-config will use config file's port
+    const result = parseArgs(['--remote']);
+
+    // FIX: port should be undefined to allow config file fallback
+    expect(result.port).toBeUndefined();
+  });
+
+  it('should return undefined host when no host specified via CLI or env', () => {
+    const result = parseArgs(['--remote']);
+
+    // FIX: host should be undefined to allow config file fallback
+    expect(result.host).toBeUndefined();
+  });
+
+  it('should return explicit port when specified via CLI', () => {
+    const result = parseArgs(['--remote', '--port', '8080']);
+
+    expect(result.port).toBe(8080);
+  });
+
+  it('should return env port when specified via env', () => {
+    process.env.SAGE_PORT = '9000';
+    const result = parseArgs(['--remote']);
+
+    expect(result.port).toBe(9000);
   });
 });

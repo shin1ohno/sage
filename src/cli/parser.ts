@@ -14,10 +14,10 @@ import { VERSION } from '../version.js';
 export interface CLIOptions {
   /** Run in HTTP server mode (Remote MCP) */
   remote: boolean;
-  /** HTTP server port */
-  port: number;
-  /** HTTP server host address */
-  host: string;
+  /** HTTP server port (undefined = use config file value) */
+  port?: number;
+  /** HTTP server host address (undefined = use config file value) */
+  host?: string;
   /** Path to configuration file */
   config?: string;
   /** Show help message */
@@ -28,11 +28,10 @@ export interface CLIOptions {
   authSecret?: string;
 }
 
-/** Default port for HTTP server */
+/** Default port for HTTP server (used when invalid port specified) */
 const DEFAULT_PORT = 3000;
 
-/** Default host for HTTP server */
-const DEFAULT_HOST = '0.0.0.0';
+// Note: DEFAULT_HOST removed - host defaults come from config file now
 
 /** Minimum valid port number */
 const MIN_PORT = 1;
@@ -131,7 +130,8 @@ export function parseArgs(args: string[]): CLIOptions {
   const remote = cliRemote || envRemote;
 
   // Parse port with CLI priority
-  let port = DEFAULT_PORT;
+  // Return undefined if not explicitly specified (allows config file fallback)
+  let port: number | undefined = undefined;
   if (cliPort) {
     port = parsePort(cliPort, DEFAULT_PORT);
   } else if (envPort) {
@@ -139,7 +139,8 @@ export function parseArgs(args: string[]): CLIOptions {
   }
 
   // Parse host with CLI priority
-  let host = DEFAULT_HOST;
+  // Return undefined if not explicitly specified (allows config file fallback)
+  let host: string | undefined = undefined;
   if (cliHost && cliHost.length > 0) {
     host = cliHost;
   } else if (envHost && envHost.length > 0) {
