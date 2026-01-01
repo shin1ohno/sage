@@ -619,3 +619,174 @@ class NotionMCPService {
 ---
 
 **実装開始**: tasks.mdのタスク1から開始してください！
+
+---
+
+## Spec文書の書き方ガイド
+
+このプロジェクトでは、仕様文書を関心事ごとに分割して管理しています。
+
+### Spec構造
+
+```
+.kiro/specs/claude-task-manager/
+├── requirements.md          # 要件定義（EARS形式）
+├── architecture.md          # アーキテクチャ概要
+├── components.md            # コンポーネント設計
+├── data-models.md           # データモデル定義
+├── integrations.md          # 外部統合仕様
+├── oauth-spec.md           # OAuth 2.1仕様
+├── security.md             # セキュリティ仕様
+├── testing.md              # テスト戦略
+└── tasks.md               # 実装タスクリスト
+```
+
+### 各ファイルの役割
+
+#### requirements.md
+- **目的**: ユーザーストーリーと受け入れ基準の定義
+- **形式**: EARS（Easy Approach to Requirements Syntax）
+- **内容**: 要件番号、ユーザーストーリー、受け入れ基準
+
+#### architecture.md
+- **目的**: システム全体のアーキテクチャ設計
+- **内容**:
+  - システム概要
+  - プラットフォーム対応状況
+  - マルチプラットフォーム構成図（Mermaid）
+  - レイヤー構成
+  - パフォーマンス最適化
+  - 国際化対応
+
+#### components.md
+- **目的**: 個別コンポーネントの詳細設計
+- **内容**:
+  - コンポーネント一覧（表形式）
+  - 各コンポーネントのインターフェース定義（TypeScript）
+  - コンポーネント依存関係図（Mermaid）
+
+#### data-models.md
+- **目的**: データ構造とモデルの定義
+- **内容**:
+  - Core Models（Task, UserConfigなど）
+  - Configuration Models
+  - Analysis Models
+  - MCP Models
+  - 設定ファイル例（JSON）
+
+#### integrations.md
+- **目的**: 外部サービス統合の仕様
+- **内容**:
+  - CLIインターフェース
+  - Remote MCP Server設定
+  - Apple Reminders統合
+  - Calendar統合
+  - Notion統合
+  - エラーハンドリング
+
+#### oauth-spec.md
+- **目的**: OAuth 2.1認証の詳細仕様
+- **内容**:
+  - 認証フロー（Mermaidシーケンス図）
+  - エンドポイント定義
+  - セキュリティ要件
+  - 実装タスク
+
+#### security.md
+- **目的**: セキュリティ要件とベストプラクティス
+- **内容**:
+  - データ保護
+  - API セキュリティ
+  - 入力検証
+  - OAuth 2.1 セキュリティ
+  - セキュリティチェックリスト
+
+#### testing.md
+- **目的**: テスト戦略とサンプルコード
+- **内容**:
+  - テストピラミッド
+  - ユニットテスト例
+  - 統合テスト例
+  - E2Eテスト例
+  - モック・スタブ
+  - テストベストプラクティス
+
+### Spec執筆のベストプラクティス
+
+#### 1. 関心事の分離
+各ファイルは単一の責任を持つようにする：
+- ❌ **悪い例**: architecture.mdに実装タスクを含める
+- ✅ **良い例**: 実装タスクはtasks.mdに分離
+
+#### 2. Mermaid図の活用
+複雑な関係を視覚化する：
+```markdown
+\```mermaid
+graph TD
+    A[Component A] --> B[Component B]
+    B --> C[Component C]
+\```
+```
+
+#### 3. TypeScriptインターフェースの活用
+型定義で仕様を明確にする：
+```typescript
+interface ComponentInterface {
+  method(param: ParamType): ReturnType;
+}
+```
+
+#### 4. 例とテンプレートの提供
+実装者が理解しやすいように：
+- 設定ファイル例
+- コード例
+- APIリクエスト/レスポンス例
+
+#### 5. 表形式の活用
+比較や一覧には表を使用：
+```markdown
+| 項目 | 説明 | 例 |
+|-----|------|---|
+| ...  | ...  | ... |
+```
+
+#### 6. セクション構造の統一
+各ファイルは以下の構造を基本とする：
+1. タイトル
+2. 目的・概要
+3. 詳細説明
+4. 例・サンプル
+5. 注意事項
+
+### Spec更新時の注意点
+
+#### 変更時のチェックリスト
+- [ ] 関連する他のspecファイルも更新したか？
+- [ ] requirements.mdとの整合性は取れているか？
+- [ ] tasks.mdに実装タスクを追加したか？
+- [ ] 図は最新の状態か？（特にMermaid図）
+- [ ] 例やサンプルコードは動作するか？
+
+#### バージョン管理
+各specファイルの冒頭に更新日を記載：
+```markdown
+> **Last Updated**: 2025-01-01
+```
+
+### Spec分割のメリット
+
+1. **可読性**: 必要な情報を素早く見つけられる
+2. **保守性**: 変更時の影響範囲が明確
+3. **並行作業**: 複数人で異なるspecファイルを編集可能
+4. **再利用性**: 各specを独立して参照可能
+
+### Spec統合の流れ
+
+実装時は以下の順序でspecを参照：
+1. `requirements.md` - 何を実現するか
+2. `architecture.md` - 全体構成の理解
+3. `components.md` - 該当コンポーネントの設計
+4. `data-models.md` - データ構造の確認
+5. `integrations.md` - 外部サービス統合方法
+6. `security.md` - セキュリティ要件
+7. `testing.md` - テスト方法
