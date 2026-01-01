@@ -31,29 +31,29 @@
 
 ### システム構成
 
-```
-┌─────────────────┐     ┌─────────────────────┐     ┌─────────────────┐
-│  Claude Client  │────▶│  sage OAuth Server  │────▶│  sage MCP API   │
-│  (iOS/Web)      │     │  (Authorization)    │     │  (Resources)    │
-└─────────────────┘     └─────────────────────┘     └─────────────────┘
-        │                         │                         │
-        │ 1. GET /mcp (401)       │                         │
-        │◀────────────────────────┼─────────────────────────│
-        │                         │                         │
-        │ 2. GET /.well-known/oauth-protected-resource      │
-        │────────────────────────▶│                         │
-        │                         │                         │
-        │ 3. GET /.well-known/oauth-authorization-server    │
-        │────────────────────────▶│                         │
-        │                         │                         │
-        │ 4. GET /authorize       │                         │
-        │────────────────────────▶│                         │
-        │                         │                         │
-        │ 5. POST /token          │                         │
-        │────────────────────────▶│                         │
-        │                         │                         │
-        │ 6. GET /mcp + Bearer token                        │
-        │────────────────────────────────────────────────────▶
+```mermaid
+sequenceDiagram
+    participant Client as Claude Client<br/>(iOS/Web)
+    participant OAuth as sage OAuth Server<br/>(Authorization)
+    participant API as sage MCP API<br/>(Resources)
+
+    Client->>API: 1. GET /mcp
+    API-->>Client: 401 Unauthorized
+
+    Client->>OAuth: 2. GET /.well-known/oauth-protected-resource
+    OAuth-->>Client: Resource metadata
+
+    Client->>OAuth: 3. GET /.well-known/oauth-authorization-server
+    OAuth-->>Client: Authorization server metadata
+
+    Client->>OAuth: 4. GET /authorize
+    OAuth-->>Client: Authorization code
+
+    Client->>OAuth: 5. POST /token
+    OAuth-->>Client: Access token
+
+    Client->>API: 6. GET /mcp + Bearer token
+    API-->>Client: MCP response
 ```
 
 ### コンポーネント
