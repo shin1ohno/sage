@@ -507,6 +507,41 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   }
 
   private processMCPRequest(req: IncomingMessage, res: ServerResponse): void {
+    // Check for X-Session-Id header
+    const sessionId = req.headers['x-session-id'] as string | undefined;
+
+    // sessionId is required for MCP over SSE
+    if (!sessionId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: 'Session ID required',
+          message: 'X-Session-Id header is required for MCP requests',
+        })
+      );
+      return;
+    }
+
+    // Process with async SSE response flow
+    this.processMCPRequestAsync(req, res, sessionId);
+  }
+
+  /**
+   * Process MCP request asynchronously with SSE response
+   */
+  private processMCPRequestAsync(req: IncomingMessage, res: ServerResponse, sessionId: string): void {
+    // Validate sessionId exists
+    if (!this.sseHandler || !this.sseHandler.hasSession(sessionId)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: 'Session not found',
+          message: `No active SSE session with ID: ${sessionId}`,
+        })
+      );
+      return;
+    }
+
     let body = '';
     req.on('data', (chunk) => {
       body += chunk.toString();
@@ -516,9 +551,27 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       try {
         const request = this.parseJSONRPCRequest(body);
 
-        // Process request through MCP handler
+        // Immediately return 202 Accepted
+        res.writeHead(202, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            accepted: true,
+            id: request.id,
+          })
+        );
+
+        // Process request asynchronously
         if (!this.mcpHandler) {
-          throw new Error('MCP handler not initialized');
+          const errorResponse = {
+            jsonrpc: '2.0',
+            id: request.id,
+            error: {
+              code: -32603,
+              message: 'MCP handler not initialized',
+            },
+          };
+          this.sseHandler!.sendResponseToSession(sessionId, errorResponse);
+          return;
         }
 
         const mcpRequest: MCPRequest = {
@@ -528,23 +581,24 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
           params: request.params,
         };
 
-        const response = await this.mcpHandler.handleRequest(mcpRequest);
+        const mcpResponse = await this.mcpHandler.handleRequest(mcpRequest);
 
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(response));
+        // Send response via SSE
+        const sent = this.sseHandler!.sendResponseToSession(sessionId, mcpResponse);
+        if (!sent) {
+          console.error(`Failed to send response to session ${sessionId}: connection may be closed`);
+        }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: null,
-            error: {
-              code: -32700,
-              message: errorMessage,
-            },
-          })
-        );
+        // Send error response via SSE
+        const errorResponse = {
+          jsonrpc: '2.0',
+          id: null,
+          error: {
+            code: -32700,
+            message: error instanceof Error ? error.message : 'Parse error',
+          },
+        };
+        this.sseHandler!.sendResponseToSession(sessionId, errorResponse);
       }
     });
   }

@@ -41,6 +41,16 @@ export interface SSEStreamHandler {
   sendEvent(eventType: string, data: unknown, sessionId?: string): void;
 
   /**
+   * Send MCP JSON-RPC response to a specific session
+   */
+  sendResponseToSession(sessionId: string, response: unknown): boolean;
+
+  /**
+   * Check if session exists
+   */
+  hasSession(sessionId: string): boolean;
+
+  /**
    * Broadcast event to all connected clients
    */
   broadcast(data: unknown): void;
@@ -129,6 +139,27 @@ class SSEStreamHandlerImpl implements SSEStreamHandler {
         connection.response.write(payload);
       }
     }
+  }
+
+  sendResponseToSession(sessionId: string, response: unknown): boolean {
+    const connection = this.connections.get(sessionId);
+    if (!connection) {
+      return false;
+    }
+
+    const payload = this.formatSSEEvent('message', response);
+    try {
+      connection.response.write(payload);
+      return true;
+    } catch (error) {
+      // Connection might be closed
+      this.removeConnection(sessionId);
+      return false;
+    }
+  }
+
+  hasSession(sessionId: string): boolean {
+    return this.connections.has(sessionId);
   }
 
   broadcast(data: unknown): void {
