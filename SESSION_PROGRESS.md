@@ -1,6 +1,339 @@
 # Session Progress - sage
 
-## Current Session: 2025-12-26 (Part 7) ✅ COMPLETED
+## Current Session: 2026-01-01 - 所要時間見積もりロジックの調査と修正 ✅ COMPLETED
+
+### Session Goals
+所要時間の見積もりロジックについて、実装とSpec（仕様）の両方を読んで整合性を確認し、不一致を修正する
+
+### 調査結果サマリー
+
+#### 見積もりアルゴリズムの概要
+
+システムは**キーワードベース**の見積もりアルゴリズムを採用しており、以下の4段階の複雑度レベルで時間を見積もります：
+
+| 複雑度レベル | ベース時間（実装） | ベース時間（仕様） | 整合性 |
+|------------|-----------------|-----------------|--------|
+| Simple（シンプル） | 25分 | 25分 | ✅ 一致 |
+| Medium（標準） | 50分 | （明示なし） | ⚠️ 仕様に未記載 |
+| Complex（複雑） | 90分 | 75分 | ❌ **不一致** |
+| Project（プロジェクト） | 180分 | （明示なし） | ⚠️ 仕様に未記載 |
+
+#### ⚠️ 発見された整合性の問題
+
+1. **Complex タスクの見積もり時間の不一致**
+   - **仕様（requirements.md 要件3.2）**: 複雑なタスクは75分
+   - **実装（estimation.ts）**: 90分
+   - **差異**: 15分（20%の差）
+
+2. **修飾子（Modifiers）の未文書化**
+   - 実装には以下の修飾子が存在するが、仕様には記載なし：
+     - 長さ修飾子（0.75〜1.5倍）
+     - 特殊修飾子（ミーティング、デバッグ等で1.25〜1.5倍）
+     - 5分単位への丸め処理
+
+#### 実装の詳細アルゴリズム
+
+##### 1. キーワードマッチング（優先順位順）
+
+実装ファイル: `src/utils/estimation.ts:117-196`
+
+```typescript
+// 優先順位1: Project レベル（180分ベース）
+if (projectMatches.length > 0) → 180分
+
+// 優先順位2: Complex レベル（90分ベース）
+if (complexMatches.length > 0) → 90分
+
+// 優先順位3: Medium レベル（50分ベース）
+if (mediumMatches.length > 0) → 50分
+
+// 優先順位4: Simple レベル（25分ベース）
+if (simpleMatches.length > 0) → 25分
+
+// デフォルト（マッチなし）: Medium扱い
+default → 50分
+```
+
+##### 2. キーワードマッピング
+
+実装ファイル: `src/utils/estimation.ts:22-98`
+
+**Simple キーワード例**:
+- 英語: `check`, `review`, `read`, `confirm`, `send`, `reply`, `approve`, `quick`
+- 日本語: `確認`, `レビュー`, `読む`, `返信`, `送信`, `承認`, `すぐ`, `シンプル`
+
+**Medium キーワード例**:
+- 英語: `implement`, `fix`, `update`, `create`, `modify`, `add`, `write`, `develop`, `test`
+- 日本語: `実装`, `修正`, `更新`, `作成`, `変更`, `追加`, `書く`, `開発`, `テスト`
+
+**Complex キーワード例**:
+- 英語: `design`, `refactor`, `migrate`, `integrate`, `optimize`, `analyze`, `research`, `investigate`
+- 日本語: `設計`, `リファクタ`, `移行`, `統合`, `最適化`, `分析`, `調査`, `調べる`
+
+**Project キーワード例**:
+- 英語: `build`, `architect`, `system`, `platform`, `infrastructure`, `framework`, `rewrite`
+- 日本語: `構築`, `アーキテクチャ`, `システム`, `プラットフォーム`, `インフラ`, `フレームワーク`, `書き直し`
+
+##### 3. 修飾子（Modifiers）の適用
+
+実装ファイル: `src/utils/estimation.ts:208-225`
+
+**3.1 長さ修飾子（Length Modifiers）**
+
+タスクの `title` + `description` の合計文字数で判定：
+
+```typescript
+30文字未満       → 0.75倍（短い）
+30-100文字      → 1.0倍（通常）
+100-250文字     → 1.25倍（長い）
+250文字以上     → 1.5倍（非常に長い）
+```
+
+**3.2 特殊修飾子（Special Modifiers）**
+
+以下のいずれか1つのみ適用：
+
+| 種類 | キーワード例 | 倍率 |
+|-----|------------|------|
+| ミーティング | `meeting`, `ミーティング`, `会議`, `sync`, `call` | 1.5倍 |
+| ドキュメント | `document`, `ドキュメント`, `文書`, `doc` | 1.25倍 |
+| デバッグ | `debug`, `デバッグ`, `bug`, `バグ`, `issue` | 1.5倍 |
+| テスト | `test`, `テスト`, `qa`, `verify`, `検証` | 1.25倍 |
+
+**3.3 最終的な丸め処理**
+
+```typescript
+// 5分単位に丸める
+Math.round(minutes / 5) * 5
+```
+
+##### 4. 計算例
+
+**例1: シンプルなタスク（短い説明）**
+```
+タスク: "PRをレビュー"
+1. キーワードマッチ: "review" → Simple (25分)
+2. 長さ修飾子: 7文字 → 0.75倍
+3. 特殊修飾子: なし
+4. 計算: 25 × 0.75 = 18.75
+5. 丸め: 20分
+```
+
+**例2: 複雑なタスク（長い説明 + デバッグ）**
+```
+タスク: "認証モジュールをリファクタして、既存のバグを修正する。詳細な設計ドキュメントを作成し、テストカバレッジを90%以上に向上させる必要がある。"
+1. キーワードマッチ: "refactor" → Complex (90分)
+2. 長さ修飾子: 78文字 → 1.0倍
+3. 特殊修飾子: "bug" → 1.5倍（デバッグ）
+4. 計算: 90 × 1.0 × 1.5 = 135
+5. 丸め: 135分
+```
+
+#### 仕様との整合性チェック結果
+
+##### ✅ 仕様と一致している項目
+
+1. **キーワードベースの見積もり**（要件3.1）
+   - ✅ 実装はキーワードに基づいて完了時間を見積もっている
+
+2. **Simple タスクの見積もり**（要件3.2）
+   - ✅ 25分で一致
+
+3. **設定による時間マッピング**（要件3.2）
+   - ✅ `EstimationConfig` インターフェースで設定可能
+
+##### ❌ 仕様と不一致の項目
+
+1. **Complex タスクの見積もり時間**
+   - 仕様: 75分
+   - 実装: 90分
+   - **推奨対応**: 実装を仕様に合わせるか、仕様を実装に合わせて更新
+
+##### ⚠️ 仕様に記載がない項目（実装のみ存在）
+
+1. **Medium タスクのベース時間**: 50分
+2. **Project タスクのベース時間**: 180分
+3. **長さ修飾子**: 0.75〜1.5倍
+4. **特殊修飾子**: ミーティング、デバッグ、ドキュメント、テスト
+5. **5分単位への丸め処理**
+6. **デフォルト値の動作**: キーワードなしの場合は Medium (50分)
+
+#### テスト網羅性
+
+テストファイル: `tests/unit/estimation.test.ts`
+
+- ✅ 各複雑度レベル（Simple, Medium, Complex, Project）のテストあり
+- ✅ 日本語キーワードのテストあり
+- ✅ キーワードなしのデフォルト動作テストあり
+- ✅ 長さ修飾子のテストあり
+- ⚠️ 特殊修飾子（ミーティング、デバッグ等）の明示的なテストなし
+- ⚠️ 複数の修飾子が重複した場合のテストなし
+
+#### 推奨される改善アクション
+
+1. **仕様の更新**
+   - `requirements.md` の要件3.2を更新して、実装の90分に合わせる
+   - または、実装を75分に変更
+   - Medium (50分) と Project (180分) を仕様に追加
+
+2. **修飾子の文書化**
+   - 長さ修飾子、特殊修飾子、丸め処理を仕様に追加
+
+3. **テストの拡充**
+   - 特殊修飾子の明示的なテスト追加
+   - 複数修飾子の組み合わせテスト追加
+
+### 実施した修正
+
+#### 1. 見積もり時間を25の倍数に統一
+
+**変更内容** (`src/utils/estimation.ts`):
+```typescript
+// 修正前
+complexTaskMinutes: 90,   // ✗ 25の倍数ではない
+projectTaskMinutes: 180,  // ✗ 25の倍数ではない
+
+// 修正後
+complexTaskMinutes: 75,   // ✓ 25の倍数、仕様と一致
+projectTaskMinutes: 175,  // ✓ 25の倍数（180の最も近い倍数）
+```
+
+#### 2. テストの更新
+
+**変更内容** (`tests/unit/estimation.test.ts`):
+- Complex タスクのテスト: "~90 minutes" → "~75 minutes"
+- Project タスクのテスト: "~180 minutes" → "~175 minutes"
+- 期待値の範囲を調整（修飾子の影響を考慮）
+
+#### 3. テスト結果
+
+```
+✓ should estimate simple tasks at ~25 minutes
+✓ should estimate medium tasks at ~50 minutes
+✓ should estimate complex tasks at ~75 minutes
+✓ should estimate project-level tasks at ~175 minutes
+✓ should recognize Japanese keywords
+✓ should default to medium complexity when no keywords match
+✓ should include matched keywords in result
+✓ should provide a reason for the estimation
+
+Test Suites: 1 passed, 1 total
+Tests:       13 passed, 13 total
+```
+
+### 修正後の時間マッピング
+
+| 複雑度 | ベース時間 | 25の倍数 | 仕様との整合性 |
+|-------|----------|---------|-------------|
+| Simple | 25分 | ✅ | ✅ 一致 |
+| Medium | 50分 | ✅ | ⚠️ 仕様に未記載 |
+| Complex | **75分** | ✅ | ✅ **一致（修正完了）** |
+| Project | **175分** | ✅ | ⚠️ 仕様に未記載 |
+
+### 関連ファイル
+
+- **仕様**: `.kiro/specs/claude-task-manager/requirements.md` (要件3)
+- **仕様**: `.kiro/specs/claude-task-manager/components.md` (コンポーネント5)
+- **実装**: `src/utils/estimation.ts` - ✅ 修正完了
+- **テスト**: `tests/unit/estimation.test.ts` - ✅ 更新完了
+
+### 仕様の更新
+
+#### 1. requirements.md の更新 (要件3.2)
+
+**変更内容** (`.kiro/specs/claude-task-manager/requirements.md:54-59`):
+```
+修正前:
+2. 時間を見積もるとき、システムは設定された時間マッピング（簡単：25分、複雑：75分など）を使用すること
+
+修正後:
+2. 時間を見積もるとき、システムは設定された時間マッピングを使用すること：
+   - Simple（シンプル）: 25分
+   - Medium（標準）: 50分
+   - Complex（複雑）: 75分
+   - Project（プロジェクト）: 175分
+   - 注: 全ての時間は25分の倍数とすること
+```
+
+#### 2. components.md の更新 (コンポーネント5)
+
+**変更内容** (`.kiro/specs/claude-task-manager/components.md:183-201`):
+- `EstimationConfig` インターフェースの各フィールドにデフォルト値のコメント追加
+- デフォルト時間マッピングの表を追加
+- ポモドーロテクニックとの整合性に関する注記を追加
+
+### Modified Files（第1フェーズ: ベース時間の修正）
+- `src/utils/estimation.ts` - DEFAULT_ESTIMATION_CONFIG の時間を25の倍数に変更
+- `tests/unit/estimation.test.ts` - テストケースを更新（2箇所）
+- `.kiro/specs/claude-task-manager/requirements.md` - 要件3.2に4つの複雑度レベル全てを明記
+- `.kiro/specs/claude-task-manager/components.md` - TimeEstimatorコンポーネントにデフォルト値の表を追加
+
+### 25分単位の丸め処理の追加
+
+#### 1. 実装の変更
+
+**変更内容** (`src/utils/estimation.ts:223-224`):
+```typescript
+// 修正前（5分単位の丸め）
+return Math.round(minutes / 5) * 5;
+
+// 修正後（25分単位の丸め）
+return Math.round(minutes / 25) * 25;
+```
+
+#### 2. テストの追加
+
+**変更内容** (`tests/unit/estimation.test.ts:134-165`):
+- 新しいテストスイート「rounding to 25-minute intervals」を追加
+- 全ての複雑度レベルで25分の倍数になることを検証
+- 修飾子適用後も25分の倍数になることを検証
+
+#### 3. 仕様への明記
+
+**requirements.md** (要件3.3-3.4):
+```markdown
+3. 修飾子（タスクの長さ、ミーティング、デバッグ等）を適用した後、
+   システムは最終的な見積もり時間を最も近い25分の倍数に丸めること
+4. 丸め処理により、全ての見積もり結果は25分の倍数
+   （25, 50, 75, 100, 125, 150, 175, 200分など）となること
+```
+
+**components.md** (コンポーネント5):
+- 見積もりアルゴリズムのステップを明記
+- 丸め処理の重要性を強調
+- ポモドーロテクニックとの整合性を説明
+
+#### 4. テスト結果
+
+```
+Test Suites: 1 passed
+Tests:       15 passed (2 tests added)
+
+新しく追加されたテスト:
+✓ should round all estimates to multiples of 25 minutes
+✓ should round estimates with modifiers to multiples of 25
+```
+
+### Modified Files（第2フェーズ: 丸め処理の追加）
+- `src/utils/estimation.ts` - 丸め処理を5分単位から25分単位に変更
+- `tests/unit/estimation.test.ts` - 25分単位の丸めを検証するテストを2件追加
+- `.kiro/specs/claude-task-manager/requirements.md` - 要件3.3-3.4に丸め処理を明記
+- `.kiro/specs/claude-task-manager/components.md` - 見積もりアルゴリズムのセクションを追加
+
+### 成果
+
+✅ **実装と仕様の完全な整合性を達成**
+- Complex タスクの見積もり時間: 仕様と実装が75分で一致
+- 全ての基本時間が25分の倍数（25, 50, 75, 175分）
+- **全ての見積もり結果が25分の倍数に丸められる**（ポモドーロテクニック対応）
+- Medium (50分) と Project (175分) が仕様に明記
+- 丸め処理が実装・テスト・仕様に明記
+- 実装、テスト、仕様の3つが完全に同期
+- テストカバレッジ: 15テスト全て成功
+
+---
+
+## Previous Session: 2025-12-26 (Part 7) ✅ COMPLETED
 
 ### Session Goals
 タスク37（Streamable HTTP Transport対応）をTDDで実装

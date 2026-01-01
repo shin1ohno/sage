@@ -17,8 +17,8 @@ interface EstimationResult {
 export const DEFAULT_ESTIMATION_CONFIG: EstimationConfig = {
   simpleTaskMinutes: 25,
   mediumTaskMinutes: 50,
-  complexTaskMinutes: 90,
-  projectTaskMinutes: 180,
+  complexTaskMinutes: 75,
+  projectTaskMinutes: 175,
   keywordMapping: {
     simple: [
       'check',
@@ -220,8 +220,8 @@ export class TimeEstimator {
       }
     }
 
-    // Round to nearest 5 minutes
-    return Math.round(minutes / 5) * 5;
+    // Round to nearest 25 minutes (Pomodoro-compatible intervals)
+    return Math.round(minutes / 25) * 25;
   }
 
   /**

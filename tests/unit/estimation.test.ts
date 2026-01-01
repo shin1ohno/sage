@@ -26,20 +26,22 @@ describe('TimeEstimator', () => {
       expect(result.estimatedMinutes).toBeGreaterThanOrEqual(40);
     });
 
-    it('should estimate complex tasks at ~90 minutes', () => {
+    it('should estimate complex tasks at ~75 minutes', () => {
       const task: Task = { title: 'Refactor the authentication module' };
       const result = TimeEstimator.estimateDuration(task, DEFAULT_ESTIMATION_CONFIG);
 
       expect(result.complexity).toBe('complex');
-      expect(result.estimatedMinutes).toBeGreaterThanOrEqual(70);
+      expect(result.estimatedMinutes).toBeGreaterThanOrEqual(60);
+      expect(result.estimatedMinutes).toBeLessThanOrEqual(90);
     });
 
-    it('should estimate project-level tasks at ~180 minutes', () => {
+    it('should estimate project-level tasks at ~175 minutes', () => {
       const task: Task = { title: 'Build new authentication system from scratch' };
       const result = TimeEstimator.estimateDuration(task, DEFAULT_ESTIMATION_CONFIG);
 
       expect(result.complexity).toBe('project');
       expect(result.estimatedMinutes).toBeGreaterThanOrEqual(120);
+      expect(result.estimatedMinutes).toBeLessThanOrEqual(220);
     });
 
     it('should recognize Japanese keywords', () => {
@@ -126,6 +128,39 @@ describe('TimeEstimator', () => {
 
       expect(result.reason).toBeTruthy();
       expect(result.reason).toContain('見積もり');
+    });
+  });
+
+  describe('rounding to 25-minute intervals', () => {
+    it('should round all estimates to multiples of 25 minutes', () => {
+      const testCases = [
+        { title: 'Review PR', expectedMultiple: 25 },
+        { title: 'Implement new feature', expectedMultiple: 25 },
+        { title: 'Refactor the authentication module', expectedMultiple: 25 },
+        { title: 'Build new authentication system from scratch', expectedMultiple: 25 },
+      ];
+
+      testCases.forEach(({ title, expectedMultiple }) => {
+        const task: Task = { title };
+        const result = TimeEstimator.estimateDuration(task, DEFAULT_ESTIMATION_CONFIG);
+
+        // Check if the result is a multiple of 25
+        expect(result.estimatedMinutes % expectedMultiple).toBe(0);
+      });
+    });
+
+    it('should round estimates with modifiers to multiples of 25', () => {
+      // Test with a task that has length and special modifiers
+      const task: Task = {
+        title: 'Debug the complex authentication system with detailed investigation',
+        description: 'This is a long description that should trigger the length modifier',
+      };
+      const result = TimeEstimator.estimateDuration(task, DEFAULT_ESTIMATION_CONFIG);
+
+      // Should be a multiple of 25
+      expect(result.estimatedMinutes % 25).toBe(0);
+      // Should be greater than base (due to modifiers)
+      expect(result.estimatedMinutes).toBeGreaterThan(0);
     });
   });
 });

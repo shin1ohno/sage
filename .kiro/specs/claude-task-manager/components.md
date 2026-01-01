@@ -180,14 +180,36 @@ interface TimeEstimator {
 }
 
 interface EstimationConfig {
-  simpleTaskMinutes: number;
-  mediumTaskMinutes: number;
-  complexTaskMinutes: number;
-  projectTaskMinutes: number;
+  simpleTaskMinutes: number;      // デフォルト: 25分
+  mediumTaskMinutes: number;      // デフォルト: 50分
+  complexTaskMinutes: number;     // デフォルト: 75分
+  projectTaskMinutes: number;     // デフォルト: 175分
   keywordMapping: Record<string, string[]>;
   userAdjustments?: Record<string, number>;
 }
 ```
+
+#### デフォルト時間マッピング
+
+| 複雑度レベル | デフォルト時間 | 説明 |
+|------------|--------------|------|
+| Simple（シンプル） | 25分 | 簡単なタスク（確認、レビュー、返信など） |
+| Medium（標準） | 50分 | 標準的なタスク（実装、修正、更新など） |
+| Complex（複雑） | 75分 | 複雑なタスク（設計、リファクタ、統合など） |
+| Project（プロジェクト） | 175分 | プロジェクト規模のタスク（構築、アーキテクチャなど） |
+
+**注:** 全ての時間は25分の倍数として定義されています。これにより、ポモドーロテクニック（25分単位）との整合性が取れます。
+
+#### 見積もりアルゴリズム
+
+1. **キーワードマッチング**: タスクのタイトルと説明からキーワードを検出し、複雑度レベル（Simple/Medium/Complex/Project）を決定
+2. **ベース時間の設定**: 決定された複雑度レベルに応じてベース時間を設定
+3. **修飾子の適用**:
+   - 長さ修飾子: タスクの文字数に応じて0.75〜1.5倍に調整
+   - 特殊修飾子: ミーティング、デバッグ、ドキュメント、テスト等のキーワードで1.25〜1.5倍に調整
+4. **丸め処理**: 最終的な見積もり時間を最も近い25分の倍数に丸める
+
+**重要:** 修飾子適用後、システムは**常に25分の倍数に丸める**ため、全ての見積もり結果は25, 50, 75, 100, 125, 150, 175, 200分などとなります。これにより、ポモドーロテクニックとの整合性が保たれ、スケジューリングが容易になります。
 
 ## 6. StakeholderExtractor
 
