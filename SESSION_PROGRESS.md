@@ -1,6 +1,151 @@
 # Session Progress - sage
 
-## Current Session: 2026-01-01 - 所要時間見積もりロジックの調査と修正 ✅ COMPLETED
+## Current Session: 2026-01-01 (Part 2) - MCP over SSE完全実装 ✅ COMPLETED
+
+### Session Goals
+MCP over SSE（Streamable HTTP Transport）の完全な実装をTDDで行う
+
+### 実装内容サマリー
+
+#### Phase 1: 仕様作成 ✅
+- **ファイル**: `.kiro/specs/claude-task-manager/mcp-over-sse-spec.md`
+- **内容**:
+  - 完全なプロトコルフロー定義（接続確立、リクエスト/レスポンス、Keepalive、切断）
+  - 7つの詳細な要件と受け入れ基準
+  - データフォーマット仕様
+  - シーケンス図
+  - 実装上の注意事項
+  - テスト要件
+
+#### Phase 2: E2Eテスト作成（TDD Red） ✅
+- **ファイル**: `tests/e2e/mcp-over-sse-complete.test.ts`
+- **テスト内容** (5テスト):
+  1. 完全なフロー: GET /mcp → SSE確立 → POST /mcp → SSE経由でレスポンス受信
+  2. 同一セッションでの複数リクエスト処理
+  3. 無効なsessionIdでの404エラー
+  4. sessionId欠落での400エラー
+  5. JSON-RPCエラーのSSE経由での送信
+- **Red結果**: すべてのテストが失敗（期待通り）
+
+#### Phase 3: 実装（TDD Green） ✅
+
+##### 3.1 SSEハンドラーの拡張
+**ファイル**: `src/cli/sse-stream-handler.ts`
+
+**追加メソッド**:
+```typescript
+sendResponseToSession(sessionId: string, response: unknown): boolean {
+  const connection = this.connections.get(sessionId);
+  if (!connection) {
+    return false;
+  }
+  const payload = this.formatSSEEvent('message', response);
+  try {
+    connection.response.write(payload);
+    return true;
+  } catch (error) {
+    this.removeConnection(sessionId);
+    return false;
+  }
+}
+
+hasSession(sessionId: string): boolean {
+  return this.connections.has(sessionId);
+}
+```
+
+##### 3.2 HTTPサーバーの更新
+**ファイル**: `src/cli/http-server-with-config.ts`
+
+**変更内容**:
+1. **X-Session-Id検証の追加** (`processMCPRequest`):
+   - `X-Session-Id`ヘッダーが必須
+   - 欠落時: 400 Bad Request
+   - 無効時: 404 Not Found
+
+2. **非同期処理への変更** (`processMCPRequestAsync`):
+   - 即座に202 Acceptedを返却
+   - レスポンスボディ: `{"accepted": true, "id": <request-id>}`
+   - リクエストを非同期で処理
+   - 処理完了後、SSEストリーム経由でレスポンス送信
+   - `sendResponseToSession()`を使用
+
+3. **未使用コードの削除**:
+   - `processMCPRequestSync`メソッドを削除（リファクタリング後に未使用となった）
+
+#### Phase 4: テスト実行（TDD Green） ✅
+
+**テスト結果**:
+```
+PASS tests/e2e/mcp-over-sse-complete.test.ts (9.29 s)
+  Complete MCP over SSE
+    Complete Request/Response Flow
+      ✓ should handle GET /mcp to establish SSE, then POST /mcp with response via SSE (96 ms)
+      ✓ should handle multiple requests on same session (19 ms)
+      ✓ should return 404 for invalid sessionId (7 ms)
+      ✓ should return 400 for missing sessionId (5 ms)
+    Error Handling
+      ✓ should send JSON-RPC error via SSE for invalid method (7 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+```
+
+### プロトコル詳細
+
+#### 接続確立フロー
+```
+1. Client → Server: GET /mcp
+   - Header: Accept: text/event-stream
+   - Header: Authorization: Bearer <token> (認証有効時)
+
+2. Server → Client: 200 OK
+   - Header: Content-Type: text/event-stream
+   - Header: Cache-Control: no-cache
+   - Header: Connection: keep-alive
+
+3. Server → Client: event: endpoint
+   - data: {"type":"endpoint","url":"/mcp","sessionId":"<UUID>"}
+
+4. Server → Client: : keepalive (30秒ごと)
+```
+
+#### リクエスト/レスポンスフロー
+```
+1. Client → Server: POST /mcp
+   - Header: X-Session-Id: <sessionId>
+   - Header: Content-Type: application/json
+   - Body: {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
+
+2. Server → Client: 202 Accepted
+   - Body: {"accepted":true,"id":1}
+
+3. Server processes request asynchronously
+
+4. Server → Client: event: message (via SSE)
+   - data: {"jsonrpc":"2.0","id":1,"result":{...}}
+```
+
+### Modified Files
+- `src/cli/sse-stream-handler.ts` - sendResponseToSession()、hasSession()追加
+- `src/cli/http-server-with-config.ts` - POST /mcpの非同期化、X-Session-Id検証追加
+
+### New Files Created
+- `.kiro/specs/claude-task-manager/mcp-over-sse-spec.md` - 完全な仕様文書
+- `tests/e2e/mcp-over-sse-complete.test.ts` - E2Eテスト (5 tests)
+
+### 成果
+
+✅ **MCP over SSEの完全実装を達成**
+- TDDサイクル（Red → Green）を厳密に実施
+- POST /mcpは即座に202 Acceptedを返却し、SSE経由でレスポンス配信
+- セッションベースのルーティング（X-Session-Idヘッダー）
+- 適切なエラーハンドリング（400/404）
+- すべてのE2Eテストが成功（5/5）
+
+---
+
+## Previous Session: 2026-01-01 (Part 1) - 所要時間見積もりロジックの調査と修正 ✅ COMPLETED
 
 ### Session Goals
 所要時間の見積もりロジックについて、実装とSpec（仕様）の両方を読んで整合性を確認し、不一致を修正する
