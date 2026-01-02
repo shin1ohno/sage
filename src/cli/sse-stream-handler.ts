@@ -82,8 +82,12 @@ class SSEStreamHandlerImpl implements SSEStreamHandler {
     this.keepaliveInterval = options.keepaliveInterval ?? DEFAULT_KEEPALIVE_INTERVAL;
   }
 
-  async handleSSERequest(_req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const sessionId = randomUUID();
+  async handleSSERequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    // Extract session ID from query parameter or header or generate new one
+    const url = new URL(req.url || '', `http://${req.headers.host}`);
+    const sessionId = url.searchParams.get('session') ||
+                      req.headers['mcp-session-id'] as string ||
+                      randomUUID();
 
     // Set SSE headers
     // Requirement 20.2: Content-Type text/event-stream
@@ -94,6 +98,7 @@ class SSEStreamHandlerImpl implements SSEStreamHandler {
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
+      'Mcp-Session-Id': sessionId,
       // Requirement 20.4: CORS headers
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',

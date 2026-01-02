@@ -255,6 +255,13 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     return this.config;
   }
 
+  /**
+   * Generate a unique session ID
+   */
+  private generateSessionId(): string {
+    return `sess_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+  }
+
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
     const url = req.url || '/';
     const method = req.method || 'GET';
@@ -631,7 +638,14 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
         const mcpResponse = await this.mcpHandler.handleRequest(mcpRequest);
 
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+        // For initialize requests, generate and return session ID
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (request.method === 'initialize' && this.sseHandler) {
+          const sessionId = this.generateSessionId();
+          headers['Mcp-Session-Id'] = sessionId;
+        }
+
+        res.writeHead(200, headers);
         res.end(JSON.stringify(mcpResponse));
       } catch (error) {
         res.writeHead(400, { 'Content-Type': 'application/json' });

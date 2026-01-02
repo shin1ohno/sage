@@ -355,6 +355,80 @@ describe('Streamable HTTP Transport E2E', () => {
     });
   });
 
+  describe('MCP Session ID Handling', () => {
+    it('should return Mcp-Session-Id header for initialize request', (done) => {
+      const postData = JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: {
+            name: 'test-client',
+            version: '1.0.0',
+          },
+        },
+      });
+
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port,
+          path: '/mcp',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData),
+          },
+        },
+        (res) => {
+          expect(res.statusCode).toBe(200);
+          expect(res.headers['mcp-session-id']).toBeDefined();
+          expect(typeof res.headers['mcp-session-id']).toBe('string');
+
+          let body = '';
+          res.on('data', (chunk) => {
+            body += chunk.toString();
+          });
+
+          res.on('end', () => {
+            const response = JSON.parse(body);
+            expect(response.jsonrpc).toBe('2.0');
+            expect(response.id).toBe(1);
+            done();
+          });
+        }
+      );
+
+      req.on('error', done);
+      req.write(postData);
+      req.end();
+    });
+
+    it('should accept session ID in GET /mcp query parameter', (done) => {
+      const testSessionId = 'test-session-123';
+
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port,
+          path: `/mcp?session=${testSessionId}`,
+          method: 'GET',
+        },
+        (res) => {
+          expect(res.statusCode).toBe(200);
+          expect(res.headers['mcp-session-id']).toBe(testSessionId);
+          req.destroy();
+          done();
+        }
+      );
+
+      req.on('error', done);
+      req.end();
+    });
+  });
+
   describe('Query Parameters Handling', () => {
     it('should accept GET /mcp with query parameters', (done) => {
       const req = http.request(
