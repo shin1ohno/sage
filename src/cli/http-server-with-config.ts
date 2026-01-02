@@ -58,6 +58,38 @@ interface HealthCheckResponse {
 }
 
 /**
+ * Cookie name for session token
+ */
+const SESSION_COOKIE_NAME = 'sage_session';
+
+/**
+ * Parse cookies from Cookie header
+ */
+function parseCookies(cookieHeader?: string): Record<string, string> {
+  if (!cookieHeader) {
+    return {};
+  }
+
+  const cookies: Record<string, string> = {};
+  cookieHeader.split(';').forEach(cookie => {
+    const [name, ...rest] = cookie.split('=');
+    if (name && rest.length > 0) {
+      cookies[name.trim()] = rest.join('=').trim();
+    }
+  });
+
+  return cookies;
+}
+
+/**
+ * Create Set-Cookie header value
+ */
+function createSessionCookie(token: string, maxAge: number = 86400): string {
+  // maxAge in seconds (default: 24 hours)
+  return `${SESSION_COOKIE_NAME}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
+}
+
+/**
  * HTTP Server with Config Implementation
  */
 class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
@@ -376,7 +408,11 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         const result = await this.authenticator!.authenticate(secret);
 
         if (result.success) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
+          // Set session cookie in addition to returning token
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Set-Cookie': createSessionCookie(result.token!),
+          });
           res.end(
             JSON.stringify({
               token: result.token,
@@ -395,41 +431,58 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   }
 
   /**
-   * Verify Bearer token (supports both JWT and OAuth, tries both if configured)
+   * Extract token from Authorization header or Cookie
    */
-  private async verifyBearerToken(authHeader: string | undefined): Promise<{ valid: boolean; error?: string }> {
-    if (!authHeader) {
+  private extractToken(req: IncomingMessage): string | null {
+    // Try Authorization header first
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      const parts = authHeader.split(' ');
+      if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
+        return parts[1];
+      }
+    }
+
+    // Fall back to Cookie
+    const cookies = parseCookies(req.headers.cookie);
+    if (cookies[SESSION_COOKIE_NAME]) {
+      return cookies[SESSION_COOKIE_NAME];
+    }
+
+    return null;
+  }
+
+
+  /**
+   * Verify authentication from request (checks Authorization header and Cookie)
+   */
+  private async verifyAuthentication(req: IncomingMessage): Promise<{ valid: boolean; error?: string; token?: string }> {
+    const token = this.extractToken(req);
+
+    if (!token) {
       return { valid: false, error: 'Authentication required' };
     }
 
-    const parts = authHeader.split(' ');
-    if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
-      return { valid: false, error: 'Invalid Authorization header' };
-    }
-
-    const token = parts[1];
-
-    // Try OAuth verification first if OAuth is enabled
-    if (this.isOAuthEnabled() && this.oauthServer) {
+    // Verify token based on authentication type
+    if (this.oauthServer) {
       const result = await this.oauthServer.verifyAccessToken(token);
       if (result.valid) {
-        return { valid: true };
+        return { valid: true, token };
       }
       // If OAuth fails and static tokens are enabled, try static token verification
       if (this.authenticator) {
         const staticResult = await this.authenticator.verifyToken(token);
         if (staticResult.valid) {
-          return { valid: true };
+          return { valid: true, token };
         }
       }
-      // Return the OAuth error if both failed
       return { valid: false, error: result.error };
     }
 
     // Fall back to JWT verification only
     if (this.authenticator) {
       const result = await this.authenticator.verifyToken(token);
-      return { valid: result.valid, error: result.error };
+      return { valid: result.valid, error: result.error, token: result.valid ? token : undefined };
     }
 
     return { valid: false, error: 'No authentication configured' };
@@ -438,6 +491,10 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   /**
    * Handle GET /mcp request for SSE stream (Streamable HTTP Transport)
    * Requirement 20.1, 20.10, 31.5 (OAuth Bearer auth for SSE)
+   *
+   * Supports authentication via:
+   * - Authorization: Bearer <token> header
+   * - sage_session cookie (for SSE reconnection)
    */
   private handleMCPSSERequest(req: IncomingMessage, res: ServerResponse): void {
     // Requirement 20.10, 31.5: Check authentication if enabled
@@ -447,11 +504,16 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         res.setHeader('WWW-Authenticate', this.oauthServer.getWWWAuthenticateHeader());
       }
 
-      this.verifyBearerToken(req.headers.authorization).then((result) => {
+      this.verifyAuthentication(req).then((result) => {
         if (!result.valid) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: result.error || 'Invalid token' }));
           return;
+        }
+
+        // Set session cookie for reconnection (if not already set)
+        if (result.token && !req.headers.cookie?.includes(SESSION_COOKIE_NAME)) {
+          res.setHeader('Set-Cookie', createSessionCookie(result.token));
         }
 
         this.establishSSEConnection(req, res);
@@ -486,7 +548,7 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         res.setHeader('WWW-Authenticate', this.oauthServer.getWWWAuthenticateHeader());
       }
 
-      this.verifyBearerToken(req.headers.authorization).then((result) => {
+      this.verifyAuthentication(req).then((result) => {
         if (!result.valid) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           res.end(
@@ -500,6 +562,11 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
             })
           );
           return;
+        }
+
+        // Set session cookie for reconnection (if not already set)
+        if (result.token && !req.headers.cookie?.includes(SESSION_COOKIE_NAME)) {
+          res.setHeader('Set-Cookie', createSessionCookie(result.token));
         }
 
         this.processMCPRequest(req, res);
