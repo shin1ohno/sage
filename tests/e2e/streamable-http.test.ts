@@ -354,6 +354,97 @@ describe('Streamable HTTP Transport E2E', () => {
       req.end();
     });
   });
+
+  describe('Query Parameters Handling', () => {
+    it('should accept GET /mcp with query parameters', (done) => {
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port,
+          path: '/mcp?session=test-session&foo=bar',
+          method: 'GET',
+        },
+        (res) => {
+          expect(res.statusCode).toBe(200);
+          expect(res.headers['content-type']).toBe('text/event-stream');
+          req.destroy();
+          done();
+        }
+      );
+
+      req.on('error', done);
+      req.end();
+    });
+
+    it('should accept POST /mcp with query parameters', (done) => {
+      const postData = JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: {},
+      });
+
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port,
+          path: '/mcp?transport=sse&session=test',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData),
+          },
+        },
+        (res) => {
+          expect(res.statusCode).toBe(200);
+
+          let body = '';
+          res.on('data', (chunk) => {
+            body += chunk.toString();
+          });
+
+          res.on('end', () => {
+            const response = JSON.parse(body);
+            expect(response.jsonrpc).toBe('2.0');
+            expect(response.id).toBe(1);
+            done();
+          });
+        }
+      );
+
+      req.on('error', done);
+      req.write(postData);
+      req.end();
+    });
+
+    it('should accept /health with query parameters', (done) => {
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port,
+          path: '/health?timestamp=123456',
+          method: 'GET',
+        },
+        (res) => {
+          expect(res.statusCode).toBe(200);
+
+          let body = '';
+          res.on('data', (chunk) => {
+            body += chunk.toString();
+          });
+
+          res.on('end', () => {
+            const response = JSON.parse(body);
+            expect(response.status).toBe('ok');
+            done();
+          });
+        }
+      );
+
+      req.on('error', done);
+      req.end();
+    });
+  });
 });
 
 describe('Streamable HTTP Transport with Authentication', () => {
