@@ -510,20 +510,69 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     // Check for X-Session-Id header
     const sessionId = req.headers['x-session-id'] as string | undefined;
 
-    // sessionId is required for MCP over SSE
-    if (!sessionId) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          error: 'Session ID required',
-          message: 'X-Session-Id header is required for MCP requests',
-        })
-      );
+    // If sessionId is provided, use async SSE response flow
+    if (sessionId) {
+      this.processMCPRequestAsync(req, res, sessionId);
       return;
     }
 
-    // Process with async SSE response flow
-    this.processMCPRequestAsync(req, res, sessionId);
+    // Otherwise, fall back to synchronous inline response for backward compatibility
+    this.processMCPRequestSync(req, res);
+  }
+
+  /**
+   * Process MCP request synchronously with inline response (for backward compatibility)
+   */
+  private processMCPRequestSync(req: IncomingMessage, res: ServerResponse): void {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+
+    req.on('end', async () => {
+      try {
+        const request = this.parseJSONRPCRequest(body);
+
+        if (!this.mcpHandler) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: request.id,
+              error: {
+                code: -32603,
+                message: 'MCP handler not initialized',
+              },
+            })
+          );
+          return;
+        }
+
+        const mcpRequest: MCPRequest = {
+          jsonrpc: '2.0',
+          id: request.id,
+          method: request.method,
+          params: request.params,
+        };
+
+        const mcpResponse = await this.mcpHandler.handleRequest(mcpRequest);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(mcpResponse));
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: null,
+            error: {
+              code: -32700,
+              message: error instanceof Error ? error.message : 'Parse error',
+            },
+          })
+        );
+      }
+    });
   }
 
   /**

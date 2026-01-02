@@ -145,7 +145,9 @@ describe('ReminderManager', () => {
 
       expect(times).toHaveLength(1);
       const reminderDate = new Date(times[0].time);
-      expect(reminderDate.getDate()).toBe(deadline.getDate() - 1 || 30); // Handle month boundary
+      const expectedDate = new Date(deadline);
+      expectedDate.setDate(expectedDate.getDate() - 1);
+      expect(reminderDate.getDate()).toBe(expectedDate.getDate());
     });
 
     it('should calculate reminder time for 1_hour_before', () => {

@@ -304,7 +304,7 @@ describe('Complete MCP over SSE', () => {
       });
     });
 
-    it('should return 400 for missing sessionId', async () => {
+    it('should fall back to synchronous response for missing sessionId', async () => {
       const mcpRequest = {
         jsonrpc: '2.0',
         id: 1,
@@ -320,11 +320,19 @@ describe('Complete MCP over SSE', () => {
         body: JSON.stringify(mcpRequest),
       });
 
-      expect(response.status).toBe(400);
-      const body = await response.json();
-      expect(body).toMatchObject({
-        error: expect.stringContaining('Session'),
-      });
+      // Should fall back to synchronous processing for backward compatibility
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        jsonrpc: string;
+        id: number;
+        result: { tools: Array<{ name: string; description: string }> };
+      };
+      expect(body.jsonrpc).toBe('2.0');
+      expect(body.id).toBe(1);
+      expect(body.result).toBeDefined();
+      expect(body.result.tools).toBeDefined();
+      expect(Array.isArray(body.result.tools)).toBe(true);
+      expect(body.result.tools.length).toBeGreaterThan(0);
     });
   });
 
