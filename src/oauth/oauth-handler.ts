@@ -78,10 +78,11 @@ function setCookie(res: ServerResponse, name: string, value: string, options: {
  */
 export class OAuthHandler {
   private server: OAuthServer;
+  private issuer: string;
 
-  constructor(server: OAuthServer, _config: OAuthHandlerConfig) {
+  constructor(server: OAuthServer, config: OAuthHandlerConfig) {
     this.server = server;
-    // Config reserved for future use (e.g., custom templates)
+    this.issuer = config.issuer;
   }
 
   /**
@@ -203,6 +204,22 @@ export class OAuthHandler {
   private async handleAuthorization(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const query = parseQueryString(req.url || '');
 
+    // Detect corrupted requests (ALB/proxy issue workaround)
+    // Check for suspicious patterns: %20 in parameter names, spaces in URLs
+    const rawUrl = req.url || '';
+    if (rawUrl.includes('%20=') || rawUrl.includes('= ')) {
+      res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(this.renderErrorPage('invalid_request', 'Corrupted request detected. Please try again.'));
+      return;
+    }
+
+    // Check if resource contains spaces (indicating corruption)
+    if (query.resource && query.resource.includes(' ')) {
+      res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(this.renderErrorPage('invalid_request', 'Corrupted resource URL. Please try again.'));
+      return;
+    }
+
     const authRequest: AuthorizationRequest = {
       response_type: query.response_type as 'code',
       client_id: query.client_id || '',
@@ -259,7 +276,7 @@ export class OAuthHandler {
         path: '/',
       });
 
-      res.writeHead(302, { Location: '/oauth/login' });
+      res.writeHead(302, { Location: `${this.issuer}/oauth/login` });
       res.end();
       return;
     }
@@ -310,7 +327,7 @@ export class OAuthHandler {
     const session = sessionId ? this.server.validateSession(sessionId) : null;
 
     if (!session) {
-      res.writeHead(302, { Location: '/oauth/login' });
+      res.writeHead(302, { Location: `${this.issuer}/oauth/login` });
       res.end();
       return;
     }
@@ -362,7 +379,7 @@ export class OAuthHandler {
     const result = await this.server.authenticateUser(params.username || '', params.password || '');
 
     if (!result.success) {
-      res.writeHead(302, { Location: `/oauth/login?error=${encodeURIComponent(result.error || 'Login failed')}` });
+      res.writeHead(302, { Location: `${this.issuer}/oauth/login?error=${encodeURIComponent(result.error || 'Login failed')}` });
       res.end();
       return;
     }
@@ -392,7 +409,7 @@ export class OAuthHandler {
     }
 
     // No pending request, redirect to home
-    res.writeHead(302, { Location: '/' });
+    res.writeHead(302, { Location: this.issuer });
     res.end();
   }
 
@@ -407,7 +424,7 @@ export class OAuthHandler {
     const grantType = params.grant_type;
 
     if (grantType === 'authorization_code') {
-      await this.handleAuthorizationCodeGrant(params, res);
+      await this.handleAuthorizationCodeGrant(params, res, req);
     } else if (grantType === 'refresh_token') {
       await this.handleRefreshTokenGrant(params, res);
     } else {
@@ -425,7 +442,8 @@ export class OAuthHandler {
    */
   private async handleAuthorizationCodeGrant(
     params: Record<string, string>,
-    res: ServerResponse
+    res: ServerResponse,
+    _req: IncomingMessage
   ): Promise<void> {
     const { code, client_id, redirect_uri, code_verifier, resource } = params;
 

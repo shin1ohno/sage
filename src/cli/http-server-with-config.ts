@@ -455,6 +455,9 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         }
 
         this.establishSSEConnection(req, res);
+      }).catch(() => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Token verification failed' }));
       });
     } else {
       // Requirement 20.10: authEnabled: false allows access without auth
@@ -500,6 +503,9 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         }
 
         this.processMCPRequest(req, res);
+      }).catch(() => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Token verification failed' }));
       });
     } else {
       this.processMCPRequest(req, res);

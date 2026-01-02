@@ -425,7 +425,12 @@ export class OAuthServer {
     }
 
     // Verify resource if specified (Requirement 26.5)
-    if (resource && codeResult.codeData.resource && resource !== codeResult.codeData.resource) {
+    // Normalize URLs before comparison (workaround for ALB URL corruption)
+    const normalizeUrl = (url: string) => url.replace(/\s+/g, '').replace(/\/+$/, '');
+    const expectedResource = codeResult.codeData.resource ? normalizeUrl(codeResult.codeData.resource) : '';
+    const gotResource = resource ? normalizeUrl(resource) : '';
+
+    if (resource && codeResult.codeData.resource && gotResource !== expectedResource) {
       return {
         success: false,
         error: {
