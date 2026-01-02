@@ -8,6 +8,15 @@
 
 sage は AppleScript を使用して Apple Reminders や Calendar と統合しているため、Remote MCP Server も macOS でなければ動作しません。Docker や Linux サーバー、Cloudflare Workers では実行できません。
 
+## サポートされるトランスポート
+
+**sage は HTTP Transport (`transport=http`) のみをサポートしています。**
+
+- ✅ **HTTP Transport**: POST /mcp で同期的にリクエスト/レスポンスを処理
+- ❌ **Streamable HTTP Transport (SSE)**: v0.7.7 で削除されました
+
+すべてのクライアント（Claude iOS、Claude Desktop、Claude Code）は HTTP Transport を使用します。
+
 ## アーキテクチャ概要
 
 ```

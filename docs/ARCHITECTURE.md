@@ -97,17 +97,18 @@ await server.connect(transport);
 
 iOS/iPadOS/Web クライアントとの通信に使用される HTTP ベースのトランスポート。
 
+**サポートされるトランスポート:**
+- ✅ **HTTP Transport**: POST /mcp で同期的にリクエスト/レスポンスを処理
+- ❌ **Streamable HTTP Transport (SSE)**: v0.7.7 で削除されました
+
 ```typescript
-// src/remote/remote-mcp-server.ts
-class RemoteMCPServer {
-  // JSON-RPC over HTTP
-  async handleRequest(req: JSONRPCRequest): Promise<JSONRPCResponse>;
+// src/cli/http-server-with-config.ts
+class HTTPServerWithConfigImpl {
+  // JSON-RPC over HTTP (synchronous)
+  private processMCPRequest(req: IncomingMessage, res: ServerResponse): void;
 
-  // Authentication
-  async validateAuth(token: string): Promise<boolean>;
-
-  // Session management
-  async getSession(sessionId: string): Promise<Session>;
+  // Authentication (OAuth2 / JWT)
+  private async verifyAuthentication(req: IncomingMessage): Promise<AuthResult>;
 }
 ```
 

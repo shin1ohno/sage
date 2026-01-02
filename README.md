@@ -14,6 +14,8 @@ sage is an intelligent task management assistant that helps you:
 - **Smart routing** - Route tasks to Apple Reminders (≤7 days) or Notion (8+ days)
 - **Calendar awareness** - Find available time slots based on your schedule
 
+sage is an MCP (Model Context Protocol) server that supports **HTTP Transport** for both local and remote connections.
+
 ## Quick Start
 
 ### For Claude Desktop / Claude Code (Local MCP)
