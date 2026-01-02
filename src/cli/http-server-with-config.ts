@@ -16,7 +16,6 @@ import {
 } from './remote-config-loader.js';
 import { createSecretAuthenticator, SecretAuthenticator } from './secret-auth.js';
 import { createMCPHandler, MCPHandler, MCPRequest } from './mcp-handler.js';
-import { createSSEStreamHandler, SSEStreamHandler } from './sse-stream-handler.js';
 import { OAuthServer, OAuthHandler } from '../oauth/index.js';
 
 /**
@@ -101,7 +100,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   private effectiveHost: string;
   private authenticator: SecretAuthenticator | null = null;
   private mcpHandler: MCPHandler | null = null;
-  private sseHandler: SSEStreamHandler | null = null;
   private oauthServer: OAuthServer | null = null;
   private oauthHandler: OAuthHandler | null = null;
 
@@ -157,9 +155,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     // Initialize MCP handler
     this.mcpHandler = await createMCPHandler();
 
-    // Initialize SSE handler for Streamable HTTP Transport (Requirement 20)
-    this.sseHandler = createSSEStreamHandler();
-
     // Initialize OAuth if configured (Requirements 21-31)
     if (this.config.remote.auth.type === 'oauth2') {
       const oauthConfig = this.config.remote.auth as OAuthAuthConfig;
@@ -214,11 +209,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       return;
     }
 
-    // Cleanup SSE connections
-    if (this.sseHandler) {
-      this.sseHandler.cleanup();
-    }
-
     return new Promise((resolve) => {
       this.server!.close(() => {
         this.running = false;
@@ -253,13 +243,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
   getConfig(): RemoteConfig {
     return this.config;
-  }
-
-  /**
-   * Generate a unique session ID
-   */
-  private generateSessionId(): string {
-    return `sess_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
   }
 
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
@@ -311,13 +294,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     // Auth token endpoint (for JWT mode)
     if (path === '/auth/token' && method === 'POST' && !this.isOAuthEnabled()) {
       this.handleAuthToken(req, res);
-      return;
-    }
-
-    // MCP SSE endpoint for Streamable HTTP Transport (Requirement 20.1)
-    // GET /mcp establishes SSE stream for server->client notifications
-    if (path === '/mcp' && method === 'GET') {
-      this.handleMCPSSERequest(req, res);
       return;
     }
 
@@ -496,58 +472,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     return { valid: false, error: 'No authentication configured' };
   }
 
-  /**
-   * Handle GET /mcp request for SSE stream (Streamable HTTP Transport)
-   * Requirement 20.1, 20.10, 31.5 (OAuth Bearer auth for SSE)
-   *
-   * Supports authentication via:
-   * - Authorization: Bearer <token> header
-   * - sage_session cookie (for SSE reconnection)
-   */
-  private handleMCPSSERequest(req: IncomingMessage, res: ServerResponse): void {
-    // Requirement 20.10, 31.5: Check authentication if enabled
-    if (this.isAuthEnabled()) {
-      // Add WWW-Authenticate header for OAuth (Requirement 22.4)
-      if (this.isOAuthEnabled() && this.oauthServer) {
-        res.setHeader('WWW-Authenticate', this.oauthServer.getWWWAuthenticateHeader());
-      }
-
-      this.verifyAuthentication(req).then((result) => {
-        if (!result.valid) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: result.error || 'Invalid token' }));
-          return;
-        }
-
-        // Set session cookie for reconnection (if not already set)
-        if (result.token && !req.headers.cookie?.includes(SESSION_COOKIE_NAME)) {
-          res.setHeader('Set-Cookie', createSessionCookie(result.token));
-        }
-
-        this.establishSSEConnection(req, res);
-      }).catch(() => {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Token verification failed' }));
-      });
-    } else {
-      // Requirement 20.10: authEnabled: false allows access without auth
-      this.establishSSEConnection(req, res);
-    }
-  }
-
-  /**
-   * Establish SSE connection
-   */
-  private establishSSEConnection(req: IncomingMessage, res: ServerResponse): void {
-    if (!this.sseHandler) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'SSE handler not initialized' }));
-      return;
-    }
-
-    this.sseHandler.handleSSERequest(req, res);
-  }
-
   private handleMCPRequest(req: IncomingMessage, res: ServerResponse): void {
     // Check authentication if enabled
     if (this.isAuthEnabled()) {
@@ -587,24 +511,10 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     }
   }
 
-  private processMCPRequest(req: IncomingMessage, res: ServerResponse): void {
-    // Check for X-Session-Id header
-    const sessionId = req.headers['x-session-id'] as string | undefined;
-
-    // If sessionId is provided, use async SSE response flow
-    if (sessionId) {
-      this.processMCPRequestAsync(req, res, sessionId);
-      return;
-    }
-
-    // Otherwise, fall back to synchronous inline response for backward compatibility
-    this.processMCPRequestSync(req, res);
-  }
-
   /**
-   * Process MCP request synchronously with inline response (for backward compatibility)
+   * Process MCP request synchronously with inline response
    */
-  private processMCPRequestSync(req: IncomingMessage, res: ServerResponse): void {
+  private processMCPRequest(req: IncomingMessage, res: ServerResponse): void {
     let body = '';
     req.on('data', (chunk) => {
       body += chunk.toString();
@@ -638,14 +548,7 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
         const mcpResponse = await this.mcpHandler.handleRequest(mcpRequest);
 
-        // For initialize requests, generate and return session ID
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (request.method === 'initialize' && this.sseHandler) {
-          const sessionId = this.generateSessionId();
-          headers['Mcp-Session-Id'] = sessionId;
-        }
-
-        res.writeHead(200, headers);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(mcpResponse));
       } catch (error) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -659,83 +562,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
             },
           })
         );
-      }
-    });
-  }
-
-  /**
-   * Process MCP request asynchronously with SSE response
-   */
-  private processMCPRequestAsync(req: IncomingMessage, res: ServerResponse, sessionId: string): void {
-    // Validate sessionId exists
-    if (!this.sseHandler || !this.sseHandler.hasSession(sessionId)) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          error: 'Session not found',
-          message: `No active SSE session with ID: ${sessionId}`,
-        })
-      );
-      return;
-    }
-
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk.toString();
-    });
-
-    req.on('end', async () => {
-      try {
-        const request = this.parseJSONRPCRequest(body);
-
-        // Immediately return 202 Accepted
-        res.writeHead(202, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            accepted: true,
-            id: request.id,
-          })
-        );
-
-        // Process request asynchronously
-        if (!this.mcpHandler) {
-          const errorResponse = {
-            jsonrpc: '2.0',
-            id: request.id,
-            error: {
-              code: -32603,
-              message: 'MCP handler not initialized',
-            },
-          };
-          this.sseHandler!.sendResponseToSession(sessionId, errorResponse);
-          return;
-        }
-
-        const mcpRequest: MCPRequest = {
-          jsonrpc: '2.0',
-          id: request.id,
-          method: request.method,
-          params: request.params,
-        };
-
-        const mcpResponse = await this.mcpHandler.handleRequest(mcpRequest);
-
-        // Send response via SSE
-        const sent = this.sseHandler!.sendResponseToSession(sessionId, mcpResponse);
-        if (!sent) {
-          console.error(`Failed to send response to session ${sessionId}: connection may be closed`);
-        }
-      } catch (error) {
-        // Send error response via SSE
-        const errorResponse = {
-          jsonrpc: '2.0',
-          id: null,
-          error: {
-            code: -32700,
-            message: error instanceof Error ? error.message : 'Parse error',
-          },
-        };
-        this.sseHandler!.sendResponseToSession(sessionId, errorResponse);
       }
     });
   }
