@@ -259,6 +259,8 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     const url = req.url || '/';
     const method = req.method || 'GET';
     const origin = req.headers.origin;
+    // Extract path without query parameters for routing
+    const path = url.split('?')[0];
 
     // Add CORS headers
     const corsHeaders = this.getCORSHeaders(origin);
@@ -274,14 +276,13 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     }
 
     // Health check endpoint (no auth required)
-    if (url === '/health' && method === 'GET') {
+    if (path === '/health' && method === 'GET') {
       this.handleHealthCheck(res);
       return;
     }
 
     // OAuth endpoints (Requirements 21-31)
     if (this.oauthHandler) {
-      const path = url.split('?')[0];
       const oauthPaths = [
         '/.well-known/oauth-protected-resource',
         '/.well-known/oauth-authorization-server',
@@ -301,26 +302,26 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     }
 
     // Auth token endpoint (for JWT mode)
-    if (url === '/auth/token' && method === 'POST' && !this.isOAuthEnabled()) {
+    if (path === '/auth/token' && method === 'POST' && !this.isOAuthEnabled()) {
       this.handleAuthToken(req, res);
       return;
     }
 
     // MCP SSE endpoint for Streamable HTTP Transport (Requirement 20.1)
     // GET /mcp establishes SSE stream for server->client notifications
-    if (url === '/mcp' && method === 'GET') {
+    if (path === '/mcp' && method === 'GET') {
       this.handleMCPSSERequest(req, res);
       return;
     }
 
     // MCP endpoint (auth required if enabled)
-    if (url === '/mcp' && method === 'POST') {
+    if (path === '/mcp' && method === 'POST') {
       this.handleMCPRequest(req, res);
       return;
     }
 
     // Root path - show server info
-    if ((url === '/' || url === '') && method === 'GET') {
+    if ((path === '/' || path === '') && method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         name: 'sage',
