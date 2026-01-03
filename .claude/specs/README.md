@@ -1,228 +1,160 @@
 # Sage Specification Documents
 
-**Version**: 0.8.0
-**Status**: ✅ Production Ready
-**Last Updated**: 2026-01-03
+**Version**: 0.8.0 | **Status**: ✅ Production Ready | **Last Updated**: 2026-01-03
+
+---
+
+## Directory Structure
+
+```
+.claude/specs/
+├── README.md                    # This file
+├── spec.md                      # Main specification hub
+├── status.md                    # Project status
+├── requirements.md              # All requirements (32 total)
+├── design.md                    # Design overview
+├── tasks.md                     # Implementation tasks
+├── components.md                # Component definitions (20 components)
+│
+├── shared/                      # Cross-cutting documents
+│   ├── architecture.md          # System architecture
+│   ├── data-models.md           # Data model definitions
+│   ├── security.md              # Security design
+│   └── testing.md               # Test strategy
+│
+├── core/                        # Core features (task analysis)
+│   └── README.md                # Core feature overview
+│
+├── calendar/                    # Calendar features
+│   ├── README.md                # Calendar feature overview
+│   └── google-calendar/         # Google Calendar integration
+│       ├── requirements.md      # 11 requirements
+│       ├── design.md            # Technical design
+│       └── tasks.md             # 43 implementation tasks
+│
+├── oauth/                       # OAuth 2.1
+│   ├── README.md                # OAuth overview
+│   └── oauth-spec.md            # OAuth 2.1 detailed spec
+│
+├── remote-mcp/                  # Remote MCP Server
+│   └── README.md                # Remote MCP overview
+│
+└── integrations/                # External integrations
+    ├── README.md                # Integrations overview
+    └── integrations.md          # Integration design
+```
 
 ---
 
 ## Quick Navigation
 
-### 📖 Start Here
+### Start Here
 - **[spec.md](./spec.md)** - Main specification hub (overview, architecture, status)
+- **[status.md](./status.md)** - Current project status and progress
 
-### 📋 Requirements
-- **[requirements.md](./requirements.md)** - 32 requirements in EARS format
-- **[oauth-spec.md](./oauth-spec.md)** - OAuth 2.1 detailed specification
+### By Feature
 
-### 🏗️ Design
-- **[design.md](./design.md)** - Design hub (architecture, components, data models)
-- **[architecture.md](./architecture.md)** - System architecture details
-- **[components.md](./components.md)** - Component design specifications
-- **[data-models.md](./data-models.md)** - Data model definitions
-- **[integrations.md](./integrations.md)** - External integration specifications
-- **[security.md](./security.md)** - Security design and practices
+| Feature | Directory | Description |
+|---------|-----------|-------------|
+| **Core** | [core/](./core/) | Task analysis, priority engine, time estimation |
+| **Calendar** | [calendar/](./calendar/) | EventKit + Google Calendar integration |
+| **OAuth** | [oauth/](./oauth/) | OAuth 2.1 authentication |
+| **Remote MCP** | [remote-mcp/](./remote-mcp/) | Remote access via HTTP |
+| **Integrations** | [integrations/](./integrations/) | Notion, Apple Reminders |
 
-### 📝 Implementation
-- **[tasks.md](./tasks.md)** - 47 implementation tasks (all complete)
+### By Document Type
 
-### 🧪 Testing
-- **[testing.md](./testing.md)** - Test strategy and coverage
-
-### 📊 Status
-- **[status.md](./status.md)** - Current project status and progress tracking
+| Type | Documents |
+|------|-----------|
+| **Requirements** | [requirements.md](./requirements.md), [calendar/google-calendar/requirements.md](./calendar/google-calendar/requirements.md) |
+| **Design** | [design.md](./design.md), [calendar/google-calendar/design.md](./calendar/google-calendar/design.md) |
+| **Tasks** | [tasks.md](./tasks.md), [calendar/google-calendar/tasks.md](./calendar/google-calendar/tasks.md) |
+| **Components** | [components.md](./components.md) (20 components) |
+| **Architecture** | [shared/architecture.md](./shared/architecture.md) |
+| **Data Models** | [shared/data-models.md](./shared/data-models.md) |
+| **Security** | [shared/security.md](./shared/security.md) |
+| **Testing** | [shared/testing.md](./shared/testing.md) |
 
 ---
 
-## Document Purpose
+## For Different Roles
 
-### For New Team Members
-1. Start with **[spec.md](./spec.md)** for overview
-2. Read **[requirements.md](./requirements.md)** to understand what we're building
-3. Review **[design.md](./design.md)** to see how it's built
-4. Check **[status.md](./status.md)** for current progress
+### New Team Members
+1. [spec.md](./spec.md) - Overview
+2. [requirements.md](./requirements.md) - What we're building
+3. [shared/architecture.md](./shared/architecture.md) - System design
+4. [status.md](./status.md) - Current progress
 
-### For Developers
-1. **[design.md](./design.md)** - Understand system architecture
-2. **[components.md](./components.md)** - Component details
-3. **[tasks.md](./tasks.md)** - Implementation checklist
-4. **[testing.md](./testing.md)** - Testing approach
+### Developers
+1. [components.md](./components.md) - Component interfaces
+2. [shared/data-models.md](./shared/data-models.md) - Data structures
+3. [tasks.md](./tasks.md) - Implementation checklist
+4. [shared/testing.md](./shared/testing.md) - Testing approach
 
-### For Product Owners
-1. **[spec.md](./spec.md)** - High-level overview
-2. **[requirements.md](./requirements.md)** - Feature requirements
-3. **[status.md](./status.md)** - Current status and metrics
+### Product Owners
+1. [spec.md](./spec.md) - High-level overview
+2. [requirements.md](./requirements.md) - Feature requirements
+3. [status.md](./status.md) - Progress metrics
 
-### For Security Review
-1. **[security.md](./security.md)** - Security design
-2. **[oauth-spec.md](./oauth-spec.md)** - OAuth 2.1 implementation
-3. **[integrations.md](./integrations.md)** - External system interactions
+### Security Review
+1. [shared/security.md](./shared/security.md) - Security design
+2. [oauth/oauth-spec.md](./oauth/oauth-spec.md) - OAuth 2.1 spec
+3. [integrations/integrations.md](./integrations/integrations.md) - External systems
 
 ---
 
 ## Specification Workflow
 
-This project follows the **claude-code-spec-workflow**:
-
 ```
 1. Requirements Phase
-   ├── Define requirements (requirements.md)
-   ├── Create detailed specs (oauth-spec.md, etc.)
-   └── Validate with stakeholders
+   └── Define requirements (EARS format)
 
 2. Design Phase
-   ├── System architecture (architecture.md)
-   ├── Component design (components.md)
-   ├── Data models (data-models.md)
-   └── Integration design (integrations.md)
+   ├── System architecture
+   ├── Component design
+   └── Data models
 
 3. Implementation Phase
-   ├── Break down into tasks (tasks.md)
-   ├── Implement features
-   └── Track progress (status.md)
+   ├── Break down into tasks
+   └── Track progress
 
 4. Testing Phase
-   ├── Write tests (testing.md)
-   ├── Achieve coverage goals
    └── Verify requirements
-
-5. Documentation Phase
-   ├── Update all specs
-   ├── Create user guides
-   └── Production ready
 ```
 
 **Current Status**: ✅ Phase 5 Complete (Production Ready)
 
 ---
 
-## Document Maintenance
-
-### Responsibility
-- **Technical Lead**: @shin1ohno
-- **Update Frequency**: As needed, minimum weekly during active development
-- **Review Process**: Pull request for significant changes
-
-### Document Lifecycle
-
-1. **Active Development**
-   - Update `status.md` daily
-   - Update `tasks.md` when tasks complete
-   - Update design docs when architecture changes
-
-2. **Stable/Production**
-   - Update `status.md` monthly
-   - Update specs when new features added
-   - Version all documents with releases
-
-3. **Maintenance**
-   - Archive old versions
-   - Link to changelog
-   - Keep specs minimal but complete
-
----
-
 ## Related Documentation
 
 ### User Documentation
-- `../../docs/SETUP-LOCAL.md` - Local setup guide
-- `../../docs/SETUP-REMOTE.md` - Remote server setup
-- `../../docs/CONFIGURATION.md` - Configuration reference
-- `../../docs/TROUBLESHOOTING.md` - Common issues and solutions
+- [docs/SETUP-LOCAL.md](../../docs/SETUP-LOCAL.md) - Local setup
+- [docs/SETUP-REMOTE.md](../../docs/SETUP-REMOTE.md) - Remote server setup
+- [docs/CONFIGURATION.md](../../docs/CONFIGURATION.md) - Configuration reference
 
 ### Project Root
-- `../../README.md` - Project README
-- `../../CHANGELOG.md` - Version history
-- `../../SESSION_PROGRESS.md` - Development session log
+- [README.md](../../README.md) - Project README
+- [CHANGELOG.md](../../CHANGELOG.md) - Version history
 
 ---
 
-## Document Standards
+## Commands
 
-### Formatting
-- Markdown with GitHub flavors
-- Mermaid diagrams for architecture
-- Code blocks with syntax highlighting
-- Tables for structured data
+```bash
+# List all specs
+/spec-list
 
-### Requirements Format
-- EARS notation (Easy Approach to Requirements Syntax)
-- User stories with acceptance criteria
-- Numbered requirements for traceability
+# Check spec status
+/spec-status <feature-name>
 
-### Design Format
-- Component diagrams
-- Sequence diagrams
-- Data flow diagrams
-- Type definitions (TypeScript)
+# Create new spec
+/spec-create <feature-name>
 
-### Task Format
-- Checkbox lists for progress tracking
-- Links to requirements
-- Implementation notes
-- Test requirements
+# Execute spec tasks
+/spec-execute <feature-name>
+```
 
 ---
 
-## Version History
-
-### 0.8.0 (2026-01-03)
-- Google Calendar API integration milestone
-- Removed SSE transport (HTTP POST only)
-- Documentation cleanup and sync
-
-### 0.7.8 (2026-01-03)
-- Added platform-aware test mocking
-- Updated status.md with test results
-- All 914 tests passing
-
-### 0.7.7 (2026-01-03)
-- HTTP transport improvements
-- Completed OAuth 2.1 implementation
-- Updated all specs for production readiness
-
-### 0.7.6 (2026-01-01)
-- HTTP transport support
-- Completed calendar operations
-- Added working cadence feature
-
-### 0.7.5 (2025-12-30)
-- Initial Remote MCP implementation
-- OAuth 2.1 foundation
-- Platform abstraction layer
-
----
-
-## Contributing to Specs
-
-### Adding New Requirements
-1. Update `requirements.md`
-2. Create detailed spec if needed (e.g., `feature-spec.md`)
-3. Update `spec.md` to reference new docs
-4. Update `status.md` with new requirements
-
-### Updating Design
-1. Update relevant design document
-2. Update `design.md` hub if needed
-3. Ensure diagrams are up-to-date
-4. Update component references
-
-### Completing Tasks
-1. Check off task in `tasks.md`
-2. Update `status.md` progress
-3. Add test results if applicable
-4. Link to implementation PR
-
----
-
-## Contact
-
-**Project Maintainer**: @shin1ohno
-**Questions**: [Open an issue]
-**Documentation Issues**: [Open a PR]
-
----
-
-**Last Updated**: 2026-01-03
-**Document Version**: 1.0
-**Spec Format**: claude-code-spec-workflow compatible
+**Last Updated**: 2026-01-03 | **Contact**: @shin1ohno

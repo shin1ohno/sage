@@ -23,6 +23,9 @@
 | 14 | TaskSynchronizer | 複数ソース間でのタスク同期と競合解決 |
 | 15 | NotionMCPService | Notion MCP統合 |
 | 16 | WorkingCadenceService | ユーザーの勤務リズム取得と推奨事項生成 |
+| 17 | GoogleCalendarService | Google Calendar API v3統合 |
+| 18 | GoogleOAuthHandler | Google OAuth 2.0フロー管理 |
+| 19 | CalendarSourceManager | マルチソースカレンダー管理とフォールバック |
 
 ## 0. PlatformAdapter
 
@@ -528,6 +531,116 @@ interface SchedulingRecommendation {
 }
 ```
 
+## 17. GoogleCalendarService
+
+**責任:** Google Calendar API v3との統合、イベントCRUD操作
+
+```typescript
+interface GoogleCalendarService {
+  // 認証
+  authenticate(): Promise<void>;
+  refreshToken(): Promise<void>;
+  isAvailable(): Promise<boolean>;
+
+  // イベント操作
+  listEvents(request: ListEventsRequest): Promise<CalendarEvent[]>;
+  createEvent(request: CreateEventRequest, calendarId?: string): Promise<CalendarEvent>;
+  updateEvent(eventId: string, updates: Partial<CreateEventRequest>): Promise<CalendarEvent>;
+  deleteEvent(eventId: string): Promise<void>;
+  deleteEventsBatch(eventIds: string[]): Promise<{ deleted: number }>;
+
+  // 招待返信
+  respondToEvent(eventId: string, response: 'accepted' | 'declined' | 'tentative'): Promise<void>;
+
+  // カレンダー一覧
+  listCalendars(): Promise<CalendarInfo[]>;
+}
+
+interface CalendarInfo {
+  id: string;
+  name: string;
+  source: 'eventkit' | 'google';
+  isPrimary: boolean;
+  color?: string;
+  accessRole?: 'owner' | 'writer' | 'reader';
+}
+```
+
+## 18. GoogleOAuthHandler
+
+**責任:** Google OAuth 2.0フローの管理、トークン交換
+
+```typescript
+interface GoogleOAuthHandler {
+  // OAuth フロー
+  getAuthorizationUrl(redirectUri: string): Promise<string>;
+  exchangeCodeForTokens(code: string, redirectUri: string): Promise<OAuthTokens>;
+  refreshAccessToken(refreshToken: string): Promise<OAuthTokens>;
+
+  // トークン管理
+  storeTokens(tokens: OAuthTokens): Promise<void>;
+  getTokens(): Promise<OAuthTokens | null>;
+  revokeTokens(): Promise<void>;
+
+  // 検証
+  validateToken(accessToken: string): Promise<boolean>;
+}
+
+interface OAuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: string;
+  scope: string[];
+}
+```
+
+## 19. CalendarSourceManager
+
+**責任:** 複数カレンダーソースの管理、自動選択、フォールバック
+
+```typescript
+interface CalendarSourceManager {
+  // ソース管理
+  detectAvailableSources(): Promise<{ eventkit: boolean; google: boolean }>;
+  enableSource(source: 'eventkit' | 'google'): Promise<void>;
+  disableSource(source: 'eventkit' | 'google'): Promise<void>;
+  getEnabledSources(): ('eventkit' | 'google')[];
+
+  // イベント操作（統合）
+  getEvents(startDate: string, endDate: string, calendarId?: string): Promise<CalendarEvent[]>;
+  createEvent(request: CreateEventRequest, preferredSource?: 'eventkit' | 'google'): Promise<CalendarEvent>;
+  deleteEvent(eventId: string, source?: 'eventkit' | 'google'): Promise<void>;
+
+  // 空き時間スロット
+  findAvailableSlots(request: FindSlotsRequest): Promise<AvailableSlot[]>;
+
+  // 同期（両方有効な場合のみ）
+  syncCalendars(): Promise<SyncResult>;
+  getSyncStatus(): Promise<SyncStatus>;
+
+  // ヘルスチェック
+  healthCheck(): Promise<{ eventkit: boolean; google: boolean }>;
+}
+
+interface FindSlotsRequest {
+  startDate: string;
+  endDate: string;
+  minDurationMinutes?: number;
+  maxDurationMinutes?: number;
+  workingHours?: { start: string; end: string };
+}
+
+interface SyncResult {
+  success: boolean;
+  eventsAdded: number;
+  eventsUpdated: number;
+  eventsDeleted: number;
+  conflicts: Array<{ eventId: string; reason: string; resolution: string }>;
+  errors: Array<{ source: 'eventkit' | 'google'; error: string }>;
+  timestamp: string;
+}
+```
+
 ## コンポーネント依存関係
 
 ```mermaid
@@ -545,8 +658,12 @@ graph TD
     ReminderManager --> AppleRemindersService
     ReminderManager --> NotionMCPService
 
-    TaskAnalyzer --> CalendarService
+    TaskAnalyzer --> CalendarSourceManager
     TaskAnalyzer --> WorkingCadenceService
+
+    CalendarSourceManager --> CalendarService
+    CalendarSourceManager --> GoogleCalendarService
+    GoogleCalendarService --> GoogleOAuthHandler
 
     TodoListManager --> TaskSynchronizer
     TodoListManager --> AppleRemindersService
@@ -554,4 +671,8 @@ graph TD
 
     RemoteMCPServer --> CloudConfigManager
     RemoteMCPServer --> WebAPIIntegrationService
+
+    style CalendarSourceManager fill:#f9f,stroke:#333,stroke-width:2px
+    style GoogleCalendarService fill:#bbf,stroke:#333,stroke-width:2px
+    style GoogleOAuthHandler fill:#bbf,stroke:#333,stroke-width:2px
 ```
