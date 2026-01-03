@@ -5,35 +5,26 @@
  * Import this instead of hardcoding version strings.
  */
 
-import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+
+// Fallback version - keep in sync with package.json
+const FALLBACK_VERSION = '0.8.2';
 
 function getVersion(): string {
+  // Try to find package.json from current working directory
+  const pkgPath = join(process.cwd(), 'package.json');
   try {
-    // Handle both ESM and compiled paths
-    const currentDir = typeof __dirname !== 'undefined'
-      ? __dirname
-      : dirname(fileURLToPath(import.meta.url));
-
-    // Look for package.json in parent directories
-    let dir = currentDir;
-    for (let i = 0; i < 5; i++) {
-      try {
-        const pkgPath = join(dir, 'package.json');
-        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-        if (pkg.name === '@shin1ohno/sage') {
-          return pkg.version;
-        }
-      } catch {
-        // Continue searching
+    if (existsSync(pkgPath)) {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+      if (pkg.name === '@shin1ohno/sage') {
+        return pkg.version;
       }
-      dir = dirname(dir);
     }
-    return '0.0.0'; // Fallback
   } catch {
-    return '0.0.0'; // Fallback
+    // Fall through to default
   }
+  return FALLBACK_VERSION;
 }
 
 export const VERSION = getVersion();
