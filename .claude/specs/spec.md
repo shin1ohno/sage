@@ -1,7 +1,7 @@
 # Sage - AI Task Manager Specification
 
 **Project**: sage (賢者)
-**Version**: 0.7.9
+**Version**: 0.8.0
 **Status**: ✅ **Production Ready**
 **Last Updated**: 2026-01-03
 

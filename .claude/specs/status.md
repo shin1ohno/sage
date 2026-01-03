@@ -1,7 +1,7 @@
 # Sage - Project Status
 
 **Last Updated**: 2026-01-03
-**Version**: 0.7.9
+**Version**: 0.8.0
 **Overall Status**: ✅ **Production Ready**
 
 ---
@@ -335,6 +335,11 @@ Time: ~18s per full test run
 ---
 
 ## Changelog
+
+### 0.8.0 (2026-01-03)
+- ✅ Minor version release marking Google Calendar API integration milestone
+- ✅ All Google Calendar API features now production ready
+- ✅ Multi-source calendar management fully operational
 
 ### 0.7.9 (2026-01-03)
 - ✅ Google Calendar API integration complete

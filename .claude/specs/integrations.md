@@ -227,11 +227,73 @@ function determineDestination(task: Task, config: UserConfig): 'apple' | 'notion
 
 ### プラットフォーム別実装
 
-| プラットフォーム | 実装方式 | 権限要求 | フォールバック |
-|----------------|----------|---------|--------------|
-| **macOS Desktop** | AppleScript / EventKit | macOS Automation | 手動入力 |
-| **iOS/iPadOS** | Remote MCP経由 | N/A (サーバー側で処理) | 手動入力 |
-| **Web** | Remote MCP経由 | N/A (サーバー側で処理) | 手動入力 |
+| プラットフォーム | カレンダーソース | 権限要求 | フォールバック |
+|----------------|-----------------|---------|--------------|
+| **macOS Desktop** | EventKit + Google Calendar | macOS Automation / OAuth 2.0 | 他ソースに自動切り替え |
+| **Linux/Windows Desktop** | Google Calendar のみ | OAuth 2.0 | 手動入力 |
+| **iOS/iPadOS** | Remote MCP経由 (EventKit + Google) | N/A (サーバー側で処理) | 他ソースに自動切り替え |
+| **Web** | Remote MCP経由 (EventKit + Google) | N/A (サーバー側で処理) | 他ソースに自動切り替え |
+
+### マルチソースアーキテクチャ
+
+sageは複数のカレンダーソースを同時に管理できます：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  CalendarSourceManager                        │
+│  - detectAvailableSources()                                   │
+│  - enableSource() / disableSource()                          │
+│  - getEvents() (並列取得 + イベント重複排除)                   │
+│  - createEvent() (ソースルーティング + フォールバック)          │
+│  - deleteEvent()                                              │
+│  - findAvailableSlots()                                       │
+│  - healthCheck()                                              │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+     ┌────────────┴────────────┐
+     ▼                         ▼
+┌──────────────┐       ┌──────────────────┐
+│ CalendarService │       │ GoogleCalendarService │
+│  (EventKit)  │       │    (Google API)    │
+└──────────────┘       └──────────────────┘
+```
+
+### イベント重複排除
+
+複数ソースからイベントを取得する際、重複を排除します：
+
+1. **iCalUID マッチング**: 同じiCalUIDを持つイベントは同一とみなす
+2. **ヒューリスティックマッチング**: タイトル + 開始時刻 + 終了時刻が一致するイベントは同一とみなす
+
+```typescript
+function areEventsDuplicate(event1: CalendarEvent, event2: CalendarEvent): boolean {
+  // iCalUID が両方に存在する場合
+  if (event1.iCalUID && event2.iCalUID) {
+    return event1.iCalUID === event2.iCalUID;
+  }
+
+  // ヒューリスティックマッチング
+  return (
+    event1.title === event2.title &&
+    event1.startDate === event2.startDate &&
+    event1.endDate === event2.endDate
+  );
+}
+```
+
+### エラー時の自動フォールバック
+
+カレンダーソースでエラーが発生した場合、自動的に他のソースを使用します：
+
+```typescript
+// Google Calendar API エラー時
+try {
+  events = await googleCalendarService.listEvents(request);
+} catch (error) {
+  console.warn('Google Calendar unavailable, falling back to EventKit');
+  events = await calendarService.listEvents(request);
+}
+```
 
 ### macOS EventKit統合 (AppleScriptObjC)
 
@@ -363,6 +425,216 @@ set events to eventStore's eventsMatchingPredicate:predicate
 - 出席者情報のないイベント（個人の予定）はスキップ
 - Google Calendarイベントは Calendar API または EventKit経由で返信
 - 読み取り専用カレンダーはエラー
+
+## Google Calendar API統合
+
+### 概要
+
+Google Calendar APIを使用したカレンダー統合。EventKitが利用できないLinux/Windowsプラットフォームでも、またmacOSでもEventKitと併用してカレンダー機能を提供します。
+
+### OAuth 2.0認証
+
+**GoogleOAuthHandler** がOAuth 2.0フローを管理します：
+
+```typescript
+class GoogleOAuthHandler {
+  // PKCE対応の認証URL生成
+  async getAuthorizationUrl(): Promise<{ url: string; codeVerifier: string }>;
+
+  // 認証コードとトークンの交換
+  async exchangeCodeForTokens(code: string, codeVerifier: string): Promise<OAuthTokens>;
+
+  // トークンのリフレッシュ
+  async refreshAccessToken(refreshToken: string): Promise<OAuthTokens>;
+
+  // トークンの検証（期限切れ時は自動リフレッシュ）
+  async validateToken(): Promise<boolean>;
+
+  // トークンの保存・取得（暗号化）
+  async storeTokens(tokens: OAuthTokens): Promise<void>;
+  async getTokens(): Promise<OAuthTokens | null>;
+}
+```
+
+### Google Calendar Service
+
+**GoogleCalendarService** がGoogle Calendar APIとの通信を担当：
+
+```typescript
+class GoogleCalendarService {
+  // カレンダー一覧取得
+  async listCalendars(): Promise<CalendarInfo[]>;
+
+  // イベント一覧取得（繰り返しイベント展開、ページネーション対応）
+  async listEvents(request: ListEventsRequest): Promise<CalendarEvent[]>;
+
+  // イベント作成（終日イベント、アラーム、出席者対応）
+  async createEvent(request: CreateEventRequest, calendarId?: string): Promise<CalendarEvent>;
+
+  // イベント更新
+  async updateEvent(eventId: string, updates: Partial<CreateEventRequest>): Promise<CalendarEvent>;
+
+  // イベント削除（単体・バッチ）
+  async deleteEvent(eventId: string): Promise<void>;
+  async deleteEventsBatch(eventIds: string[]): Promise<void>;
+
+  // イベント返信
+  async respondToEvent(eventId: string, response: 'accepted' | 'declined' | 'tentative'): Promise<void>;
+
+  // ヘルスチェック
+  async isAvailable(): Promise<boolean>;
+}
+```
+
+### カレンダーソース管理ツール
+
+**ツール名:** `list_calendar_sources`
+
+有効なカレンダーソースとその状態を一覧表示します。
+
+**入力パラメータ:** なし
+
+**出力:**
+```typescript
+{
+  sources: {
+    eventkit: {
+      available: boolean;      // プラットフォームで利用可能か
+      enabled: boolean;        // 設定で有効化されているか
+      healthy: boolean;        // 現在正常に動作しているか
+    };
+    google: {
+      available: boolean;
+      enabled: boolean;
+      healthy: boolean;
+      authenticated: boolean;  // OAuth認証済みか
+    };
+  };
+  primarySource: 'eventkit' | 'google' | null;
+}
+```
+
+---
+
+**ツール名:** `set_calendar_source`
+
+カレンダーソースの有効/無効を切り替えます。
+
+**入力パラメータ:**
+```typescript
+{
+  source: 'eventkit' | 'google';  // 必須: 対象ソース
+  enabled: boolean;                // 必須: 有効化するか
+}
+```
+
+**出力:**
+```typescript
+{
+  success: boolean;
+  source: string;
+  enabled: boolean;
+  message: string;
+  oauthRequired?: boolean;  // Google Calendar初回有効化時
+  oauthUrl?: string;        // OAuth認証URL（必要な場合）
+}
+```
+
+---
+
+**ツール名:** `sync_calendar_sources`
+
+EventKitとGoogle Calendar間でイベントを同期します（両方有効時のみ）。
+
+**入力パラメータ:** なし
+
+**出力:**
+```typescript
+{
+  success: boolean;
+  syncResult: {
+    added: number;
+    updated: number;
+    deleted: number;
+    conflicts: number;
+  };
+  lastSyncTime: string;  // ISO 8601形式
+  message: string;
+}
+```
+
+---
+
+**ツール名:** `get_calendar_sync_status`
+
+カレンダー同期の状態を取得します。
+
+**入力パラメータ:** なし
+
+**出力:**
+```typescript
+{
+  success: boolean;
+  syncEnabled: boolean;
+  lastSyncTime?: string;
+  nextSyncTime?: string;
+  errors?: string[];
+}
+```
+
+### Google Calendar設定例
+
+**~/.sage/config.json**
+
+```json
+{
+  "calendar": {
+    "sources": {
+      "eventkit": {
+        "enabled": true
+      },
+      "google": {
+        "enabled": true,
+        "clientId": "your-client-id.apps.googleusercontent.com",
+        "clientSecret": "your-client-secret",
+        "defaultCalendar": "primary",
+        "excludedCalendars": ["holidays@group.v.calendar.google.com"]
+      }
+    },
+    "syncEnabled": true,
+    "syncInterval": 3600
+  }
+}
+```
+
+### エラーハンドリング
+
+```typescript
+// Google API エラーの処理
+interface GoogleCalendarError {
+  code: number;        // HTTP status code
+  message: string;
+  errors: Array<{
+    domain: string;
+    reason: string;
+    message: string;
+  }>;
+}
+
+// リトライロジック（指数バックオフ）
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000
+): Promise<T>;
+```
+
+| エラーコード | 意味 | 対処 |
+|------------|------|-----|
+| 401 | 認証エラー | トークンリフレッシュを試行 |
+| 403 | 権限エラー | ユーザーに再認証を促す |
+| 429 | レート制限 | 指数バックオフでリトライ |
+| 500/503 | サーバーエラー | リトライ後、EventKitにフォールバック |
 
 ## Notion統合
 
