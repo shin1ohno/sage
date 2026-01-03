@@ -47,6 +47,7 @@
   "homepage": "https://github.com/shin1ohno/sage#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "googleapis": "^134.0.0",
     "run-applescript": "^7.1.0",
     "zod": "^3.23.8"
   },

@@ -315,7 +315,251 @@ code ~/.sage/config.json
 }
 ```
 
-#### googleCalendar - カレンダー
+---
+
+## Google Calendar Integration
+
+Google Calendar統合により、macOS以外のプラットフォーム（Linux/Windows）でもカレンダー機能を利用できます。macOSでは、EventKitとGoogle Calendarの両方を併用することも可能です。
+
+### Google OAuth Setup
+
+Google Calendar APIを使用するには、Google Cloud Consoleでの初期セットアップが必要です。
+
+#### 1. Google Cloud Projectの作成
+
+1. [Google Cloud Console](https://console.cloud.google.com/)にアクセス
+2. 新しいプロジェクトを作成（例: "Sage Calendar Integration"）
+3. プロジェクトを選択
+
+#### 2. Google Calendar APIの有効化
+
+1. 「APIとサービス」→「ライブラリ」に移動
+2. "Google Calendar API"を検索
+3. 「有効にする」をクリック
+
+#### 3. OAuth 2.0認証情報の作成
+
+1. 「APIとサービス」→「認証情報」に移動
+2. 「認証情報を作成」→「OAuth クライアント ID」を選択
+3. アプリケーションの種類: **デスクトップアプリ**
+4. 名前を入力（例: "Sage Desktop Client"）
+5. 「作成」をクリック
+6. **クライアントID**と**クライアントシークレット**をメモ
+
+#### 4. 環境変数の設定
+
+取得した認証情報を環境変数として設定します:
+
+```bash
+# ~/.bashrc または ~/.zshrc に追加
+export GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+export GOOGLE_CLIENT_SECRET="your-client-secret"
+
+# オプション: リダイレクトURIをカスタマイズする場合
+export GOOGLE_REDIRECT_URI="http://localhost:3000/oauth/callback"
+```
+
+設定を反映:
+```bash
+source ~/.bashrc  # または source ~/.zshrc
+```
+
+#### 5. sageでGoogle Calendarを有効化
+
+```
+sage でGoogle Calendarソースを有効にしてください
+```
+
+初回有効化時、ブラウザでGoogle OAuth同意画面が開きます。カレンダーへのアクセスを許可してください。
+
+### 設定オプション
+
+#### calendar.sources - カレンダーソース設定
+
+複数のカレンダーソース（EventKit、Google Calendar）を管理します。
+
+| プロパティ | 型 | デフォルト | 説明 |
+|-----------|----|-----------|----- |
+| `sources.eventkit.enabled` | boolean | macOS: `true`, その他: `false` | EventKitの有効/無効 |
+| `sources.google.enabled` | boolean | `false` | Google Calendarの有効/無効 |
+| `sources.google.defaultCalendar` | string | `"primary"` | デフォルトカレンダーID |
+| `sources.google.excludedCalendars` | string[] | `[]` | 除外するカレンダーID |
+| `sources.google.syncInterval` | number | `300` | 同期間隔（秒） |
+| `sources.google.enableNotifications` | boolean | `true` | 通知の有効/無効 |
+
+**注意**: 少なくとも1つのソースを有効にする必要があります。
+
+**例:**
+
+```json
+{
+  "calendar": {
+    "sources": {
+      "eventkit": {
+        "enabled": true
+      },
+      "google": {
+        "enabled": true,
+        "defaultCalendar": "primary",
+        "excludedCalendars": [
+          "holidays@group.v.calendar.google.com",
+          "weather@group.v.calendar.google.com"
+        ],
+        "syncInterval": 300,
+        "enableNotifications": true
+      }
+    },
+    "workingHours": {
+      "start": "09:00",
+      "end": "18:00"
+    },
+    "timeZone": "Asia/Tokyo"
+  }
+}
+```
+
+### プラットフォーム別のデフォルト設定
+
+| プラットフォーム | EventKit | Google Calendar |
+|-----------------|----------|-----------------|
+| **macOS** | 有効（デフォルト） | 無効（オプション） |
+| **Linux** | 利用不可 | 有効（推奨） |
+| **Windows** | 利用不可 | 有効（推奨） |
+
+### カレンダーソースの管理
+
+#### 利用可能なソースの確認
+
+```
+sage で利用可能なカレンダーソースを表示してください
+```
+
+#### ソースの有効化/無効化
+
+```
+sage でGoogle Calendarを有効にしてください
+sage でEventKitを無効にしてください
+```
+
+#### 同期状態の確認（両方有効な場合）
+
+```
+sage でカレンダーの同期状態を確認してください
+```
+
+### トラブルシューティング
+
+#### OAuth認証エラー
+
+**症状**: "OAuth authentication failed" エラー
+
+**解決方法**:
+1. 環境変数が正しく設定されているか確認:
+   ```bash
+   echo $GOOGLE_CLIENT_ID
+   echo $GOOGLE_CLIENT_SECRET
+   ```
+2. Google Cloud Consoleで以下を確認:
+   - Google Calendar APIが有効になっているか
+   - OAuth同意画面が設定されているか
+   - OAuth 2.0クライアントIDが作成されているか
+3. トークンをリセットして再認証:
+   ```bash
+   rm ~/.sage/tokens/google-calendar-tokens.json
+   ```
+   その後、再度Google Calendarを有効化してください。
+
+#### トークン期限切れエラー
+
+**症状**: "Token expired" または "401 Unauthorized" エラー
+
+**解決方法**:
+システムは自動的にトークンを更新しますが、リフレッシュトークンが無効な場合は再認証が必要です:
+
+```
+sage でGoogle Calendarソースを無効にしてください
+sage でGoogle Calendarソースを有効にしてください
+```
+
+#### APIレート制限エラー
+
+**症状**: "429 Too Many Requests" エラー
+
+**解決方法**:
+1. システムは自動的にリトライしますが、頻繁に発生する場合は `syncInterval` を長くしてください:
+   ```json
+   {
+     "calendar": {
+       "sources": {
+         "google": {
+           "syncInterval": 600
+         }
+       }
+     }
+   }
+   ```
+2. Google Cloud Consoleでクォータを確認:
+   - 1,000,000 requests/day（プロジェクトあたり）
+   - 10,000 requests/100 seconds/user
+
+#### カレンダーが見つからないエラー
+
+**症状**: "Calendar not found" エラー
+
+**解決方法**:
+1. 利用可能なカレンダーIDを確認:
+   ```
+   sage でGoogle Calendarの一覧を表示してください
+   ```
+2. `excludedCalendars` に誤って追加していないか確認
+3. Google Calendar側でカレンダーが共有されているか確認
+
+#### 両方のソースが無効
+
+**症状**: "At least one calendar source must be enabled" エラー
+
+**解決方法**:
+少なくとも1つのカレンダーソースを有効にしてください:
+```
+sage でGoogle Calendarを有効にしてください
+```
+
+#### ネットワークエラー
+
+**症状**: "Unable to reach Google Calendar" エラー
+
+**解決方法**:
+1. インターネット接続を確認
+2. プロキシ設定が必要な場合は環境変数を設定:
+   ```bash
+   export HTTPS_PROXY="http://proxy.example.com:8080"
+   ```
+3. ファイアウォールでGoogle API（`*.googleapis.com`）へのアクセスが許可されているか確認
+
+#### イベントの重複
+
+**症状**: EventKitとGoogle Calendarで同じイベントが重複表示される
+
+**解決方法**:
+システムは自動的にiCalUIDでイベントを重複排除しますが、重複が発生する場合:
+1. 両方のカレンダーで同期が有効になっているか確認
+2. 手動同期を実行:
+   ```
+   sage でカレンダーソースを同期してください
+   ```
+
+### セキュリティに関する注意事項
+
+- **トークン保存**: OAuthトークンは暗号化されて `~/.sage/tokens/` に保存されます
+- **スコープ**: Sageは最小限のカレンダーアクセススコープのみを要求します
+- **HTTPS**: すべてのGoogle API通信はHTTPS（TLS 1.2+）で保護されます
+- **アクセス取り消し**: [Google Account Security](https://myaccount.google.com/permissions)でいつでもSageのアクセスを取り消せます
+
+---
+
+#### googleCalendar - カレンダー（レガシー）
+
+**注意**: この設定は後方互換性のために残されています。新しい `calendar.sources.google` 設定を使用してください。
 
 | プロパティ | 型 | デフォルト | 説明 |
 |-----------|----|-----------|----- |

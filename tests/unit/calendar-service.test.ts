@@ -78,10 +78,10 @@ describe('CalendarService', () => {
       Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
 
       const runAppleScriptModule = require('run-applescript');
-      // EventKit format includes isAllDay field
+      // EventKit format includes isAllDay field and iCalUID
       runAppleScriptModule.runAppleScript.mockResolvedValue(
-        'Meeting|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1|false\n' +
-          'Lunch|2025-01-15T12:00:00|2025-01-15T13:00:00|event-2|false'
+        'Meeting|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1|false|UID-1@example.com\n' +
+          'Lunch|2025-01-15T12:00:00|2025-01-15T13:00:00|event-2|false|UID-2@example.com'
       );
 
       const events = await service.fetchEvents('2025-01-15', '2025-01-16');
@@ -90,8 +90,10 @@ describe('CalendarService', () => {
       expect(events[0].title).toBe('Meeting');
       expect(events[0].source).toBe('eventkit');
       expect(events[0].isAllDay).toBe(false);
+      expect(events[0].iCalUID).toBe('UID-1@example.com');
       expect(events[1].title).toBe('Lunch');
       expect(events[1].source).toBe('eventkit');
+      expect(events[1].iCalUID).toBe('UID-2@example.com');
 
       Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
     });
@@ -102,13 +104,14 @@ describe('CalendarService', () => {
 
       const runAppleScriptModule = require('run-applescript');
       runAppleScriptModule.runAppleScript.mockResolvedValue(
-        'Holiday|2025-01-15T00:00:00|2025-01-15T23:59:59|event-allday|true'
+        'Holiday|2025-01-15T00:00:00|2025-01-15T23:59:59|event-allday|true|UID-ALLDAY@example.com'
       );
 
       const events = await service.fetchEvents('2025-01-15', '2025-01-16');
 
       expect(events).toHaveLength(1);
       expect(events[0].isAllDay).toBe(true);
+      expect(events[0].iCalUID).toBe('UID-ALLDAY@example.com');
 
       Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
     });
@@ -270,12 +273,51 @@ describe('CalendarService', () => {
       expect(events[0].isAllDay).toBe(true);
     });
 
+    it('should parse EventKit output with iCalUID', () => {
+      const output = 'Meeting|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1|false|ICAL-UID-123@example.com';
+      const events = service.parseEventKitResult(output);
+
+      expect(events).toHaveLength(1);
+      expect(events[0].title).toBe('Meeting');
+      expect(events[0].id).toBe('event-1');
+      expect(events[0].isAllDay).toBe(false);
+      expect(events[0].iCalUID).toBe('ICAL-UID-123@example.com');
+      expect(events[0].source).toBe('eventkit');
+    });
+
+    it('extracts iCalUID from EventKit events', () => {
+      const output = 'Meeting|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1|false|040000008200E00074C5B7101A82E00800000000B0C7D5F5A5E5DA01000000000000000010000000F8F8D8E8B8F8E8F8F8E8F8E8F8E8F8F8';
+      const events = service.parseEventKitResult(output);
+
+      expect(events).toHaveLength(1);
+      expect(events[0].iCalUID).toBe('040000008200E00074C5B7101A82E00800000000B0C7D5F5A5E5DA01000000000000000010000000F8F8D8E8B8F8E8F8F8E8F8E8F8E8F8F8');
+      expect(events[0].title).toBe('Meeting');
+      expect(events[0].id).toBe('event-1');
+    });
+
+    it('handles missing iCalUID gracefully', () => {
+      const output = 'Meeting|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1|false|';
+      const events = service.parseEventKitResult(output);
+
+      expect(events).toHaveLength(1);
+      expect(events[0].iCalUID).toBeUndefined();
+    });
+
+    it('handles empty string iCalUID as undefined', () => {
+      const output = 'Meeting|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1|false|   ';
+      const events = service.parseEventKitResult(output);
+
+      expect(events).toHaveLength(1);
+      expect(events[0].iCalUID).toBeUndefined();
+    });
+
     it('should handle legacy format without isAllDay field', () => {
       const output = 'Meeting|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1';
       const events = service.parseEventKitResult(output);
 
       expect(events).toHaveLength(1);
       expect(events[0].isAllDay).toBe(false); // defaults to false
+      expect(events[0].iCalUID).toBeUndefined();
     });
 
     it('should handle empty output', () => {
@@ -290,6 +332,19 @@ describe('CalendarService', () => {
       // Should only parse valid lines
       expect(events).toHaveLength(1);
       expect(events[0].title).toBe('Valid');
+    });
+
+    it('should parse multiple events with varying iCalUID formats', () => {
+      const output =
+        'Event1|2025-01-15T10:00:00|2025-01-15T11:00:00|event-1|false|UID-1@example.com\n' +
+        'Event2|2025-01-15T12:00:00|2025-01-15T13:00:00|event-2|false|\n' +
+        'Event3|2025-01-15T14:00:00|2025-01-15T15:00:00|event-3|false|UID-3@domain.com';
+      const events = service.parseEventKitResult(output);
+
+      expect(events).toHaveLength(3);
+      expect(events[0].iCalUID).toBe('UID-1@example.com');
+      expect(events[1].iCalUID).toBeUndefined();
+      expect(events[2].iCalUID).toBe('UID-3@domain.com');
     });
   });
 

@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { UserConfig } from '../types/index.js';
 import { DEFAULT_CONFIG } from '../types/config.js';
+import { validateCalendarSources } from './validation.js';
 
 const SAGE_DIR = '.sage';
 const CONFIG_FILE = 'config.json';
@@ -55,6 +56,31 @@ export class ConfigLoader {
         throw new Error('Invalid configuration file structure');
       }
 
+      // Migrate config if calendar.sources is missing
+      let migrated = false;
+      if (!parsed.calendar.sources) {
+        // Deep copy to avoid reference sharing
+        parsed.calendar.sources = JSON.parse(
+          JSON.stringify(DEFAULT_CONFIG.calendar.sources)
+        );
+        migrated = true;
+      }
+
+      // Validate calendar.sources if present
+      if (parsed.calendar.sources) {
+        const validation = validateCalendarSources(parsed.calendar.sources);
+        if (!validation.success) {
+          throw new Error(
+            `Invalid calendar sources configuration: ${validation.error?.message}`
+          );
+        }
+      }
+
+      // Save migrated config
+      if (migrated) {
+        await this.save(parsed);
+      }
+
       return parsed;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -70,6 +96,18 @@ export class ConfigLoader {
   static async save(config: UserConfig): Promise<void> {
     const configDir = this.getConfigDir();
     const configPath = this.getConfigPath();
+
+    // Validate calendar.sources (required)
+    if (!config.calendar.sources) {
+      throw new Error('Missing required field: calendar.sources');
+    }
+
+    const validation = validateCalendarSources(config.calendar.sources);
+    if (!validation.success) {
+      throw new Error(
+        `Invalid calendar sources configuration: ${validation.error?.message}`
+      );
+    }
 
     // Ensure the directory exists
     await mkdir(configDir, { recursive: true });
@@ -88,8 +126,10 @@ export class ConfigLoader {
    * Get the default configuration
    */
   static getDefaultConfig(): UserConfig {
+    // Deep copy DEFAULT_CONFIG to avoid reference sharing
+    const config = JSON.parse(JSON.stringify(DEFAULT_CONFIG)) as UserConfig;
     return {
-      ...DEFAULT_CONFIG,
+      ...config,
       createdAt: new Date().toISOString(),
       lastUpdated: new Date().toISOString(),
     };

@@ -204,5 +204,73 @@ describe('ConfigLoader', () => {
       ConfigLoader.getConfigDir = originalGetConfigDir;
       ConfigLoader.getConfigPath = originalGetConfigPath;
     });
+
+    it('should auto-migrate config without calendar.sources', async () => {
+      const legacyConfig = ConfigLoader.getDefaultConfig();
+      // Remove calendar.sources to simulate legacy config
+      delete (legacyConfig.calendar as { sources?: unknown }).sources;
+
+      const migrationDir = join(testDir, 'migration-test');
+      const migrationPath = join(migrationDir, 'config.json');
+
+      await mkdir(migrationDir, { recursive: true });
+      await writeFile(migrationPath, JSON.stringify(legacyConfig));
+
+      const originalGetConfigPath = ConfigLoader.getConfigPath;
+      ConfigLoader.getConfigPath = () => migrationPath;
+
+      const loaded = await ConfigLoader.load();
+
+      // Verify calendar.sources was added
+      expect(loaded.calendar.sources).toBeDefined();
+      expect(loaded.calendar.sources?.eventkit).toBeDefined();
+      expect(loaded.calendar.sources?.google).toBeDefined();
+
+      ConfigLoader.getConfigPath = originalGetConfigPath;
+    });
+
+    it('should reject config with invalid calendar.sources', async () => {
+      const invalidConfig = ConfigLoader.getDefaultConfig();
+      // Set both sources to disabled (invalid)
+      invalidConfig.calendar.sources!.eventkit.enabled = false;
+      invalidConfig.calendar.sources!.google.enabled = false;
+
+      const invalidDir = join(testDir, 'invalid-test');
+
+      await mkdir(invalidDir, { recursive: true });
+
+      const originalGetConfigDir = ConfigLoader.getConfigDir;
+      const originalGetConfigPath = ConfigLoader.getConfigPath;
+      ConfigLoader.getConfigDir = () => invalidDir;
+      ConfigLoader.getConfigPath = () => join(invalidDir, 'config.json');
+
+      await expect(ConfigLoader.save(invalidConfig)).rejects.toThrow(
+        'At least one calendar source must be enabled'
+      );
+
+      ConfigLoader.getConfigDir = originalGetConfigDir;
+      ConfigLoader.getConfigPath = originalGetConfigPath;
+    });
+
+    it('should reject config when loading with invalid syncInterval', async () => {
+      const invalidConfig = ConfigLoader.getDefaultConfig();
+      // Set invalid syncInterval
+      invalidConfig.calendar.sources!.google.syncInterval = 30; // Too low
+
+      const invalidDir = join(testDir, 'invalid-sync-test');
+      const invalidPath = join(invalidDir, 'config.json');
+
+      await mkdir(invalidDir, { recursive: true });
+      await writeFile(invalidPath, JSON.stringify(invalidConfig));
+
+      const originalGetConfigPath = ConfigLoader.getConfigPath;
+      ConfigLoader.getConfigPath = () => invalidPath;
+
+      await expect(ConfigLoader.load()).rejects.toThrow(
+        'Invalid calendar sources configuration'
+      );
+
+      ConfigLoader.getConfigPath = originalGetConfigPath;
+    });
   });
 });

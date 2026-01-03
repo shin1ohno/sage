@@ -15,12 +15,12 @@ import { SetupWizard } from "./setup/wizard.js";
 import { TaskAnalyzer } from "./tools/analyze-tasks.js";
 import { ReminderManager } from "./integrations/reminder-manager.js";
 import { CalendarService } from "./integrations/calendar-service.js";
+import { CalendarSourceManager } from "./integrations/calendar-source-manager.js";
+import { GoogleCalendarService } from "./integrations/google-calendar-service.js";
 import { NotionMCPService } from "./integrations/notion-mcp.js";
 import { TodoListManager } from "./integrations/todo-list-manager.js";
 import { TaskSynchronizer } from "./integrations/task-synchronizer.js";
 import { CalendarEventResponseService } from "./integrations/calendar-event-response.js";
-import { CalendarEventCreatorService } from "./integrations/calendar-event-creator.js";
-import { CalendarEventDeleterService } from "./integrations/calendar-event-deleter.js";
 import { WorkingCadenceService } from "./services/working-cadence.js";
 import type { UserConfig } from "./types/index.js";
 import type { Priority } from "./types/index.js";
@@ -31,12 +31,12 @@ let config: UserConfig | null = null;
 let wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
 let reminderManager: ReminderManager | null = null;
 let calendarService: CalendarService | null = null;
+let googleCalendarService: GoogleCalendarService | null = null;
+let calendarSourceManager: CalendarSourceManager | null = null;
 let notionService: NotionMCPService | null = null;
 let todoListManager: TodoListManager | null = null;
 let taskSynchronizer: TaskSynchronizer | null = null;
 let calendarEventResponseService: CalendarEventResponseService | null = null;
-let calendarEventCreatorService: CalendarEventCreatorService | null = null;
-let calendarEventDeleterService: CalendarEventDeleterService | null = null;
 let workingCadenceService: WorkingCadenceService | null = null;
 
 /**
@@ -190,12 +190,34 @@ function initializeServices(userConfig: UserConfig): void {
     notionDatabaseId: userConfig.integrations.notion.databaseId,
   });
   calendarService = new CalendarService();
+
+  // Initialize Google Calendar service if configured
+  // Note: GoogleCalendarService requires GoogleOAuthHandler which needs OAuth config
+  // For now, we initialize with a stub handler. Full OAuth setup will be done in Task 33.
+  try {
+    const { GoogleOAuthHandler } = require('./oauth/google-oauth-handler.js');
+    const oauthConfig = {
+      clientId: process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+      redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/oauth/callback',
+    };
+    const oauthHandler = new GoogleOAuthHandler(oauthConfig);
+    googleCalendarService = new GoogleCalendarService(oauthHandler);
+  } catch (error) {
+    // If Google Calendar initialization fails, continue without it
+    console.error('Google Calendar service initialization failed:', error);
+    googleCalendarService = null;
+  }
+
+  calendarSourceManager = new CalendarSourceManager({
+    calendarService,
+    googleCalendarService: googleCalendarService || undefined,
+    config: userConfig,
+  });
   notionService = new NotionMCPService();
   todoListManager = new TodoListManager();
   taskSynchronizer = new TaskSynchronizer();
   calendarEventResponseService = new CalendarEventResponseService();
-  calendarEventCreatorService = new CalendarEventCreatorService();
-  calendarEventDeleterService = new CalendarEventDeleterService();
   workingCadenceService = new WorkingCadenceService();
 }
 
@@ -820,11 +842,11 @@ async function createServer(): Promise<McpServer> {
 
   /**
    * find_available_slots - Find available time slots in calendar
-   * Requirement: 3.3-3.6, 6.1-6.6
+   * Requirement: 3.3-3.6, 6.1-6.6, 7 (Task 28: Multi-source support)
    */
   server.tool(
     "find_available_slots",
-    "Find available time slots in the calendar for scheduling tasks.",
+    "Find available time slots in the calendar for scheduling tasks from all enabled calendar sources.",
     {
       durationMinutes: z.number().describe("Required duration in minutes"),
       startDate: z
@@ -839,8 +861,16 @@ async function createServer(): Promise<McpServer> {
         .boolean()
         .optional()
         .describe("Prefer deep work time slots"),
+      minDurationMinutes: z
+        .number()
+        .optional()
+        .describe("Minimum slot duration in minutes (default: 25)"),
+      maxDurationMinutes: z
+        .number()
+        .optional()
+        .describe("Maximum slot duration in minutes (default: 480)"),
     },
-    async ({ durationMinutes, startDate, endDate, preferDeepWork }) => {
+    async ({ durationMinutes, startDate, endDate, preferDeepWork, minDurationMinutes, maxDurationMinutes }) => {
       if (!config) {
         return {
           content: [
@@ -860,25 +890,15 @@ async function createServer(): Promise<McpServer> {
         };
       }
 
-      if (!calendarService) {
+      if (!calendarSourceManager) {
         initializeServices(config);
       }
 
       try {
-        // Check platform availability
-        const platformInfo = await calendarService!.detectPlatform();
-        const isAvailable = await calendarService!.isAvailable();
+        // Get enabled sources
+        const enabledSources = calendarSourceManager!.getEnabledSources();
 
-        if (!isAvailable) {
-          // Return manual input prompt for unsupported platforms
-          const manualPrompt = calendarService!.generateManualInputPrompt(
-            startDate ?? new Date().toISOString().split("T")[0],
-            endDate ??
-              new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-                .toISOString()
-                .split("T")[0],
-          );
-
+        if (enabledSources.length === 0) {
           return {
             content: [
               {
@@ -886,11 +906,8 @@ async function createServer(): Promise<McpServer> {
                 text: JSON.stringify(
                   {
                     success: false,
-                    platform: platformInfo.platform,
-                    method: platformInfo.recommendedMethod,
                     message:
-                      "カレンダー統合がこのプラットフォームで利用できません。手動で予定を入力してください。",
-                    manualPrompt,
+                      "有効なカレンダーソースがありません。設定でEventKitまたはGoogle Calendarを有効にしてください。",
                   },
                   null,
                   2,
@@ -900,7 +917,7 @@ async function createServer(): Promise<McpServer> {
           };
         }
 
-        // Fetch events from calendar
+        // Prepare date range
         const searchStart = startDate ?? new Date().toISOString().split("T")[0];
         const searchEnd =
           endDate ??
@@ -908,45 +925,31 @@ async function createServer(): Promise<McpServer> {
             .toISOString()
             .split("T")[0];
 
-        const events = await calendarService!.fetchEvents(
-          searchStart,
-          searchEnd,
-        );
-
-        // Find available slots
+        // Get working hours from config
         const workingHours = {
           start: config.calendar.workingHours.start,
           end: config.calendar.workingHours.end,
         };
 
-        const slots = calendarService!.findAvailableSlotsFromEvents(
-          events,
-          durationMinutes,
+        // Use durationMinutes as default min duration for backwards compatibility
+        // New parameters minDurationMinutes and maxDurationMinutes take precedence
+        const minDuration = minDurationMinutes ?? durationMinutes ?? 25;
+        const maxDuration = maxDurationMinutes ?? 480;
+
+        // Find available slots using CalendarSourceManager
+        // This automatically fetches from all enabled sources, merges, and deduplicates
+        const slots = await calendarSourceManager!.findAvailableSlots({
+          startDate: searchStart,
+          endDate: searchEnd,
+          minDurationMinutes: minDuration,
+          maxDurationMinutes: maxDuration,
           workingHours,
-          searchStart,
-        );
-
-        // Apply suitability scoring
-        const suitabilityConfig = {
-          deepWorkDays: config.calendar.deepWorkDays,
-          meetingHeavyDays: config.calendar.meetingHeavyDays,
-        };
-
-        const scoredSlots = slots.map((slot) =>
-          calendarService!.calculateSuitability(slot, suitabilityConfig),
-        );
+        });
 
         // Filter for deep work preference if requested
         const filteredSlots = preferDeepWork
-          ? scoredSlots.filter((s) => s.dayType === "deep-work")
-          : scoredSlots;
-
-        // Sort by suitability (excellent > good > acceptable)
-        const suitabilityOrder = { excellent: 0, good: 1, acceptable: 2 };
-        filteredSlots.sort(
-          (a, b) =>
-            suitabilityOrder[a.suitability] - suitabilityOrder[b.suitability],
-        );
+          ? slots.filter((s) => s.dayType === "deep-work")
+          : slots;
 
         return {
           content: [
@@ -955,10 +958,9 @@ async function createServer(): Promise<McpServer> {
               text: JSON.stringify(
                 {
                   success: true,
-                  platform: platformInfo.platform,
-                  method: platformInfo.recommendedMethod,
+                  sources: enabledSources,
                   searchRange: { start: searchStart, end: searchEnd },
-                  eventsFound: events.length,
+                  totalSlots: filteredSlots.length,
                   slots: filteredSlots.slice(0, 10).map((slot) => ({
                     start: slot.start,
                     end: slot.end,
@@ -969,7 +971,7 @@ async function createServer(): Promise<McpServer> {
                   })),
                   message:
                     filteredSlots.length > 0
-                      ? `${filteredSlots.length}件の空き時間が見つかりました。`
+                      ? `${filteredSlots.length}件の空き時間が見つかりました (ソース: ${enabledSources.join(', ')})。`
                       : "指定した条件に合う空き時間が見つかりませんでした。",
                 },
                 null,
@@ -1000,11 +1002,11 @@ async function createServer(): Promise<McpServer> {
 
   /**
    * list_calendar_events - List calendar events for a specified period
-   * Requirement: 16.1-16.12
+   * Requirement: 16.1-16.12, Task 27 (Multi-source support)
    */
   server.tool(
     "list_calendar_events",
-    "List calendar events for a specified period. Returns events with details including calendar name and location.",
+    "List calendar events for a specified period from enabled sources (EventKit, Google Calendar, or both). Returns events with details including calendar name and location.",
     {
       startDate: z
         .string()
@@ -1012,12 +1014,12 @@ async function createServer(): Promise<McpServer> {
       endDate: z
         .string()
         .describe("End date in ISO 8601 format (e.g., 2025-01-20)"),
-      calendarName: z
+      calendarId: z
         .string()
         .optional()
-        .describe("Optional: filter events by calendar name"),
+        .describe("Optional: filter events by calendar ID or name"),
     },
-    async ({ startDate, endDate, calendarName }) => {
+    async ({ startDate, endDate, calendarId }) => {
       if (!config) {
         return {
           content: [
@@ -1037,16 +1039,15 @@ async function createServer(): Promise<McpServer> {
         };
       }
 
-      if (!calendarService) {
+      if (!calendarSourceManager) {
         initializeServices(config);
       }
 
       try {
-        // Check platform availability
-        const platformInfo = await calendarService!.detectPlatform();
-        const isAvailable = await calendarService!.isAvailable();
+        // Get enabled sources
+        const enabledSources = calendarSourceManager!.getEnabledSources();
 
-        if (!isAvailable) {
+        if (enabledSources.length === 0) {
           return {
             content: [
               {
@@ -1054,10 +1055,8 @@ async function createServer(): Promise<McpServer> {
                 text: JSON.stringify(
                   {
                     success: false,
-                    platform: platformInfo.platform,
-                    method: platformInfo.recommendedMethod,
                     message:
-                      "カレンダー統合がこのプラットフォームで利用できません。macOSで実行してください。",
+                      "有効なカレンダーソースがありません。設定でEventKitまたはGoogle Calendarを有効にしてください。",
                   },
                   null,
                   2,
@@ -1067,12 +1066,12 @@ async function createServer(): Promise<McpServer> {
           };
         }
 
-        // List events
-        const result = await calendarService!.listEvents({
+        // Get events from all enabled sources (already merged/deduplicated)
+        const events = await calendarSourceManager!.getEvents(
           startDate,
           endDate,
-          calendarName,
-        });
+          calendarId
+        );
 
         return {
           content: [
@@ -1081,22 +1080,23 @@ async function createServer(): Promise<McpServer> {
               text: JSON.stringify(
                 {
                   success: true,
-                  platform: platformInfo.platform,
-                  method: platformInfo.recommendedMethod,
-                  events: result.events.map((event) => ({
+                  sources: enabledSources,
+                  events: events.map((event) => ({
                     id: event.id,
                     title: event.title,
                     start: event.start,
                     end: event.end,
                     isAllDay: event.isAllDay,
-                    calendar: event.calendar,
-                    location: event.location,
+                    // Note: calendar and location are optional fields added in Task 25
+                    calendar: (event as any).calendar,
+                    location: (event as any).location,
+                    source: (event as any).source,
                   })),
-                  period: result.period,
-                  totalEvents: result.totalEvents,
+                  period: { start: startDate, end: endDate },
+                  totalEvents: events.length,
                   message:
-                    result.totalEvents > 0
-                      ? `${result.totalEvents}件のイベントが見つかりました。`
+                    events.length > 0
+                      ? `${events.length}件のイベントが見つかりました (ソース: ${enabledSources.join(', ')})。`
                       : "指定した期間にイベントが見つかりませんでした。",
                 },
                 null,
@@ -1127,11 +1127,11 @@ async function createServer(): Promise<McpServer> {
 
   /**
    * respond_to_calendar_event - Respond to a single calendar event
-   * Requirement: 17.1, 17.2, 17.5-17.11
+   * Requirement: 17.1, 17.2, 17.5-17.11, 6 (Google Calendar support)
    */
   server.tool(
     "respond_to_calendar_event",
-    "Respond to a calendar event with accept, decline, or tentative. Use this to RSVP to meeting invitations.",
+    "Respond to a calendar event with accept, decline, or tentative. Supports both EventKit (macOS) and Google Calendar events. Use this to RSVP to meeting invitations from any enabled calendar source.",
     {
       eventId: z.string().describe("The ID of the calendar event to respond to"),
       response: z
@@ -1140,9 +1140,17 @@ async function createServer(): Promise<McpServer> {
       comment: z
         .string()
         .optional()
-        .describe("Optional comment to include with the response (e.g., '年末年始休暇のため')"),
+        .describe("Optional comment to include with the response (e.g., '年末年始休暇のため'). Note: Comments are only supported for EventKit events."),
+      source: z
+        .enum(["eventkit", "google"])
+        .optional()
+        .describe("Optional: Specify the calendar source explicitly. If not provided, will try Google Calendar first, then EventKit."),
+      calendarId: z
+        .string()
+        .optional()
+        .describe("Optional: Google Calendar ID (defaults to 'primary'). Only used for Google Calendar events."),
     },
-    async ({ eventId, response, comment }) => {
+    async ({ eventId, response, comment, source, calendarId }) => {
       if (!config) {
         return {
           content: [
@@ -1162,15 +1170,117 @@ async function createServer(): Promise<McpServer> {
         };
       }
 
-      if (!calendarEventResponseService) {
+      if (!calendarSourceManager || !calendarEventResponseService) {
         initializeServices(config);
       }
 
       try {
-        // Check platform availability
-        const isAvailable = await calendarEventResponseService!.isEventKitAvailable();
+        // If source is explicitly Google Calendar, or if source is not specified, try Google Calendar first
+        if (source === 'google' || !source) {
+          try {
+            const result = await calendarSourceManager!.respondToEvent(
+              eventId,
+              response,
+              source === 'google' ? 'google' : undefined,
+              calendarId
+            );
 
-        if (!isAvailable) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(
+                    {
+                      success: true,
+                      eventId,
+                      source: result.source || 'google',
+                      message: result.message,
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+            };
+          } catch (error) {
+            // If source was explicitly 'google', don't try EventKit
+            if (source === 'google') {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify(
+                      {
+                        error: true,
+                        message: `Google Calendarイベント返信に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
+                      },
+                      null,
+                      2,
+                    ),
+                  },
+                ],
+              };
+            }
+            // If source was not specified, continue to try EventKit
+          }
+        }
+
+        // Try EventKit (either explicitly requested or as fallback)
+        if (source === 'eventkit' || !source) {
+          // Check platform availability
+          const isAvailable = await calendarEventResponseService!.isEventKitAvailable();
+
+          if (!isAvailable) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(
+                    {
+                      success: false,
+                      message:
+                        "EventKitカレンダーイベント返信機能はmacOSでのみ利用可能です。Google Calendarイベントの場合は、source='google'を指定してください。",
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+            };
+          }
+
+          // Respond to the event via EventKit
+          const result = await calendarEventResponseService!.respondToEvent({
+            eventId,
+            response,
+            comment,
+          });
+
+          if (result.success) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(
+                    {
+                      success: true,
+                      eventId: result.eventId,
+                      eventTitle: result.eventTitle,
+                      newStatus: result.newStatus,
+                      method: result.method,
+                      instanceOnly: result.instanceOnly,
+                      source: 'eventkit',
+                      message: result.message,
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+            };
+          }
+
+          // Handle skipped or failed response
           return {
             content: [
               {
@@ -1178,38 +1288,15 @@ async function createServer(): Promise<McpServer> {
                 text: JSON.stringify(
                   {
                     success: false,
-                    message:
-                      "カレンダーイベント返信機能はmacOSでのみ利用可能です。",
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-          };
-        }
-
-        // Respond to the event
-        const result = await calendarEventResponseService!.respondToEvent({
-          eventId,
-          response,
-          comment,
-        });
-
-        if (result.success) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(
-                  {
-                    success: true,
                     eventId: result.eventId,
                     eventTitle: result.eventTitle,
-                    newStatus: result.newStatus,
-                    method: result.method,
-                    instanceOnly: result.instanceOnly,
-                    message: result.message,
+                    skipped: result.skipped,
+                    reason: result.reason,
+                    error: result.error,
+                    source: 'eventkit',
+                    message: result.skipped
+                      ? `イベントをスキップしました: ${result.reason}`
+                      : `イベント返信に失敗しました: ${result.error}`,
                   },
                   null,
                   2,
@@ -1219,22 +1306,15 @@ async function createServer(): Promise<McpServer> {
           };
         }
 
-        // Handle skipped or failed response
+        // Should not reach here, but just in case
         return {
           content: [
             {
               type: "text",
               text: JSON.stringify(
                 {
-                  success: false,
-                  eventId: result.eventId,
-                  eventTitle: result.eventTitle,
-                  skipped: result.skipped,
-                  reason: result.reason,
-                  error: result.error,
-                  message: result.skipped
-                    ? `イベントをスキップしました: ${result.reason}`
-                    : `イベント返信に失敗しました: ${result.error}`,
+                  error: true,
+                  message: "有効なカレンダーソースが見つかりません。",
                 },
                 null,
                 2,
@@ -1378,11 +1458,11 @@ async function createServer(): Promise<McpServer> {
 
   /**
    * create_calendar_event - Create a new calendar event
-   * Requirement: 18.1-18.11
+   * Requirement: 18.1-18.11, Task 29 (Multi-source support)
    */
   server.tool(
     "create_calendar_event",
-    "Create a new calendar event with optional location, notes, and alarms.",
+    "Create a new calendar event in the appropriate calendar source with optional location, notes, and alarms.",
     {
       title: z.string().describe("Event title"),
       startDate: z
@@ -1401,8 +1481,12 @@ async function createServer(): Promise<McpServer> {
         .array(z.string())
         .optional()
         .describe("Optional: Override default alarms with custom settings (e.g., ['-15m', '-1h']). If omitted, calendar's default alarm settings apply."),
+      preferredSource: z
+        .enum(['eventkit', 'google'])
+        .optional()
+        .describe("Preferred calendar source to create the event in. If not specified, uses the first enabled source."),
     },
-    async ({ title, startDate, endDate, location, notes, calendarName, alarms }) => {
+    async ({ title, startDate, endDate, location, notes, calendarName: _calendarName, alarms: _alarms, preferredSource }) => {
       if (!config) {
         return {
           content: [
@@ -1422,15 +1506,15 @@ async function createServer(): Promise<McpServer> {
         };
       }
 
-      if (!calendarEventCreatorService) {
+      if (!calendarSourceManager) {
         initializeServices(config);
       }
 
       try {
-        // Check platform availability
-        const isAvailable = await calendarEventCreatorService!.isEventKitAvailable();
+        // Get enabled sources
+        const enabledSources = calendarSourceManager!.getEnabledSources();
 
-        if (!isAvailable) {
+        if (enabledSources.length === 0) {
           return {
             content: [
               {
@@ -1439,7 +1523,7 @@ async function createServer(): Promise<McpServer> {
                   {
                     success: false,
                     message:
-                      "カレンダーイベント作成機能はmacOSでのみ利用可能です。",
+                      "有効なカレンダーソースがありません。設定でEventKitまたはGoogle Calendarを有効にしてください。",
                   },
                   null,
                   2,
@@ -1449,51 +1533,39 @@ async function createServer(): Promise<McpServer> {
           };
         }
 
-        // Create the event
-        const result = await calendarEventCreatorService!.createEvent({
+        // Build create event request
+        const request = {
           title,
-          startDate,
-          endDate,
+          start: startDate,
+          end: endDate,
           location,
-          notes,
-          calendarName,
-          alarms,
-        });
+          description: notes,
+          // Note: calendarId is passed separately to GoogleCalendarService.createEvent
+          // alarms parameter is not supported in CreateEventRequest interface (uses reminders instead)
+        };
 
-        if (result.success) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    eventId: result.eventId,
-                    title: result.title,
-                    startDate: result.startDate,
-                    endDate: result.endDate,
-                    calendarName: result.calendarName,
-                    isAllDay: result.isAllDay,
-                    message: result.message,
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-          };
-        }
+        // Create the event using CalendarSourceManager
+        // This automatically routes to the preferred source or falls back to other enabled sources
+        const event = await calendarSourceManager!.createEvent(
+          request,
+          preferredSource
+        );
 
-        // Handle creation failure
         return {
           content: [
             {
               type: "text",
               text: JSON.stringify(
                 {
-                  success: false,
-                  error: result.error,
-                  message: result.message,
+                  success: true,
+                  eventId: event.id,
+                  title: event.title,
+                  startDate: event.start,
+                  endDate: event.end,
+                  source: event.source || 'unknown',
+                  calendarName: (event as any).calendar,
+                  isAllDay: event.isAllDay,
+                  message: `カレンダーイベントを作成しました: ${event.title} (ソース: ${event.source || 'unknown'})`,
                 },
                 null,
                 2,
@@ -1523,19 +1595,19 @@ async function createServer(): Promise<McpServer> {
 
   /**
    * delete_calendar_event - Delete a calendar event
-   * Requirement: 19.1-19.9
+   * Requirement: 19.1-19.9, Task 30 (Multi-source support)
    */
   server.tool(
     "delete_calendar_event",
-    "Delete a calendar event by its ID.",
+    "Delete a calendar event from enabled calendar sources by its ID. If source not specified, attempts deletion from all enabled sources.",
     {
       eventId: z.string().describe("Event ID (UUID or full ID from list_calendar_events)"),
-      calendarName: z
-        .string()
+      source: z
+        .enum(['eventkit', 'google'])
         .optional()
-        .describe("Calendar name (searches all calendars if not specified)"),
+        .describe("Calendar source to delete from. If not specified, attempts deletion from all enabled sources."),
     },
-    async ({ eventId, calendarName }) => {
+    async ({ eventId, source }) => {
       if (!config) {
         return {
           content: [
@@ -1555,24 +1627,24 @@ async function createServer(): Promise<McpServer> {
         };
       }
 
-      if (!calendarEventDeleterService) {
+      if (!calendarSourceManager) {
         initializeServices(config);
       }
 
       try {
-        // Check platform availability
-        const isAvailable = await calendarEventDeleterService!.isEventKitAvailable();
+        // Get enabled sources
+        const enabledSources = calendarSourceManager!.getEnabledSources();
 
-        if (!isAvailable) {
+        if (enabledSources.length === 0) {
           return {
             content: [
               {
                 type: "text",
                 text: JSON.stringify(
                   {
-                    error: true,
+                    success: false,
                     message:
-                      "カレンダー統合がこのプラットフォームで利用できません。macOSで実行してください。",
+                      "有効なカレンダーソースがありません。設定でEventKitまたはGoogle Calendarを有効にしてください。",
                   },
                   null,
                   2,
@@ -1582,43 +1654,22 @@ async function createServer(): Promise<McpServer> {
           };
         }
 
-        // Delete the event
-        const result = await calendarEventDeleterService!.deleteEvent({
-          eventId,
-          calendarName,
-        });
+        // Delete the event using CalendarSourceManager
+        // This automatically handles deletion from specified source or all enabled sources
+        await calendarSourceManager!.deleteEvent(eventId, source);
 
-        if (result.success) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    eventId: result.eventId,
-                    title: result.title,
-                    calendarName: result.calendarName,
-                    message: result.message,
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-          };
-        }
-
-        // Handle deletion failure
         return {
           content: [
             {
               type: "text",
               text: JSON.stringify(
                 {
-                  success: false,
-                  error: result.error,
-                  message: result.message,
+                  success: true,
+                  eventId,
+                  source: source || 'all enabled sources',
+                  message: source
+                    ? `カレンダーイベントを削除しました (ソース: ${source})`
+                    : `カレンダーイベントを削除しました (全ての有効なソースから)`,
                 },
                 null,
                 2,
@@ -1648,19 +1699,19 @@ async function createServer(): Promise<McpServer> {
 
   /**
    * delete_calendar_events_batch - Delete multiple calendar events
-   * Requirement: 19.10-19.11
+   * Requirement: 19.10-19.11, Task 30 (Multi-source support)
    */
   server.tool(
     "delete_calendar_events_batch",
-    "Delete multiple calendar events by their IDs.",
+    "Delete multiple calendar events from enabled calendar sources by their IDs. If source not specified, attempts deletion from all enabled sources.",
     {
       eventIds: z.array(z.string()).describe("Array of event IDs to delete"),
-      calendarName: z
-        .string()
+      source: z
+        .enum(['eventkit', 'google'])
         .optional()
-        .describe("Calendar name (searches all calendars if not specified)"),
+        .describe("Calendar source to delete from. If not specified, attempts deletion from all enabled sources."),
     },
-    async ({ eventIds, calendarName }) => {
+    async ({ eventIds, source }) => {
       if (!config) {
         return {
           content: [
@@ -1680,24 +1731,24 @@ async function createServer(): Promise<McpServer> {
         };
       }
 
-      if (!calendarEventDeleterService) {
+      if (!calendarSourceManager) {
         initializeServices(config);
       }
 
       try {
-        // Check platform availability
-        const isAvailable = await calendarEventDeleterService!.isEventKitAvailable();
+        // Get enabled sources
+        const enabledSources = calendarSourceManager!.getEnabledSources();
 
-        if (!isAvailable) {
+        if (enabledSources.length === 0) {
           return {
             content: [
               {
                 type: "text",
                 text: JSON.stringify(
                   {
-                    error: true,
+                    success: false,
                     message:
-                      "カレンダー統合がこのプラットフォームで利用できません。macOSで実行してください。",
+                      "有効なカレンダーソースがありません。設定でEventKitまたはGoogle Calendarを有効にしてください。",
                   },
                   null,
                   2,
@@ -1707,11 +1758,24 @@ async function createServer(): Promise<McpServer> {
           };
         }
 
-        // Delete events in batch
-        const result = await calendarEventDeleterService!.deleteEventsBatch({
-          eventIds,
-          calendarName,
-        });
+        // Delete events one by one using CalendarSourceManager
+        const results: Array<{ eventId: string; success: boolean; error?: string }> = [];
+
+        for (const eventId of eventIds) {
+          try {
+            await calendarSourceManager!.deleteEvent(eventId, source);
+            results.push({ eventId, success: true });
+          } catch (error) {
+            results.push({
+              eventId,
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+          }
+        }
+
+        const successCount = results.filter((r) => r.success).length;
+        const failedCount = results.filter((r) => !r.success).length;
 
         return {
           content: [
@@ -1719,18 +1783,15 @@ async function createServer(): Promise<McpServer> {
               type: "text",
               text: JSON.stringify(
                 {
-                  success: result.success,
-                  totalCount: result.totalCount,
-                  successCount: result.successCount,
-                  failedCount: result.failedCount,
-                  results: result.results.map((r) => ({
-                    eventId: r.eventId,
-                    success: r.success,
-                    title: r.title,
-                    calendarName: r.calendarName,
-                    error: r.error,
-                  })),
-                  message: result.message,
+                  success: failedCount === 0,
+                  totalCount: eventIds.length,
+                  successCount,
+                  failedCount,
+                  source: source || 'all enabled sources',
+                  results,
+                  message: source
+                    ? `${successCount}/${eventIds.length}件のイベントを削除しました (ソース: ${source})`
+                    : `${successCount}/${eventIds.length}件のイベントを削除しました (全ての有効なソースから)`,
                 },
                 null,
                 2,
@@ -2495,6 +2556,538 @@ async function createServer(): Promise<McpServer> {
                 {
                   error: true,
                   message: `重複検出に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  /**
+   * list_calendar_sources - List available and enabled calendar sources
+   * Requirement: Google Calendar API integration (Task 32)
+   */
+  server.tool(
+    "list_calendar_sources",
+    "List available and enabled calendar sources (EventKit, Google Calendar) with their health status. Shows which sources can be used and their current state.",
+    {},
+    async () => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message:
+                    "sageが設定されていません。check_setup_statusを実行してください。",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!calendarSourceManager) {
+        initializeServices(config);
+      }
+
+      try {
+        // Get available sources
+        const availableSources = await calendarSourceManager!.detectAvailableSources();
+
+        // Get enabled sources
+        const enabledSources = calendarSourceManager!.getEnabledSources();
+
+        // Get health status
+        const healthStatus = await calendarSourceManager!.healthCheck();
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  sources: {
+                    eventkit: {
+                      available: availableSources.eventkit,
+                      enabled: enabledSources.includes('eventkit'),
+                      healthy: healthStatus.eventkit,
+                      description: "macOS EventKit calendar integration (macOS only)",
+                    },
+                    google: {
+                      available: availableSources.google,
+                      enabled: enabledSources.includes('google'),
+                      healthy: healthStatus.google,
+                      description: "Google Calendar API integration (all platforms)",
+                    },
+                  },
+                  summary: {
+                    totalAvailable: Object.values(availableSources).filter(Boolean).length,
+                    totalEnabled: enabledSources.length,
+                    allHealthy: Object.values(healthStatus).every(Boolean),
+                  },
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `カレンダーソース情報の取得に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  /**
+   * set_calendar_source - Enable or disable a calendar source
+   * Requirement: 9, 11, Task 33
+   */
+  server.tool(
+    "set_calendar_source",
+    "Enable or disable a calendar source (EventKit or Google Calendar). When enabling Google Calendar for the first time, this will initiate the OAuth flow. Returns authorization URL if OAuth is required.",
+    {
+      source: z
+        .enum(['eventkit', 'google'])
+        .describe("Calendar source to configure: 'eventkit' (macOS only) or 'google' (all platforms)"),
+      enabled: z
+        .boolean()
+        .describe("Whether to enable (true) or disable (false) the source"),
+    },
+    async ({ source, enabled }) => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message:
+                    "sageが設定されていません。check_setup_statusを実行してください。",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!calendarSourceManager) {
+        initializeServices(config);
+      }
+
+      try {
+        // Check if source is available on this platform
+        const availableSources = await calendarSourceManager!.detectAvailableSources();
+
+        if (source === 'eventkit' && !availableSources.eventkit) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    message:
+                      "EventKitはこのプラットフォームでは利用できません。EventKitはmacOSでのみ利用可能です。",
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        if (enabled) {
+          // Enable the source
+          await calendarSourceManager!.enableSource(source);
+
+          // If enabling Google Calendar for the first time, check if OAuth is needed
+          if (source === 'google' && googleCalendarService) {
+            try {
+              // Check if tokens already exist
+              const { GoogleOAuthHandler } = await import('./oauth/google-oauth-handler.js');
+              const oauthConfig = {
+                clientId: process.env.GOOGLE_CLIENT_ID || '',
+                clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+                redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/oauth/callback',
+              };
+
+              if (!oauthConfig.clientId || !oauthConfig.clientSecret) {
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify(
+                        {
+                          success: false,
+                          message:
+                            "Google Calendar OAuth設定が見つかりません。環境変数GOOGLE_CLIENT_IDとGOOGLE_CLIENT_SECRETを設定してください。",
+                          requiredEnvVars: [
+                            'GOOGLE_CLIENT_ID',
+                            'GOOGLE_CLIENT_SECRET',
+                            'GOOGLE_REDIRECT_URI (optional, defaults to http://localhost:3000/oauth/callback)',
+                          ],
+                        },
+                        null,
+                        2,
+                      ),
+                    },
+                  ],
+                };
+              }
+
+              const oauthHandler = new GoogleOAuthHandler(oauthConfig);
+
+              // Try to get existing tokens
+              const existingTokens = await oauthHandler.getTokens();
+
+              if (!existingTokens) {
+                // Need to initiate OAuth flow
+                const authUrl = await oauthHandler.getAuthorizationUrl();
+
+                // Save config before OAuth flow
+                await ConfigLoader.save(config);
+
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify(
+                        {
+                          success: true,
+                          source,
+                          enabled: true,
+                          oauthRequired: true,
+                          authorizationUrl: authUrl,
+                          message: `Google Calendarを有効化しました。OAuth認証が必要です。以下のURLにアクセスして認証を完了してください: ${authUrl}`,
+                          instructions: [
+                            '1. 上記のURLをブラウザで開く',
+                            '2. Googleアカウントでログイン',
+                            '3. sage アプリケーションにカレンダーへのアクセスを許可',
+                            '4. リダイレクトされたURLから認証コードを取得',
+                            '5. 認証コードを使用してトークンを取得（別途実装予定）',
+                          ],
+                        },
+                        null,
+                        2,
+                      ),
+                    },
+                  ],
+                };
+              }
+            } catch (error) {
+              // OAuth check failed, but source is enabled in config
+              await ConfigLoader.save(config);
+
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify(
+                      {
+                        success: true,
+                        source,
+                        enabled: true,
+                        warning: `Google Calendarを有効化しましたが、OAuth設定の確認に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
+                        message: "設定は保存されましたが、OAuth認証が必要な場合があります。",
+                      },
+                      null,
+                      2,
+                    ),
+                  },
+                ],
+              };
+            }
+          }
+
+          // Save the updated config
+          await ConfigLoader.save(config);
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    source,
+                    enabled: true,
+                    message: `${source === 'eventkit' ? 'EventKit' : 'Google Calendar'}を有効化しました。`,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        } else {
+          // Disable the source
+          await calendarSourceManager!.disableSource(source);
+
+          // Save the updated config
+          await ConfigLoader.save(config);
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    source,
+                    enabled: false,
+                    message: `${source === 'eventkit' ? 'EventKit' : 'Google Calendar'}を無効化しました。`,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `カレンダーソース設定に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  /**
+   * sync_calendar_sources - Sync events between EventKit and Google Calendar
+   * Requirement: 8, Task 34
+   */
+  server.tool(
+    "sync_calendar_sources",
+    "Synchronize calendar events between EventKit and Google Calendar. Both sources must be enabled for sync to work. Returns the number of events added, updated, and deleted.",
+    {},
+    async () => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message:
+                    "sageが設定されていません。check_setup_statusを実行してください。",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!calendarSourceManager) {
+        initializeServices(config);
+      }
+
+      try {
+        // Check if both sources are enabled
+        const enabledSources = calendarSourceManager!.getEnabledSources();
+
+        if (enabledSources.length < 2) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    message:
+                      "同期を実行するには、EventKitとGoogle Calendarの両方を有効化する必要があります。現在有効なソース: " +
+                      enabledSources.join(", "),
+                    enabledSources,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        // Execute sync
+        const result = await calendarSourceManager!.syncCalendars();
+
+        if (result.success) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    eventsAdded: result.eventsAdded,
+                    eventsUpdated: result.eventsUpdated,
+                    eventsDeleted: result.eventsDeleted,
+                    conflicts: result.conflicts,
+                    errors: result.errors,
+                    message: `カレンダー同期が完了しました。追加: ${result.eventsAdded}件、更新: ${result.eventsUpdated}件、削除: ${result.eventsDeleted}件`,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: false,
+                  eventsAdded: result.eventsAdded,
+                  eventsUpdated: result.eventsUpdated,
+                  eventsDeleted: result.eventsDeleted,
+                  conflicts: result.conflicts,
+                  errors: result.errors,
+                  message: "カレンダー同期中にエラーが発生しました。",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `カレンダー同期に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  /**
+   * get_calendar_sync_status - Check sync status between calendar sources
+   * Requirement: 8, Task 35
+   */
+  server.tool(
+    "get_calendar_sync_status",
+    "Check the synchronization status between EventKit and Google Calendar. Returns last sync time, next sync time, and source availability.",
+    {},
+    async () => {
+      if (!config) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message:
+                    "sageが設定されていません。check_setup_statusを実行してください。",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!calendarSourceManager) {
+        initializeServices(config);
+      }
+
+      try {
+        const status = await calendarSourceManager!.getSyncStatus();
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  isEnabled: status.isEnabled,
+                  lastSyncTime: status.lastSyncTime || "未実行",
+                  nextSyncTime: status.nextSyncTime || "N/A",
+                  sources: {
+                    eventkit: {
+                      available: status.sources.eventkit.available,
+                      lastError: status.sources.eventkit.lastError,
+                    },
+                    google: {
+                      available: status.sources.google.available,
+                      lastError: status.sources.google.lastError,
+                    },
+                  },
+                  message: status.isEnabled
+                    ? "カレンダー同期が有効です。"
+                    : "カレンダー同期を有効にするには、EventKitとGoogle Calendarの両方を有効化してください。",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: `同期状態の取得に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
                 },
                 null,
                 2,

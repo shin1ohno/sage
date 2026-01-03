@@ -61,6 +61,17 @@ sage:
   - Estimated: 90 minutes
 ```
 
+### Google Calendar Integration
+
+sage now supports multiple calendar sources:
+
+- **macOS**: Use EventKit, Google Calendar, or both simultaneously
+- **Linux/Windows**: Use Google Calendar as your primary calendar source
+- **Automatic fallback**: If one source fails, sage automatically uses the other
+- **Event deduplication**: Intelligent merging prevents duplicate events
+
+**Setup**: See [Configuration Guide](docs/CONFIGURATION.md#google-calendar-integration) for Google OAuth setup instructions.
+
 ### Smart Reminder Routing
 
 Tasks are automatically routed to the appropriate system:
@@ -75,11 +86,14 @@ Tasks are automatically routed to the appropriate system:
 
 | クライアント | サーバー | Apple Reminders | Calendar | Notion |
 |--------------|----------|----------------|----------|--------|
-| Claude Desktop/Code | macOS (直接) | AppleScript | AppleScript | MCP |
-| Claude iOS/iPadOS | macOS (Remote MCP) | AppleScript | AppleScript | MCP |
-| Claude Web | macOS (Remote MCP) | AppleScript | AppleScript | MCP |
+| Claude Desktop/Code | macOS (直接) | AppleScript | EventKit + Google Calendar | MCP |
+| Claude Desktop/Code | Linux/Windows (直接) | - | Google Calendar | MCP |
+| Claude iOS/iPadOS | macOS (Remote MCP) | AppleScript | EventKit + Google Calendar | MCP |
+| Claude iOS/iPadOS | Linux/Windows (Remote MCP) | - | Google Calendar | MCP |
+| Claude Web | macOS (Remote MCP) | AppleScript | EventKit + Google Calendar | MCP |
+| Claude Web | Linux/Windows (Remote MCP) | - | Google Calendar | MCP |
 
-**すべてのケースで macOS が必要です**（AppleScript のため）。
+**Apple Reminders requires macOS** (AppleScript). **Calendar support** is available on all platforms via Google Calendar, with optional EventKit integration on macOS.
 
 ## Tools
 
@@ -105,11 +119,15 @@ Tasks are automatically routed to the appropriate system:
 
 ## Requirements
 
-- **macOS** (必須 - AppleScript で Apple Reminders/Calendar と統合)
-- Node.js >= 18.0.0
-- Notion MCP server (任意、Notion 統合用)
+- **Node.js >= 18.0.0**
+- **Notion MCP server** (任意、Notion 統合用)
 
-**注意**: sage は macOS 専用です。Remote MCP Server を使用する場合も、サーバーは macOS 上で実行する必要があります。
+### Platform-Specific Requirements
+
+- **macOS**: Full feature support (Apple Reminders, EventKit, Google Calendar)
+- **Linux/Windows**: Calendar features via Google Calendar API (Apple Reminders not available)
+
+**注意**: Apple Reminders 機能を使用する場合は macOS が必要です。Google Calendar のみを使用する場合は、Linux/Windows でも動作します。
 
 ## Development
 

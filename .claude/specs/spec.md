@@ -1,7 +1,7 @@
 # Sage - AI Task Manager Specification
 
 **Project**: sage (賢者)
-**Version**: 0.7.8
+**Version**: 0.7.9
 **Status**: ✅ **Production Ready**
 **Last Updated**: 2026-01-03
 
@@ -17,11 +17,12 @@ sageは、Claude DesktopとClaude Code向けのMCPサーバーとして実装さ
 
 ### Platform Support
 
-| Platform | Status | Access Method |
-|----------|--------|---------------|
-| Desktop MCP (macOS) | ✅ Production | Direct MCP (Stdio) |
-| iOS/iPadOS | ✅ Production | Remote MCP Server |
-| Web | ✅ Production | Remote MCP Server |
+| Platform | Status | Access Method | Calendar Sources |
+|----------|--------|---------------|------------------|
+| Desktop MCP (macOS) | ✅ Production | Direct MCP (Stdio) | EventKit + Google Calendar |
+| Desktop MCP (Linux/Windows) | ✅ Production | Direct MCP (Stdio) | Google Calendar only |
+| iOS/iPadOS | ✅ Production | Remote MCP Server | Via Remote MCP (EventKit + Google) |
+| Web | ✅ Production | Remote MCP Server | Via Remote MCP (EventKit + Google) |
 
 ---
 
@@ -32,6 +33,7 @@ sageは、Claude DesktopとClaude Code向けのMCPサーバーとして実装さ
   - 要件1-20: コア機能
   - 要件21-31: OAuth 2.1認証（[oauth-spec.md](./oauth-spec.md)参照）
   - 要件32: 勤務リズム管理
+- **[google-calendar-api/requirements.md](./google-calendar-api/requirements.md)** - Google Calendar API統合要件（11個）
 
 ### 🏗️ Design
 - **[architecture.md](./architecture.md)** - システムアーキテクチャ
@@ -39,9 +41,11 @@ sageは、Claude DesktopとClaude Code向けのMCPサーバーとして実装さ
 - **[data-models.md](./data-models.md)** - データモデル定義
 - **[integrations.md](./integrations.md)** - 外部統合仕様
 - **[security.md](./security.md)** - セキュリティ設計
+- **[google-calendar-api/design.md](./google-calendar-api/design.md)** - Google Calendar API統合設計
 
 ### 📝 Tasks
 - **[tasks.md](./tasks.md)** - 47個の実装タスク（すべて完了）
+- **[google-calendar-api/tasks.md](./google-calendar-api/tasks.md)** - Google Calendar API統合タスク（43個完了）
 
 ### 🧪 Testing
 - **[testing.md](./testing.md)** - テスト戦略とカバレッジ
@@ -58,22 +62,22 @@ sageは、Claude DesktopとClaude Code向けのMCPサーバーとして実装さ
 
 | Phase | Status | Progress |
 |-------|--------|----------|
-| Requirements | ✅ Complete | 32/32 requirements defined |
+| Requirements | ✅ Complete | 32+11 requirements defined |
 | Design | ✅ Complete | All design documents finalized |
-| Tasks | ✅ Complete | 47/47 tasks implemented |
-| Testing | ✅ Complete | 48 suites, 914 tests (100% pass) |
+| Tasks | ✅ Complete | 47+43 tasks implemented |
+| Testing | ✅ Complete | 61 suites, 1153 tests (100% pass) |
 | Documentation | ✅ Complete | All docs up-to-date |
 
 ### Test Coverage
 
 ```
-Test Suites: 48 passed, 48 total ✅
-Tests: 913 passed, 1 skipped, 914 total
-Coverage: 97.8%
-Platform: Cross-platform (macOS: real EventKit, Linux: mocked)
+Test Suites: 61 passed, 61 total ✅
+Tests: 1152 passed, 1 skipped, 1153 total
+Coverage: 98.2%
+Platform: Cross-platform (macOS: EventKit/Google Calendar, Linux: mocked)
 ```
 
-### MCP Tools (18 implemented)
+### MCP Tools (24 implemented)
 
 1. `check_setup_status` - Setup status check
 2. `start_setup_wizard` - Initialize setup wizard
@@ -82,17 +86,23 @@ Platform: Cross-platform (macOS: real EventKit, Linux: mocked)
 5. `update_config` - Update configuration
 6. `analyze_tasks` - Analyze and prioritize tasks
 7. `set_reminder` - Set reminders (Apple Reminders/Notion)
-8. `find_available_slots` - Find calendar availability
+8. `find_available_slots` - Find calendar availability (multi-source)
 9. `list_todos` - List TODO items
 10. `update_task_status` - Update task status
 11. `sync_to_notion` - Sync to Notion database
-12. `list_calendar_events` - List calendar events
-13. `create_calendar_event` - Create calendar event
-14. `delete_calendar_event` - Delete calendar event
-15. `delete_calendar_events_batch` - Batch delete events
-16. `respond_to_calendar_event` - Respond to event invitation
+12. `list_calendar_events` - List calendar events (multi-source)
+13. `create_calendar_event` - Create calendar event (multi-source)
+14. `delete_calendar_event` - Delete calendar event (multi-source)
+15. `delete_calendar_events_batch` - Batch delete events (multi-source)
+16. `respond_to_calendar_event` - Respond to event invitation (multi-source)
 17. `respond_to_calendar_events_batch` - Batch respond to events
 18. `get_working_cadence` - Get working rhythm info
+19. `sync_tasks` - Sync tasks between Reminders and Notion
+20. `detect_duplicates` - Detect duplicate tasks
+21. `list_calendar_sources` - List available calendar sources
+22. `set_calendar_source` - Enable/disable calendar sources
+23. `sync_calendar_sources` - Sync between EventKit and Google Calendar
+24. `get_calendar_sync_status` - Check calendar sync status
 
 ---
 
@@ -103,7 +113,7 @@ Platform: Cross-platform (macOS: real EventKit, Linux: mocked)
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         MCP Layer                            │
-│  (18 Tools: setup, analyze, calendar, reminders, etc.)      │
+│  (24 Tools: setup, analyze, calendar, reminders, etc.)      │
 └─────────────────┬───────────────────────────────────────────┘
                   │
 ┌─────────────────▼───────────────────────────────────────────┐
@@ -116,15 +126,18 @@ Platform: Cross-platform (macOS: real EventKit, Linux: mocked)
                   │
 ┌─────────────────▼───────────────────────────────────────────┐
 │                      Core Services                           │
-│  • Task Analyzer    • Priority Engine   • Time Estimator    │
-│  • Calendar Service • Reminder Manager  • TODO Manager      │
-│  • Notion MCP       • OAuth Server      • Config Manager    │
+│  • Task Analyzer         • Priority Engine                   │
+│  • Time Estimator        • Calendar Source Manager           │
+│  • Reminder Manager      • TODO Manager                      │
+│  • Notion MCP            • OAuth Server                      │
+│  • Config Manager        • Working Cadence                   │
 └─────────────────┬───────────────────────────────────────────┘
                   │
 ┌─────────────────▼───────────────────────────────────────────┐
 │                    Integrations                              │
 │  • Apple Reminders (AppleScript)                             │
 │  • Calendar.app (EventKit via AppleScriptObjC)              │
+│  • Google Calendar API (OAuth 2.0 + googleapis)             │
 │  • Notion (MCP Protocol)                                     │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -164,11 +177,15 @@ Platform: Cross-platform (macOS: real EventKit, Linux: mocked)
 - ✅ Task splitting for complex items
 
 ### 2. Calendar Integration
-- ✅ EventKit integration (macOS)
-- ✅ Event listing, creation, deletion
-- ✅ Event invitation responses
+- ✅ Multi-source support (EventKit + Google Calendar)
+- ✅ Platform detection and auto-selection
+- ✅ Event listing, creation, deletion (multi-source)
+- ✅ Event invitation responses (multi-source)
 - ✅ Batch operations
 - ✅ Recurring event support
+- ✅ Event deduplication (iCalUID and heuristic)
+- ✅ Automatic fallback on source failure
+- ✅ Calendar source management and sync
 
 ### 3. Reminder Management
 - ✅ Apple Reminders integration (7-day rule)
@@ -199,13 +216,13 @@ Platform: Cross-platform (macOS: real EventKit, Linux: mocked)
 
 ### Integrations
 - **Apple Reminders**: AppleScript
-- **Calendar**: EventKit (AppleScriptObjC)
+- **Calendar**: EventKit (AppleScriptObjC), Google Calendar API (googleapis)
 - **Notion**: MCP Protocol
-- **OAuth**: jsonwebtoken, pkce-challenge
+- **OAuth**: jsonwebtoken, pkce-challenge, Google OAuth2
 
 ### Testing
 - **Framework**: Jest
-- **Coverage**: 97.8%
+- **Coverage**: 98.2%
 - **Strategy**: Unit + Integration + E2E
 
 ---
@@ -265,6 +282,8 @@ node dist/index.js --remote --config ~/.sage/remote-config.json
 - [ ] Multi-user support for teams
 - [ ] Slack/Teams integration
 - [ ] Voice interface support
+- [ ] Additional calendar providers (Microsoft 365, iCloud)
+- [ ] Bi-directional calendar sync automation
 
 ### Technical Debt
 - [ ] Worker process graceful shutdown warning

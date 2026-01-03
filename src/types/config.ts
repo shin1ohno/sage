@@ -34,6 +34,24 @@ export interface CalendarConfig {
   deepWorkDays: string[];
   deepWorkBlocks: DeepWorkBlock[];
   timeZone: string;
+  sources?: CalendarSources;
+}
+
+export interface CalendarSources {
+  eventkit: EventKitSourceConfig;
+  google: GoogleCalendarSourceConfig;
+}
+
+export interface EventKitSourceConfig {
+  enabled: boolean;
+}
+
+export interface GoogleCalendarSourceConfig {
+  enabled: boolean;
+  defaultCalendar: string;
+  excludedCalendars: string[];
+  syncInterval: number;
+  enableNotifications: boolean;
 }
 
 export interface DeepWorkBlock {
@@ -141,6 +159,28 @@ export interface PreferencesConfig {
   timeFormat: '12h' | '24h';
 }
 
+/**
+ * Get default calendar sources configuration based on platform
+ */
+function getDefaultCalendarSources(): CalendarSources {
+  const isMacOS = typeof process !== 'undefined' && process.platform === 'darwin';
+
+  return {
+    eventkit: {
+      enabled: isMacOS,
+    },
+    google: {
+      // On non-macOS platforms, enable Google Calendar by default
+      // to ensure at least one source is enabled
+      enabled: !isMacOS,
+      defaultCalendar: 'primary',
+      excludedCalendars: [],
+      syncInterval: 300,
+      enableNotifications: true,
+    },
+  };
+}
+
 // Default configuration
 export const DEFAULT_CONFIG: UserConfig = {
   version: '1.0.0',
@@ -159,6 +199,7 @@ export const DEFAULT_CONFIG: UserConfig = {
     deepWorkDays: ['Monday', 'Wednesday', 'Friday'],
     deepWorkBlocks: [],
     timeZone: 'Asia/Tokyo',
+    sources: getDefaultCalendarSources(),
   },
   priorityRules: {
     p0Conditions: [

@@ -46,7 +46,10 @@ export interface CalendarEvent {
   start: string;
   end: string;
   isAllDay: boolean;
-  source: string;
+  source: 'eventkit' | 'google';
+  iCalUID?: string;
+  attendees?: string[];
+  status?: 'confirmed' | 'tentative' | 'cancelled';
 }
 
 /**
@@ -339,7 +342,16 @@ repeat with anEvent in theEvents
   set eventId to (anEvent's eventIdentifier()) as text
   set isAllDay to (anEvent's isAllDay()) as boolean
 
-  set eventInfo to eventTitle & "|" & (eventStart as string) & "|" & (eventEnd as string) & "|" & eventId & "|" & (isAllDay as string)
+  -- Get iCalendar UID (may be missing value)
+  set eventUID to ""
+  try
+    set uidValue to anEvent's calendarItemIdentifier()
+    if uidValue is not missing value then
+      set eventUID to uidValue as text
+    end if
+  end try
+
+  set eventInfo to eventTitle & "|" & (eventStart as string) & "|" & (eventEnd as string) & "|" & eventId & "|" & (isAllDay as string) & "|" & eventUID
   set eventList to eventList & eventInfo & linefeed
 end repeat
 
@@ -348,7 +360,7 @@ return eventList`;
 
   /**
    * Parse EventKit result into events
-   * Format: title|start|end|id|isAllDay
+   * Format: title|start|end|id|isAllDay|iCalUID
    */
   parseEventKitResult(output: string): CalendarEvent[] {
     if (!output || output.trim() === '') {
@@ -361,6 +373,8 @@ return eventList`;
     for (const line of lines) {
       const parts = line.split('|');
       if (parts.length >= 4) {
+        const iCalUID = parts.length >= 6 && parts[5].trim() !== '' ? parts[5] : undefined;
+
         events.push({
           id: parts[3],
           title: parts[0],
@@ -368,6 +382,7 @@ return eventList`;
           end: parts[2],
           isAllDay: parts.length >= 5 ? parts[4].toLowerCase() === 'true' : false,
           source: 'eventkit',
+          iCalUID,
         });
       }
     }
@@ -688,7 +703,16 @@ repeat with anEvent in theEvents
     end if
   end try
 
-  set eventInfo to eventTitle & "|" & (eventStart as string) & "|" & (eventEnd as string) & "|" & eventId & "|" & (isAllDay as string) & "|" & eventCalendar & "|" & eventLocation
+  -- Get iCalendar UID (may be missing value)
+  set eventUID to ""
+  try
+    set uidValue to anEvent's calendarItemIdentifier()
+    if uidValue is not missing value then
+      set eventUID to uidValue as text
+    end if
+  end try
+
+  set eventInfo to eventTitle & "|" & (eventStart as string) & "|" & (eventEnd as string) & "|" & eventId & "|" & (isAllDay as string) & "|" & eventCalendar & "|" & eventLocation & "|" & eventUID
   set eventList to eventList & eventInfo & linefeed
 end repeat
 
@@ -697,7 +721,7 @@ return eventList`;
 
   /**
    * Parse EventKit result with detailed information
-   * Format: title|start|end|id|isAllDay|calendar|location
+   * Format: title|start|end|id|isAllDay|calendar|location|iCalUID
    * Requirement: 16.10
    */
   parseEventKitResultWithDetails(output: string): CalendarEventDetailed[] {
@@ -712,6 +736,7 @@ return eventList`;
       const parts = line.split('|');
       if (parts.length >= 6) {
         const location = parts.length >= 7 && parts[6].trim() !== '' ? parts[6] : undefined;
+        const iCalUID = parts.length >= 8 && parts[7].trim() !== '' ? parts[7] : undefined;
 
         events.push({
           id: parts[3],
@@ -722,6 +747,7 @@ return eventList`;
           source: 'eventkit',
           calendar: parts[5],
           location,
+          iCalUID,
         });
       }
     }
