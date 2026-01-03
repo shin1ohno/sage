@@ -32,8 +32,10 @@ jobs:
         run: npm run build
 
       - name: Run tests
-        run: npm test
+        run: npm test -- --maxWorkers=2
+        timeout-minutes: 15
 
       - name: Check test coverage
-        run: npm run test:coverage
+        run: npm run test:coverage -- --maxWorkers=2
         continue-on-error: true
+        timeout-minutes: 10
