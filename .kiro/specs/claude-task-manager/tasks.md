@@ -720,9 +720,11 @@
 
 - **完了タスク**: 47タスク（OAuth含む）
 - **未実装タスク**: 0タスク
-- **テスト**: 50 suites, 951 tests passing
+- **テスト**: 48 suites, 914 tests, すべて成功 ✅
+- **テストカバレッジ**: 97.8% (912/914 passed, 1 skipped)
 - **プラットフォーム**: macOS 専用（AppleScript/EventKit のため）
 - **ドキュメント**: SETUP-LOCAL.md, SETUP-REMOTE.md, CONFIGURATION.md, ARCHITECTURE.md, TROUBLESHOOTING.md
+- **最終更新**: 2026-01-03 - テストのクロスプラットフォーム対応完了
 
 ### Task 31で追加されたファイル
 

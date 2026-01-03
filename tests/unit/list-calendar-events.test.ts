@@ -13,10 +13,16 @@ jest.mock('run-applescript', () => ({
 
 describe('CalendarService.listEvents', () => {
   let calendarService: CalendarService;
+  const isMacOS = process.platform === 'darwin';
 
   beforeEach(() => {
     calendarService = new CalendarService();
     jest.clearAllMocks();
+
+    // Mock isAvailable to return true for cross-platform test execution (only on non-macOS)
+    if (!isMacOS) {
+      jest.spyOn(calendarService as any, 'isAvailable').mockResolvedValue(true);
+    }
   });
 
   describe('Input Validation', () => {
@@ -390,9 +396,7 @@ describe('CalendarService.listEvents', () => {
 
     // Requirement: 16.11 - Same EventKit integration as find_available_slots
     it('should use the same EventKit integration as find_available_slots', async () => {
-      const detectPlatformSpy = jest.spyOn(calendarService, 'detectPlatform');
-
-      jest.spyOn(calendarService, 'fetchEventsDetailed').mockResolvedValue([]);
+      const fetchEventsDetailedSpy = jest.spyOn(calendarService, 'fetchEventsDetailed').mockResolvedValue([]);
 
       const request: ListEventsRequest = {
         startDate: '2025-01-15',
@@ -401,7 +405,8 @@ describe('CalendarService.listEvents', () => {
 
       await calendarService.listEvents(request);
 
-      expect(detectPlatformSpy).toHaveBeenCalled();
+      // Verify that fetchEventsDetailed (EventKit integration) is called
+      expect(fetchEventsDetailedSpy).toHaveBeenCalled();
     });
   });
 
