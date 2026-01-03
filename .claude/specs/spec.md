@@ -110,60 +110,54 @@ Platform: Cross-platform (macOS: EventKit/Google Calendar, Linux: mocked)
 
 ### Core Components
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         MCP Layer                            │
-│  (24 Tools: setup, analyze, calendar, reminders, etc.)      │
-└─────────────────┬───────────────────────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────────────────────┐
-│                     Platform Layer                           │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │   Desktop    │  │    Remote    │  │  iOS/Web     │     │
-│  │  MCP Stdio   │  │  MCP Server  │  │  via Remote  │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
-└─────────────────┬───────────────────────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────────────────────┐
-│                      Core Services                           │
-│  • Task Analyzer         • Priority Engine                   │
-│  • Time Estimator        • Calendar Source Manager           │
-│  • Reminder Manager      • TODO Manager                      │
-│  • Notion MCP            • OAuth Server                      │
-│  • Config Manager        • Working Cadence                   │
-└─────────────────┬───────────────────────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────────────────────┐
-│                    Integrations                              │
-│  • Apple Reminders (AppleScript)                             │
-│  • Calendar.app (EventKit via AppleScriptObjC)              │
-│  • Google Calendar API (OAuth 2.0 + googleapis)             │
-│  • Notion (MCP Protocol)                                     │
-└──────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph MCP["MCP Layer"]
+        Tools["24 Tools: setup, analyze, calendar, reminders, etc."]
+    end
+
+    subgraph Platform["Platform Layer"]
+        Desktop["Desktop<br/>MCP Stdio"]
+        Remote["Remote<br/>MCP Server"]
+        Mobile["iOS/Web<br/>via Remote"]
+    end
+
+    subgraph Core["Core Services"]
+        direction LR
+        TA["Task Analyzer"] --- PE["Priority Engine"]
+        TE["Time Estimator"] --- CSM["Calendar Source Manager"]
+        RM["Reminder Manager"] --- TM["TODO Manager"]
+        NM["Notion MCP"] --- OS["OAuth Server"]
+        CM["Config Manager"] --- WC["Working Cadence"]
+    end
+
+    subgraph Int["Integrations"]
+        AR["Apple Reminders<br/>(AppleScript)"]
+        Cal["Calendar.app<br/>(EventKit)"]
+        GCal["Google Calendar API<br/>(OAuth 2.0)"]
+        Notion["Notion<br/>(MCP Protocol)"]
+    end
+
+    MCP --> Platform
+    Platform --> Core
+    Core --> Int
 ```
 
 ### Authentication Flow (Remote MCP)
 
-```
-┌─────────┐                ┌──────────────┐                ┌─────────┐
-│ Claude  │   1. OAuth     │     sage     │   2. Session   │ Browser │
-│ iOS/Web │───────────────>│ Remote MCP   │───────────────>│  Auth   │
-└─────────┘                │   Server     │                └─────────┘
-     │                     └──────────────┘                      │
-     │                            │                              │
-     │       3. Auth Code         │      4. Token Exchange       │
-     │<───────────────────────────┼──────────────────────────────┘
-     │                            │
-     │       5. Access Token      │
-     │<───────────────────────────┤
-     │                            │
-     │    6. MCP Requests         │
-     │───────────────────────────>│
-     │    (Bearer Token)          │
-     │                            │
-     │    7. SSE Stream           │
-     │<═══════════════════════════│
-     │    (Cookie Auth)           │
+```mermaid
+sequenceDiagram
+    participant Client as Claude iOS/Web
+    participant Server as sage Remote MCP Server
+    participant Browser as Browser Auth
+
+    Client->>Server: 1. OAuth Request
+    Server->>Browser: 2. Session Auth
+    Browser-->>Client: 3. Auth Code
+    Browser-->>Server: 4. Token Exchange
+    Server-->>Client: 5. Access Token
+    Client->>Server: 6. MCP Requests (Bearer Token)
+    Server--)Client: 7. SSE Stream (Cookie Auth)
 ```
 
 ---

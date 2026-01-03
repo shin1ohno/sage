@@ -238,24 +238,21 @@ function determineDestination(task: Task, config: UserConfig): 'apple' | 'notion
 
 sageは複数のカレンダーソースを同時に管理できます：
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                  CalendarSourceManager                        │
-│  - detectAvailableSources()                                   │
-│  - enableSource() / disableSource()                          │
-│  - getEvents() (並列取得 + イベント重複排除)                   │
-│  - createEvent() (ソースルーティング + フォールバック)          │
-│  - deleteEvent()                                              │
-│  - findAvailableSlots()                                       │
-│  - healthCheck()                                              │
-└─────────────────┬───────────────────────────────────────────┘
-                  │
-     ┌────────────┴────────────┐
-     ▼                         ▼
-┌──────────────┐       ┌──────────────────┐
-│ CalendarService │       │ GoogleCalendarService │
-│  (EventKit)  │       │    (Google API)    │
-└──────────────┘       └──────────────────┘
+```mermaid
+flowchart TB
+    subgraph CSM["CalendarSourceManager"]
+        direction TB
+        M1["detectAvailableSources()"]
+        M2["enableSource() / disableSource()"]
+        M3["getEvents() - 並列取得 + イベント重複排除"]
+        M4["createEvent() - ソースルーティング + フォールバック"]
+        M5["deleteEvent()"]
+        M6["findAvailableSlots()"]
+        M7["healthCheck()"]
+    end
+
+    CSM --> CS["CalendarService<br/>(EventKit)"]
+    CSM --> GCS["GoogleCalendarService<br/>(Google API)"]
 ```
 
 ### イベント重複排除
