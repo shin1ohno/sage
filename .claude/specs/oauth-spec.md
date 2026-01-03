@@ -419,8 +419,8 @@ client_id=sage_client_abc123
 | 31.1 | Claudeコールバック`https://claude.ai/api/mcp/auth_callback`を許可すること | MUST |
 | 31.2 | 将来のコールバック`https://claude.com/api/mcp/auth_callback`を許可すること | SHOULD |
 | 31.3 | Dynamic Client Registrationでclient_name="Claude"を受け付けること | MUST |
-| 31.4 | Streamable HTTP Transport (GET /mcp) と併用可能であること | MUST |
-| 31.5 | SSE接続でもBearer認証を受け付けること | MUST |
+| 31.4 | HTTP Transport (POST /mcp) と併用可能であること | MUST |
+| 31.5 | 全エンドポイントでBearer認証を受け付けること | MUST |
 | 31.6 | localhost callbackを動的ポートで許可すること（CLI対応） | SHOULD |
 
 ---
@@ -580,7 +580,7 @@ https://claude.ai/api/mcp/auth_callback?
 - [ ] 43.1 OAuthエンドポイントをHTTPサーバーに追加
 - [ ] 43.2 Bearer認証ミドルウェア更新
 - [ ] 43.3 既存JWT認証との互換性維持
-- [ ] 43.4 SSE接続でのBearer認証
+- [ ] 43.4 全エンドポイントでのBearer認証
 
 ### タスク44: テスト
 

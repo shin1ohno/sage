@@ -96,7 +96,7 @@
 25. ✅ Calendar event responses (Tasks 34.1-34.8)
 26. ✅ Calendar event creation (Tasks 35.1-35.7)
 27. ✅ Calendar event deletion (Tasks 36.1-36.7)
-28. ✅ SSE transport support (Tasks 37.1-37.5)
+28. ✅ HTTP transport support (Tasks 37.1-37.5)
 29. ✅ OAuth 2.1 implementation (Tasks 38-46)
 30. ✅ Working cadence feature (Tasks 47.1-47.10)
 
@@ -195,7 +195,7 @@ Time: ~18s per full test run
 | Feature | Status | Notes |
 |---------|--------|-------|
 | OAuth 2.1 | ✅ Complete | PKCE S256, Dynamic Registration |
-| SSE Transport | ✅ Complete | Cookie-based session |
+| HTTP Transport | ✅ Complete | JSON-RPC over POST |
 | JWT Tokens | ✅ Complete | 24h expiry, refresh rotation |
 | HTTPS Support | ✅ Complete | TLS 1.2+ |
 | CORS | ✅ Complete | Configurable origins |
@@ -219,9 +219,9 @@ Time: ~18s per full test run
 | macOS Code CLI | ✅ Production | Local MCP (Stdio) | EventKit + Google Calendar |
 | Linux Desktop | ✅ Production | Local MCP (Stdio) | Google Calendar only |
 | Windows Desktop | ✅ Production | Local MCP (Stdio) | Google Calendar only |
-| iOS | ✅ Production | Remote MCP (HTTPS/SSE) | Via Remote MCP (EventKit + Google) |
-| iPadOS | ✅ Production | Remote MCP (HTTPS/SSE) | Via Remote MCP (EventKit + Google) |
-| Web (claude.ai) | ✅ Production | Remote MCP (HTTPS/SSE) | Via Remote MCP (EventKit + Google) |
+| iOS | ✅ Production | Remote MCP (HTTPS) | Via Remote MCP (EventKit + Google) |
+| iPadOS | ✅ Production | Remote MCP (HTTPS) | Via Remote MCP (EventKit + Google) |
+| Web (claude.ai) | ✅ Production | Remote MCP (HTTPS) | Via Remote MCP (EventKit + Google) |
 
 ---
 
@@ -359,12 +359,11 @@ Time: ~18s per full test run
 - ✅ Documentation updated
 
 ### 0.7.7 (2026-01-03)
-- ✅ Cookie-based session for SSE
-- ✅ EventSource reconnection support
+- ✅ HTTP transport improvements
 - ✅ OAuth 2.1 complete implementation
 
 ### 0.7.6 (2026-01-01)
-- ✅ SSE transport support
+- ✅ HTTP transport support
 - ✅ Calendar event operations
 - ✅ Working cadence feature
 

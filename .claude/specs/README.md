@@ -1,6 +1,6 @@
 # Sage Specification Documents
 
-**Version**: 0.7.8
+**Version**: 0.8.0
 **Status**: ✅ Production Ready
 **Last Updated**: 2026-01-03
 
@@ -14,7 +14,6 @@
 ### 📋 Requirements
 - **[requirements.md](./requirements.md)** - 32 requirements in EARS format
 - **[oauth-spec.md](./oauth-spec.md)** - OAuth 2.1 detailed specification
-- **[mcp-over-sse-spec.md](./mcp-over-sse-spec.md)** - SSE transport specification
 
 ### 🏗️ Design
 - **[design.md](./design.md)** - Design hub (architecture, components, data models)
@@ -167,18 +166,23 @@ This project follows the **claude-code-spec-workflow**:
 
 ## Version History
 
+### 0.8.0 (2026-01-03)
+- Google Calendar API integration milestone
+- Removed SSE transport (HTTP POST only)
+- Documentation cleanup and sync
+
 ### 0.7.8 (2026-01-03)
 - Added platform-aware test mocking
 - Updated status.md with test results
 - All 914 tests passing
 
 ### 0.7.7 (2026-01-03)
-- Added cookie-based session support
+- HTTP transport improvements
 - Completed OAuth 2.1 implementation
 - Updated all specs for production readiness
 
 ### 0.7.6 (2026-01-01)
-- Added SSE transport support
+- HTTP transport support
 - Completed calendar operations
 - Added working cadence feature
 

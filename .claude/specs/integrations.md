@@ -48,25 +48,9 @@ npx @shin1ohno/sage --remote --config ~/.sage/remote-config.json
 |-------------|---------|------|
 | `/health` | GET | ヘルスチェック |
 | `/mcp` | POST | MCP JSON-RPCリクエスト |
-| `/mcp` | GET | SSE (Server-Sent Events) ストリーム |
 | `/auth/token` | POST | JWT認証トークン取得 |
 
-### Streamable HTTP Transport
-
-**GET `/mcp` (SSE ストリーム)**
-
-Claude.aiからのStreamable HTTP仕様に準拠したSSE接続。
-
-**レスポンスヘッダー:**
-```
-Content-Type: text/event-stream
-Cache-Control: no-cache
-Connection: keep-alive
-Access-Control-Allow-Origin: *
-```
-
-**Keepalive:**
-- 30秒間隔でkeepaliveコメント送信: `: keepalive\n\n`
+### HTTP Transport
 
 **POST `/mcp` (JSON-RPC)**
 

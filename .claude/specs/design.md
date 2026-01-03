@@ -32,7 +32,7 @@
 │  └─────┬──────┘  └─────┬──────┘  └──────────┬─────────┘   │
 └────────┼───────────────┼────────────────────┼───────────────┘
          │               │                    │
-         │ Stdio         │ Stdio              │ HTTPS/SSE
+         │ Stdio         │ Stdio              │ HTTPS
          │               │                    │
 ┌────────▼───────────────▼────────────────────▼───────────────┐
 │                      Sage MCP Server                         │
@@ -46,7 +46,7 @@
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │              Platform Abstraction Layer               │  │
 │  │  • MCPAdapter (Desktop/Code - Stdio)                 │  │
-│  │  • RemoteMCPAdapter (iOS/Web - HTTP/SSE)            │  │
+│  │  • RemoteMCPAdapter (iOS/Web - HTTP)                │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐  │
@@ -93,7 +93,7 @@
 
 #### 2. Platform Abstraction Layer
 - Platform detection (macOS, Linux, unknown)
-- Transport selection (Stdio, HTTP/SSE)
+- Transport selection (Stdio, HTTP)
 - Platform-specific feature availability
 
 #### 3. Core Services Layer
@@ -174,14 +174,13 @@ if (deadline <= 7 days) {
 **Compliance**: OAuth 2.1, RFC 8414, RFC 7591, RFC 9728
 
 #### 5. MCP Handler (`src/cli/mcp-handler.ts`)
-**Responsibility**: HTTP/SSE transport for Remote MCP
+**Responsibility**: HTTP transport for Remote MCP
 
 **Key Methods**:
 - `handleToolsList()`: List available tools
 - `handleToolCall(request: ToolCallRequest)`: Execute tool
-- `handleSSEConnection(req, res)`: SSE stream management
 
-**Transport**: HTTP POST + SSE GET
+**Transport**: HTTP POST (JSON-RPC)
 
 ---
 
@@ -347,7 +346,7 @@ interface AccessToken {
 - OAuth 2.1 with PKCE (S256)
 - JWT access tokens (24h expiry)
 - Refresh tokens with rotation
-- Cookie-based session (SSE reconnection)
+- JWT Bearer authentication
 
 ### Authorization
 

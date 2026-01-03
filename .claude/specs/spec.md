@@ -52,7 +52,6 @@ sageは、Claude DesktopとClaude Code向けのMCPサーバーとして実装さ
 
 ### 🔐 Additional Specifications
 - **[oauth-spec.md](./oauth-spec.md)** - OAuth 2.1詳細仕様
-- **[mcp-over-sse-spec.md](./mcp-over-sse-spec.md)** - SSE Transport仕様
 
 ---
 
@@ -157,7 +156,7 @@ sequenceDiagram
     Browser-->>Server: 4. Token Exchange
     Server-->>Client: 5. Access Token
     Client->>Server: 6. MCP Requests (Bearer Token)
-    Server--)Client: 7. SSE Stream (Cookie Auth)
+    Server-->>Client: 7. JSON-RPC Response
 ```
 
 ---
@@ -188,8 +187,8 @@ sequenceDiagram
 
 ### 4. Remote Access
 - ✅ OAuth 2.1 authentication (PKCE S256)
-- ✅ SSE (Server-Sent Events) transport
-- ✅ Cookie-based session management
+- ✅ HTTP transport (JSON-RPC over POST)
+- ✅ JWT token authentication
 - ✅ Cross-platform compatibility
 
 ### 5. Working Cadence

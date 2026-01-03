@@ -583,41 +583,34 @@ interface DeleteCalendarEventsBatchResult {
 - `deleteAllOccurrences` - 繰り返しイベントのシリーズ全体削除
 - 参加者管理（招待状の送信）
 
-### 要件20: Streamable HTTP Transport対応
+### 要件20: HTTP Transport対応
 
-**ユーザーストーリー:** Claude.aiからRemote MCPサーバーに接続するユーザーとして、Streamable HTTP仕様に準拠した接続を行いたい。クライアント側の実装に依存せず安定した接続を確立できるようにするため。
+**ユーザーストーリー:** Claude.aiからRemote MCPサーバーに接続するユーザーとして、HTTP経由でMCPリクエストを送信したい。クライアント側の実装に依存せず安定した接続を確立できるようにするため。
 
 #### 受け入れ基準（EARS記法）
 
-1. **WHEN** `/mcp`エンドポイントがGETリクエストを受け付けたとき、システムはSSE（Server-Sent Events）ストリームを返すこと
-2. **WHERE** GETリクエストに応答する際、システムはContent-Typeヘッダーを`text/event-stream`に設定すること
-3. **WHILE** SSEストリームが確立されている間、システムは接続維持のため30秒間隔でkeepaliveコメント（`: keepalive\n\n`）を送信すること
-4. **WHERE** GETリクエストに応答する際、システムは適切なCORSヘッダー（`Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`）を含めること
-5. **WHERE** GETリクエストに応答する際、システムはCache-Controlヘッダーを`no-cache`に設定すること
-6. **WHERE** GETリクエストに応答する際、システムはConnectionヘッダーを`keep-alive`に設定すること
-7. **WHEN** クライアントがSSE接続を切断したとき、システムはkeepaliveタイマーを停止すること
-8. **WHERE** POSTリクエストを処理する際、システムは既存のPOST `/mcp`の動作を保持すること
-9. **WHERE** OPTIONSリクエスト（CORS preflight）を受け付けた場合、システムは引き続き適切なCORSレスポンスを返すこと
-10. **WHERE** 設定ファイルで`authEnabled: false`が指定されている場合、システムは認証なしでGET `/mcp`へのアクセスを許可すること
+1. **WHEN** `/mcp`エンドポイントがPOSTリクエストを受け付けたとき、システムはJSON-RPCレスポンスを返すこと
+2. **WHERE** POSTリクエストに応答する際、システムはContent-Typeヘッダーを`application/json`に設定すること
+3. **WHERE** POSTリクエストに応答する際、システムは適切なCORSヘッダー（`Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`）を含めること
+4. **WHERE** OPTIONSリクエスト（CORS preflight）を受け付けた場合、システムは適切なCORSレスポンスを返すこと
+5. **WHERE** 設定ファイルで`authEnabled: false`が指定されている場合、システムは認証なしでPOST `/mcp`へのアクセスを許可すること
+6. **WHERE** 認証が有効な場合、システムはAuthorizationヘッダーのBearerトークンを検証すること
 
 #### 技術的詳細
 
-**SSEフォーマット:**
-- コメント行: `: keepalive\n\n`
-- データ行: `data: {JSON}\n\n`
-- イベント行: `event: message\ndata: {JSON}\n\n`
+**リクエスト/レスポンス形式:**
+- Content-Type: `application/json`
+- JSON-RPC 2.0形式
 
 **レスポンスヘッダー:**
 ```
-Content-Type: text/event-stream
-Cache-Control: no-cache
-Connection: keep-alive
+Content-Type: application/json
 Access-Control-Allow-Origin: *
-Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Allow-Methods: POST, OPTIONS
 Access-Control-Allow-Headers: Content-Type, Authorization
 ```
 
-> **背景:** Claude.aiからMCPサーバーに接続する際、Streamable HTTP仕様に従ってGETリクエストが送信されます。GETリクエストはサーバー→クライアントの通知用SSEストリームを確立し、POSTリクエストはJSON-RPCリクエスト/レスポンス用として使用されます。
+> **背景:** Remote MCPサーバーはHTTP POST経由でJSON-RPCリクエストを受け付けます。認証が有効な場合はJWT Bearerトークンが必要です。
 
 ### 要件32: 勤務リズム（Working Cadence）の取得
 

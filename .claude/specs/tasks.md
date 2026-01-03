@@ -545,38 +545,23 @@
 
 ## 完了済みタスク (続き)
 
-- [x] 37. Streamable HTTP Transport対応の実装 ✅
-  - ✅ 37.1 SSEストリームハンドラーの実装
-    - ✅ **テスト**: `tests/unit/sse-stream-handler.test.ts` (25 tests)
-    - ✅ GET /mcp エンドポイントの追加
-    - ✅ Content-Type: text/event-stream レスポンス
-    - ✅ Cache-Control: no-cache ヘッダー
-    - ✅ Connection: keep-alive ヘッダー
-    - _要件: 20.1, 20.2, 20.5, 20.6_
-  - ✅ 37.2 Keepalive機能の実装
-    - ✅ 30秒間隔のkeepaliveコメント送信（`: keepalive\n\n`）
-    - ✅ 接続切断時のタイマークリーンアップ
-    - ✅ 複数接続のトラッキング
-    - _要件: 20.3, 20.7_
+- [x] 37. HTTP Transport対応の実装 ✅
+  - ✅ 37.1 HTTPリクエストハンドラーの実装
+    - ✅ POST /mcp エンドポイント（JSON-RPC）
+    - ✅ Content-Type: application/json レスポンス
+    - _要件: 20.1, 20.2_
+    - _Note: SSE対応は v0.8.0 で削除_
   - ✅ 37.3 CORSヘッダー対応
     - ✅ Access-Control-Allow-Origin: * ヘッダー
-    - ✅ Access-Control-Allow-Methods: GET, POST, OPTIONS ヘッダー
+    - ✅ Access-Control-Allow-Methods: POST, OPTIONS ヘッダー
     - ✅ Access-Control-Allow-Headers: Content-Type, Authorization ヘッダー
     - ✅ OPTIONSリクエスト（CORS preflight）のサポート
-    - _要件: 20.4, 20.9_
+    - _要件: 20.3, 20.4_
   - ✅ 37.4 HTTPサーバーへの統合
     - ✅ `src/cli/http-server-with-config.ts` の更新
-    - ✅ GET /mcp ルートハンドラーの追加
-    - ✅ 既存POST /mcpの動作維持確認
+    - ✅ POST /mcp ルートハンドラー
     - ✅ authEnabled: false 時の認証スキップ
-    - _要件: 20.8, 20.10_
-  - ✅ 37.5 E2Eテストの実装
-    - ✅ **テスト**: `tests/e2e/streamable-http.test.ts` (15 tests)
-    - ✅ GETリクエストでSSEストリームが返ることを確認
-    - ✅ keepalive送信の確認
-    - ✅ 接続切断後のクリーンアップ確認
-    - ✅ 認証有効/無効両方のテスト
-    - _要件: 20.1-20.10_
+    - _要件: 20.5, 20.6_
 
 ## 完了済みタスク: OAuth 2.1 認証
 
@@ -624,7 +609,7 @@
   - ✅ 43.1 OAuthエンドポイントをHTTPサーバーに追加
   - ✅ 43.2 Bearer認証ミドルウェア更新（OAuth対応）
   - ✅ 43.3 既存JWT認証との後方互換性維持
-  - ✅ 43.4 SSE接続でのBearer認証
+  - ✅ 43.4 全エンドポイントでのBearer認証
   - ⏭️ 43.5 スコープベースのアクセス制御（将来実装予定）
   - _要件: 27.1-27.7, 31.5-31.6_
 
