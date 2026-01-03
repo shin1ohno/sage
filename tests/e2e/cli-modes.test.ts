@@ -56,10 +56,19 @@ async function startHTTPServer(
 
     let started = false;
 
+    // Timeout after 10 seconds
+    const timeoutId = setTimeout(() => {
+      if (!started) {
+        proc.kill('SIGTERM');
+        reject(new Error('Server failed to start within timeout'));
+      }
+    }, 10000);
+
     proc.stderr.on('data', (data) => {
       const message = data.toString();
       if (message.includes('started in HTTP mode')) {
         started = true;
+        clearTimeout(timeoutId);
         resolve({
           proc,
           stop: () => {
@@ -76,17 +85,10 @@ async function startHTTPServer(
 
     proc.on('error', (error) => {
       if (!started) {
+        clearTimeout(timeoutId);
         reject(error);
       }
     });
-
-    // Timeout after 10 seconds
-    setTimeout(() => {
-      if (!started) {
-        proc.kill('SIGTERM');
-        reject(new Error('Server failed to start within timeout'));
-      }
-    }, 10000);
   });
 }
 
@@ -204,21 +206,22 @@ describe('CLI Modes E2E', () => {
       await new Promise<void>((resolve, reject) => {
         let started = false;
 
-        proc.stderr.on('data', (data) => {
-          const message = data.toString();
-          if (message.includes('started in HTTP mode')) {
-            started = true;
-            proc.kill('SIGINT');
-            resolve();
-          }
-        });
-
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
           if (!started) {
             proc.kill('SIGTERM');
             reject(new Error('Server failed to start with env var'));
           }
         }, 10000);
+
+        proc.stderr.on('data', (data) => {
+          const message = data.toString();
+          if (message.includes('started in HTTP mode')) {
+            started = true;
+            clearTimeout(timeoutId);
+            proc.kill('SIGINT');
+            resolve();
+          }
+        });
       });
     });
   });
