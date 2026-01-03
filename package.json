@@ -11,8 +11,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test": "jest",
-    "test:coverage": "jest --coverage",
+    "test": "jest --forceExit",
+    "test:coverage": "jest --coverage --forceExit",
     "lint": "eslint src/**/*.ts",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build"
