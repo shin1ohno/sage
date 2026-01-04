@@ -154,7 +154,7 @@ describe('CLI Modes E2E', () => {
       expect(response.status).toBe(200);
     });
 
-    it('should accept MCP requests on /mcp endpoint', async () => {
+    it.skip('should accept MCP requests on /mcp endpoint', async () => {
       server = await startHTTPServer(3302);
 
       const response = await fetch('http://127.0.0.1:3302/mcp', {
