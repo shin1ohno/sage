@@ -11,30 +11,21 @@
  */
 
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
+import type { CalendarPlatformInfo } from '../types/calendar.js';
+import {
+  CALENDAR_RETRY_OPTIONS,
+  type CalendarType,
+  type EventParticipantStatus,
+  type EventResponseType,
+} from '../types/calendar.js';
 
-/**
- * Response type for calendar events
- * Requirement: 17.2
- */
-export type EventResponseType = 'accept' | 'decline' | 'tentative';
-
-/**
- * Calendar type detection
- * Requirement: 17.5, 17.6
- */
-export type CalendarType = 'google' | 'icloud' | 'exchange' | 'local';
-
-/**
- * Participant status in calendar events
- */
-export type EventParticipantStatus = 'accepted' | 'declined' | 'tentative' | 'pending' | 'unknown';
+// Re-export types for backwards compatibility
+export type { CalendarType, EventParticipantStatus, EventResponseType };
 
 /**
  * Platform information for calendar integration
  */
-export interface CalendarResponsePlatformInfo {
-  platform: 'macos' | 'ios' | 'ipados' | 'web' | 'unknown';
-  hasEventKitAccess: boolean;
+export interface CalendarResponsePlatformInfo extends CalendarPlatformInfo {
   supportsEventResponse: boolean;
 }
 
@@ -118,12 +109,10 @@ export interface CanRespondResult {
 }
 
 /**
- * Default retry options for calendar operations
+ * Retry options for calendar event response
  */
 const RETRY_OPTIONS = {
-  maxAttempts: 3,
-  initialDelay: 500,
-  maxDelay: 5000,
+  ...CALENDAR_RETRY_OPTIONS,
   shouldRetry: isRetryableError,
 };
 

@@ -25,6 +25,11 @@ import { WorkingCadenceService } from "./services/working-cadence.js";
 import type { UserConfig } from "./types/index.js";
 import type { Priority } from "./types/index.js";
 import { VERSION, SERVER_NAME } from "./version.js";
+import { createErrorFromCatch } from "./utils/mcp-response.js";
+import {
+  validateConfigUpdate,
+  applyConfigUpdates,
+} from "./config/update-validation.js";
 
 // Global state
 let config: UserConfig | null = null;
@@ -38,146 +43,6 @@ let todoListManager: TodoListManager | null = null;
 let taskSynchronizer: TaskSynchronizer | null = null;
 let calendarEventResponseService: CalendarEventResponseService | null = null;
 let workingCadenceService: WorkingCadenceService | null = null;
-
-/**
- * Validation result type
- */
-interface ValidationResult {
-  valid: boolean;
-  error?: string;
-  invalidFields?: string[];
-}
-
-/**
- * Validate config updates for a specific section
- */
-function validateConfigUpdate(
-  section: string,
-  updates: Record<string, unknown>,
-): ValidationResult {
-  const invalidFields: string[] = [];
-
-  switch (section) {
-    case "user":
-      if (updates.name !== undefined && typeof updates.name !== "string") {
-        invalidFields.push("name");
-      }
-      if (
-        updates.timezone !== undefined &&
-        typeof updates.timezone !== "string"
-      ) {
-        invalidFields.push("timezone");
-      }
-      break;
-
-    case "calendar":
-      if (updates.workingHours !== undefined) {
-        const wh = updates.workingHours as { start?: string; end?: string };
-        if (!wh.start || !wh.end) {
-          invalidFields.push("workingHours");
-        }
-      }
-      if (
-        updates.deepWorkDays !== undefined &&
-        !Array.isArray(updates.deepWorkDays)
-      ) {
-        invalidFields.push("deepWorkDays");
-      }
-      if (
-        updates.meetingHeavyDays !== undefined &&
-        !Array.isArray(updates.meetingHeavyDays)
-      ) {
-        invalidFields.push("meetingHeavyDays");
-      }
-      break;
-
-    case "integrations":
-      if (updates.notion !== undefined) {
-        const notion = updates.notion as {
-          enabled?: boolean;
-          databaseId?: string;
-        };
-        if (notion.enabled === true && !notion.databaseId) {
-          invalidFields.push("notion.databaseId");
-        }
-      }
-      break;
-
-    case "team":
-      if (updates.members !== undefined && !Array.isArray(updates.members)) {
-        invalidFields.push("members");
-      }
-      if (updates.managers !== undefined && !Array.isArray(updates.managers)) {
-        invalidFields.push("managers");
-      }
-      break;
-  }
-
-  if (invalidFields.length > 0) {
-    return {
-      valid: false,
-      error: `無効なフィールド: ${invalidFields.join(", ")}`,
-      invalidFields,
-    };
-  }
-
-  return { valid: true };
-}
-
-/**
- * Apply config updates to a specific section
- */
-function applyConfigUpdates(
-  currentConfig: UserConfig,
-  section: string,
-  updates: Record<string, unknown>,
-): UserConfig {
-  const newConfig = { ...currentConfig };
-
-  switch (section) {
-    case "user":
-      newConfig.user = { ...newConfig.user, ...updates } as UserConfig["user"];
-      break;
-    case "calendar":
-      newConfig.calendar = {
-        ...newConfig.calendar,
-        ...updates,
-      } as UserConfig["calendar"];
-      break;
-    case "priorityRules":
-      newConfig.priorityRules = {
-        ...newConfig.priorityRules,
-        ...updates,
-      } as UserConfig["priorityRules"];
-      break;
-    case "integrations":
-      // Deep merge for integrations
-      if (updates.appleReminders) {
-        newConfig.integrations.appleReminders = {
-          ...newConfig.integrations.appleReminders,
-          ...(updates.appleReminders as object),
-        };
-      }
-      if (updates.notion) {
-        newConfig.integrations.notion = {
-          ...newConfig.integrations.notion,
-          ...(updates.notion as object),
-        };
-      }
-      break;
-    case "team":
-      newConfig.team = { ...newConfig.team, ...updates } as UserConfig["team"];
-      break;
-    case "preferences":
-      newConfig.preferences = {
-        ...newConfig.preferences,
-        ...updates,
-      } as UserConfig["preferences"];
-      break;
-  }
-
-  return newConfig;
-}
 
 /**
  * Initialize services with config
@@ -566,21 +431,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `設定の保存に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('設定の保存に失敗しました', error);
       }
     },
   );
@@ -660,21 +511,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `タスク分析に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('タスク分析に失敗しました', error);
       }
     },
   );
@@ -821,21 +658,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `リマインダー設定に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('リマインダー設定に失敗しました', error);
       }
     },
   );
@@ -981,21 +804,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `カレンダー検索に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('カレンダー検索に失敗しました', error);
       }
     },
   );
@@ -1106,21 +915,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `カレンダーイベントの取得に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('カレンダーイベントの取得に失敗しました', error);
       }
     },
   );
@@ -1205,21 +1000,7 @@ async function createServer(): Promise<McpServer> {
           } catch (error) {
             // If source was explicitly 'google', don't try EventKit
             if (source === 'google') {
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: JSON.stringify(
-                      {
-                        error: true,
-                        message: `Google Calendarイベント返信に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                      },
-                      null,
-                      2,
-                    ),
-                  },
-                ],
-              };
+              return createErrorFromCatch('Google Calendarイベント返信に失敗しました', error);
             }
             // If source was not specified, continue to try EventKit
           }
@@ -1323,21 +1104,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `カレンダーイベント返信に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('カレンダーイベント返信に失敗しました', error);
       }
     },
   );
@@ -1437,21 +1204,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `カレンダーイベント一括返信に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('カレンダーイベント一括返信に失敗しました', error);
       }
     },
   );
@@ -1574,21 +1327,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `カレンダーイベント作成に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('カレンダーイベント作成に失敗しました', error);
       }
     },
   );
@@ -1678,21 +1417,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `カレンダーイベント削除に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('カレンダーイベント削除に失敗しました', error);
       }
     },
   );
@@ -1800,21 +1525,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `カレンダーイベント一括削除に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('カレンダーイベント一括削除に失敗しました', error);
       }
     },
   );
@@ -2003,21 +1714,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `Notion同期に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('Notion同期に失敗しました', error);
       }
     },
   );
@@ -2114,21 +1811,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `設定の更新に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('設定の更新に失敗しました', error);
       }
     },
   );
@@ -2239,21 +1922,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `TODOリストの取得に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('TODOリストの取得に失敗しました', error);
       }
     },
   );
@@ -2357,21 +2026,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `タスクステータスの更新に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('タスクステータスの更新に失敗しました', error);
       }
     },
   );
@@ -2435,21 +2090,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `タスク同期に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('タスク同期に失敗しました', error);
       }
     },
   );
@@ -2548,21 +2189,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `重複検出に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('重複検出に失敗しました', error);
       }
     },
   );
@@ -2643,21 +2270,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `カレンダーソース情報の取得に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('カレンダーソース情報の取得に失敗しました', error);
       }
     },
   );
@@ -2873,21 +2486,7 @@ async function createServer(): Promise<McpServer> {
           };
         }
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `カレンダーソース設定に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('カレンダーソース設定に失敗しました', error);
       }
     },
   );
@@ -2996,21 +2595,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `カレンダー同期に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('カレンダー同期に失敗しました', error);
       }
     },
   );
@@ -3080,21 +2665,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `同期状態の取得に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('同期状態の取得に失敗しました', error);
       }
     },
   );
@@ -3179,21 +2750,7 @@ async function createServer(): Promise<McpServer> {
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: true,
-                  message: `勤務リズム情報の取得に失敗しました: ${error instanceof Error ? error.message : "Unknown error"}`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return createErrorFromCatch('勤務リズム情報の取得に失敗しました', error);
       }
     },
   );

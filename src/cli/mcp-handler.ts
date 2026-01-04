@@ -19,6 +19,10 @@ import { CalendarEventCreatorService } from '../integrations/calendar-event-crea
 import { CalendarEventDeleterService } from '../integrations/calendar-event-deleter.js';
 import { WorkingCadenceService } from '../services/working-cadence.js';
 import type { UserConfig, Priority } from '../types/index.js';
+import {
+  validateConfigUpdate,
+  applyConfigUpdates,
+} from '../config/update-validation.js';
 
 // Protocol version
 const PROTOCOL_VERSION = '2024-11-05';
@@ -1484,7 +1488,7 @@ class MCPHandlerImpl implements MCPHandler {
           const section = args.section as string;
           const updates = args.updates as Record<string, unknown>;
 
-          const validationResult = this.validateConfigUpdate(section, updates);
+          const validationResult = validateConfigUpdate(section, updates);
           if (!validationResult.valid) {
             return {
               content: [
@@ -1504,7 +1508,7 @@ class MCPHandlerImpl implements MCPHandler {
             };
           }
 
-          const updatedConfig = this.applyConfigUpdates(this.config, section, updates);
+          const updatedConfig = applyConfigUpdates(this.config, section, updates);
           await ConfigLoader.save(updatedConfig);
           this.config = updatedConfig;
 
@@ -2796,127 +2800,6 @@ class MCPHandlerImpl implements MCPHandler {
    */
   private registerTool(definition: ToolDefinition, handler: ToolHandler): void {
     this.tools.set(definition.name, { definition, handler });
-  }
-
-  /**
-   * Validate config updates
-   */
-  private validateConfigUpdate(
-    section: string,
-    updates: Record<string, unknown>
-  ): { valid: boolean; error?: string; invalidFields?: string[] } {
-    const invalidFields: string[] = [];
-
-    switch (section) {
-      case 'user':
-        if (updates.name !== undefined && typeof updates.name !== 'string') {
-          invalidFields.push('name');
-        }
-        if (updates.timezone !== undefined && typeof updates.timezone !== 'string') {
-          invalidFields.push('timezone');
-        }
-        break;
-
-      case 'calendar':
-        if (updates.workingHours !== undefined) {
-          const wh = updates.workingHours as { start?: string; end?: string };
-          if (!wh.start || !wh.end) {
-            invalidFields.push('workingHours');
-          }
-        }
-        if (updates.deepWorkDays !== undefined && !Array.isArray(updates.deepWorkDays)) {
-          invalidFields.push('deepWorkDays');
-        }
-        if (
-          updates.meetingHeavyDays !== undefined &&
-          !Array.isArray(updates.meetingHeavyDays)
-        ) {
-          invalidFields.push('meetingHeavyDays');
-        }
-        break;
-
-      case 'integrations':
-        if (updates.notion !== undefined) {
-          const notion = updates.notion as { enabled?: boolean; databaseId?: string };
-          if (notion.enabled === true && !notion.databaseId) {
-            invalidFields.push('notion.databaseId');
-          }
-        }
-        break;
-
-      case 'team':
-        if (updates.members !== undefined && !Array.isArray(updates.members)) {
-          invalidFields.push('members');
-        }
-        if (updates.managers !== undefined && !Array.isArray(updates.managers)) {
-          invalidFields.push('managers');
-        }
-        break;
-    }
-
-    if (invalidFields.length > 0) {
-      return {
-        valid: false,
-        error: `無効なフィールド: ${invalidFields.join(', ')}`,
-        invalidFields,
-      };
-    }
-
-    return { valid: true };
-  }
-
-  /**
-   * Apply config updates
-   */
-  private applyConfigUpdates(
-    currentConfig: UserConfig,
-    section: string,
-    updates: Record<string, unknown>
-  ): UserConfig {
-    const newConfig = { ...currentConfig };
-
-    switch (section) {
-      case 'user':
-        newConfig.user = { ...newConfig.user, ...updates } as UserConfig['user'];
-        break;
-      case 'calendar':
-        newConfig.calendar = {
-          ...newConfig.calendar,
-          ...updates,
-        } as UserConfig['calendar'];
-        break;
-      case 'priorityRules':
-        newConfig.priorityRules = {
-          ...newConfig.priorityRules,
-          ...updates,
-        } as UserConfig['priorityRules'];
-        break;
-      case 'integrations':
-        if (updates.appleReminders) {
-          newConfig.integrations.appleReminders = {
-            ...newConfig.integrations.appleReminders,
-            ...(updates.appleReminders as object),
-          };
-        }
-        if (updates.notion) {
-          newConfig.integrations.notion = {
-            ...newConfig.integrations.notion,
-            ...(updates.notion as object),
-          };
-        }
-        break;
-      case 'team':
-        newConfig.team = { ...newConfig.team, ...updates } as UserConfig['team'];
-        break;
-      case 'preferences':
-        newConfig.preferences = {
-          ...newConfig.preferences,
-          ...updates,
-        } as UserConfig['preferences'];
-        break;
-    }
-
-    return newConfig;
   }
 }
 

@@ -106,7 +106,10 @@ const LENGTH_MODIFIERS = {
   veryLong: 1.5, // Very detailed with multiple components
 };
 
-// Special modifiers
+/**
+ * Special modifiers for specific task types.
+ * Applied multiplicatively after base complexity estimation.
+ */
 const SPECIAL_MODIFIERS = {
   meeting: { keywords: ['meeting', 'ミーティング', '会議', 'sync', 'call', '通話'], multiplier: 1.5 },
   documentation: { keywords: ['document', 'ドキュメント', '文書', 'doc', 'docs'], multiplier: 1.25 },
@@ -114,6 +117,40 @@ const SPECIAL_MODIFIERS = {
   testing: { keywords: ['test', 'テスト', 'qa', 'verify', '検証'], multiplier: 1.25 },
 };
 
+/**
+ * TimeEstimator - Estimates task duration using keyword-based heuristics
+ *
+ * ## Estimation Algorithm
+ *
+ * The estimator combines multiple factors:
+ *
+ * 1. **Complexity Detection**: Scans for keywords indicating task complexity
+ *    - project → 175 min base (system, architecture, framework)
+ *    - complex → 75 min base (refactor, migrate, integrate)
+ *    - medium → 50 min base (implement, fix, update)
+ *    - simple → 25 min base (check, review, confirm)
+ *
+ * 2. **Length Modifier**: Adjusts based on description length
+ *    - short (<30 chars): 0.75x
+ *    - normal (30-100): 1.0x
+ *    - long (100-250): 1.25x
+ *    - veryLong (250+): 1.5x
+ *
+ * 3. **Special Modifiers**: Additional multipliers for specific contexts
+ *    - meeting/debugging: 1.5x (high variance activities)
+ *    - documentation/testing: 1.25x (often underestimated)
+ *
+ * 4. **Pomodoro Rounding**: Final estimate rounded to nearest 25 minutes
+ *    for compatibility with Pomodoro technique scheduling.
+ *
+ * @example
+ * const result = TimeEstimator.estimateDuration({ title: 'システム設計' });
+ * // Returns: { estimatedMinutes: 175, complexity: 'project', ... }
+ *
+ * @example
+ * const result = TimeEstimator.estimateDuration({ title: 'メール確認' });
+ * // Returns: { estimatedMinutes: 25, complexity: 'simple', ... }
+ */
 export class TimeEstimator {
   /**
    * Estimate task duration

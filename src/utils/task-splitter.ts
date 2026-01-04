@@ -80,13 +80,54 @@ const COMPLEXITY_KEYWORDS = {
   ],
 };
 
-// Dependency indicator keywords
+/**
+ * Dependency indicator keywords for detecting task relationships.
+ * Used by inferDependencies to detect sequential task ordering.
+ */
 const DEPENDENCY_KEYWORDS = {
   before: ['前に', '先に', 'まず', 'before', 'first', 'prior to'],
   after: ['後に', '次に', 'その後', 'after', 'then', 'following'],
   requires: ['必要', '依存', 'requires', 'depends on', 'needs'],
 };
 
+/**
+ * TaskSplitter - Decomposes complex tasks into manageable units
+ *
+ * ## Algorithm Overview
+ *
+ * The splitter uses a multi-pass approach:
+ *
+ * 1. **Line Detection**: Parses input for list items (bullets, numbers)
+ * 2. **Conjunction Splitting**: Falls back to splitting on conjunctions
+ *    (そして, また, and then, also, etc.)
+ * 3. **Complexity Analysis**: For single tasks, analyzes keywords to
+ *    determine if the task should be split into phases
+ * 4. **Dependency Inference**: Detects task relationships using
+ *    keywords like "after", "requires", "次に"
+ * 5. **Order Calculation**: Performs topological sort based on dependencies
+ *
+ * ## Complexity Levels
+ *
+ * Tasks are classified into four complexity levels:
+ * - **simple**: Quick tasks (confirm, review, check)
+ * - **medium**: Standard development tasks (fix, update, create)
+ * - **complex**: Multi-step tasks (refactor, integrate, migrate)
+ * - **project**: Large-scale work (system, architecture, build)
+ *
+ * @example
+ * // Split a complex task
+ * const result = TaskSplitter.splitTasks('システム設計を行う');
+ * // Returns suggested phases: 要件定義, 設計, 実装, テスト, デプロイ
+ *
+ * @example
+ * // Split multiple tasks from bullet list
+ * const result = TaskSplitter.splitTasks(`
+ *   - メール確認
+ *   - レポート作成
+ *   - 会議参加
+ * `);
+ * // Returns 3 separate tasks with sequential dependencies
+ */
 export class TaskSplitter {
   /**
    * Split input text into individual tasks
@@ -342,8 +383,19 @@ export class TaskSplitter {
   }
 
   /**
-   * Infer dependencies between tasks
-   * Requirement: 11.5
+   * Infer dependencies between tasks from their text content
+   *
+   * Uses keyword detection to find task relationships:
+   * - "after" keywords (後に, 次に, then) → depends on previous task
+   * - "requires" keywords (必要, 依存) → scans for title references
+   *
+   * If no explicit dependencies found, assumes sequential ordering
+   * (task N depends on task N-1) to ensure predictable execution.
+   *
+   * Note: Only references previous tasks (j < i), preventing cycles.
+   *
+   * @param tasks - Array of tasks to analyze
+   * @returns Dependency graph as array of TaskDependency objects
    */
   private static inferDependencies(tasks: Task[]): TaskDependency[] {
     const dependencies: TaskDependency[] = [];
@@ -396,8 +448,20 @@ export class TaskSplitter {
   }
 
   /**
-   * Calculate recommended execution order
-   * Requirement: 11.6
+   * Calculate recommended execution order via topological sort
+   *
+   * Implements Kahn's algorithm variant:
+   * 1. Find all tasks with satisfied dependencies (or no dependencies)
+   * 2. Add them to the execution order
+   * 3. Mark as completed
+   * 4. Repeat until all tasks are ordered
+   *
+   * Guarantees: No circular dependencies possible since inferDependencies
+   * only creates forward references (task i depends on tasks < i).
+   *
+   * @param tasks - Array of tasks to order
+   * @param dependencies - Dependency graph from inferDependencies
+   * @returns Array of task indices in recommended execution order
    */
   private static calculateRecommendedOrder(
     tasks: Task[],

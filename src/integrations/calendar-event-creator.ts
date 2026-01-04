@@ -11,13 +11,13 @@
  */
 
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
+import type { CalendarPlatformInfo } from '../types/calendar.js';
+import { CALENDAR_RETRY_OPTIONS } from '../types/calendar.js';
 
 /**
  * Platform information for calendar event creation
  */
-export interface CalendarCreatorPlatformInfo {
-  platform: 'macos' | 'ios' | 'ipados' | 'web' | 'unknown';
-  hasEventKitAccess: boolean;
+export interface CalendarCreatorPlatformInfo extends CalendarPlatformInfo {
   supportsEventCreation: boolean;
 }
 
@@ -71,12 +71,10 @@ export interface DateTimeComponents {
 }
 
 /**
- * Default retry options for calendar operations
+ * Retry options for calendar event creation
  */
 const RETRY_OPTIONS = {
-  maxAttempts: 3,
-  initialDelay: 500,
-  maxDelay: 5000,
+  ...CALENDAR_RETRY_OPTIONS,
   shouldRetry: isRetryableError,
 };
 

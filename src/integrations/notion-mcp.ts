@@ -42,19 +42,31 @@ export interface NotionPlatformInfo {
 
 /**
  * Notion page request
+ *
+ * Note: `properties` uses `any` because Notion databases have
+ * user-defined property schemas that vary per database.
+ * @see https://developers.notion.com/reference/property-value-object
  */
 export interface NotionPageRequest {
   databaseId: string;
   title: string;
+  /** Dynamic properties matching the target database schema */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   properties: Record<string, any>;
   content?: NotionBlock[];
 }
 
 /**
  * Notion query request
+ *
+ * Note: `filter` uses `any` because Notion's filter API
+ * supports complex, nested filter expressions.
+ * @see https://developers.notion.com/reference/post-database-query-filter
  */
 export interface NotionQueryRequest {
   databaseId: string;
+  /** Notion filter expression (see Notion API docs) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   filter?: Record<string, any>;
   sorts?: Array<{ property: string; direction: 'ascending' | 'descending' }>;
   pageSize?: number;
@@ -73,10 +85,16 @@ export interface NotionQueryResult {
 
 /**
  * Notion page info from query
+ *
+ * Note: `properties` uses `any` because the schema
+ * depends on the database's property configuration.
+ * @see https://developers.notion.com/reference/property-value-object
  */
 export interface NotionPageInfo {
   id: string;
   title: string;
+  /** Properties as returned by Notion API */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   properties: Record<string, any>;
   url: string;
   createdTime: string;
@@ -117,11 +135,15 @@ export interface TaskInfo {
 
 /**
  * MCP request format
+ *
+ * Used to call MCP tools via stdio transport.
  */
 export interface MCPRequest {
   method: string;
   params: {
     name: string;
+    /** Tool-specific arguments (schema varies by tool) */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     arguments: Record<string, any>;
   };
 }
@@ -324,6 +346,7 @@ export class NotionMCPClient {
    */
   async updatePage(
     pageId: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     properties: Record<string, any>
   ): Promise<{ success: boolean; error?: string }> {
     if (!this.connected || !this.mcpClient) {
@@ -363,6 +386,7 @@ export class NotionMCPClient {
    */
   private buildUpdatePageRequest(
     pageId: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     properties: Record<string, any>
   ): MCPRequest {
     return {
@@ -434,7 +458,13 @@ export class NotionMCPClient {
 
   /**
    * Format content blocks for Notion markdown format
+   *
+   * Note: Uses `any` for raw Notion API response blocks
+   * which have deeply nested, dynamic structure.
+   *
+   * @param blocks - Raw Notion block objects from API response
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private formatContentForNotion(blocks: Record<string, any>[]): string {
     return blocks
       .map((block) => {
@@ -540,8 +570,9 @@ export class NotionMCPClient {
   }
 
   /**
-   * Build Notion block format
+   * Build Notion block format for API requests
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private buildNotionBlock(block: NotionBlock): Record<string, any> {
     switch (block.type) {
       case 'paragraph':
@@ -798,8 +829,9 @@ export class NotionMCPService {
   }
 
   /**
-   * Build Notion block format
+   * Build Notion block format for API requests
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private buildNotionBlock(block: NotionBlock): Record<string, any> {
     switch (block.type) {
       case 'paragraph':
@@ -841,9 +873,13 @@ export class NotionMCPService {
   }
 
   /**
-   * Build Notion properties format
+   * Build Notion properties format for database pages
+   *
+   * Constructs Notion API property objects from task info.
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   buildNotionProperties(taskInfo: TaskInfo): Record<string, any> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const properties: Record<string, any> = {
       Name: {
         title: [

@@ -156,6 +156,8 @@ export class ReminderManager {
    */
   private async createNotionEntry(request: ReminderRequest): Promise<ReminderResult> {
     // Build properties in a format compatible with Notion MCP
+    // Uses any due to dynamic Notion property schema
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const notionProperties: Record<string, any> = {
       'Project Name': request.taskTitle,
     };
