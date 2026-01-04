@@ -228,6 +228,31 @@ describe('MCP over HTTP E2E', () => {
     });
   });
 
+  describe('health endpoint', () => {
+    it('should return server health and version', async () => {
+      const port = getNextPort();
+      server = await createServer(port);
+
+      const response = await fetch(`http://127.0.0.1:${port}/health`);
+
+      expect(response.status).toBe(200);
+
+      const body = (await response.json()) as {
+        status: string;
+        uptime: number;
+        version: string;
+        timestamp: string;
+      };
+
+      expect(body.status).toBe('ok');
+      expect(body.version).toBeDefined();
+      expect(typeof body.version).toBe('string');
+      expect(body.version.length).toBeGreaterThan(0);
+      expect(body.uptime).toBeGreaterThanOrEqual(0);
+      expect(body.timestamp).toBeDefined();
+    });
+  });
+
   describe('initialize', () => {
     it('should handle initialize request', async () => {
       const port = getNextPort();
