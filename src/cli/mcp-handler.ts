@@ -8,21 +8,45 @@
 import { VERSION, SERVER_NAME } from '../version.js';
 import { ConfigLoader } from '../config/loader.js';
 import { SetupWizard } from '../setup/wizard.js';
-import { TaskAnalyzer } from '../tools/analyze-tasks.js';
 import { ReminderManager } from '../integrations/reminder-manager.js';
 import { CalendarService } from '../integrations/calendar-service.js';
 import { NotionMCPService } from '../integrations/notion-mcp.js';
-import { TodoListManager, type TodoStatus, type TaskSource } from '../integrations/todo-list-manager.js';
+import { TodoListManager } from '../integrations/todo-list-manager.js';
 import { TaskSynchronizer } from '../integrations/task-synchronizer.js';
 import { CalendarEventResponseService, type EventResponseType } from '../integrations/calendar-event-response.js';
 import { CalendarEventCreatorService } from '../integrations/calendar-event-creator.js';
 import { CalendarEventDeleterService } from '../integrations/calendar-event-deleter.js';
 import { WorkingCadenceService } from '../services/working-cadence.js';
-import type { UserConfig, Priority } from '../types/index.js';
+import type { UserConfig } from '../types/index.js';
+
+// Extracted tool handlers
 import {
-  validateConfigUpdate,
-  applyConfigUpdates,
-} from '../config/update-validation.js';
+  type SetupContext,
+  handleCheckSetupStatus,
+  handleStartSetupWizard,
+  handleAnswerWizardQuestion,
+  handleSaveConfig,
+} from '../tools/setup/index.js';
+
+import {
+  type TaskToolsContext,
+  handleAnalyzeTasks,
+  handleUpdateTaskStatus,
+  handleSyncTasks,
+  handleDetectDuplicates,
+} from '../tools/tasks/index.js';
+
+import {
+  type ReminderTodoContext,
+  handleSetReminder,
+  handleListTodos,
+} from '../tools/reminders/index.js';
+
+import {
+  type IntegrationToolsContext,
+  handleSyncToNotion,
+  handleUpdateConfig,
+} from '../tools/integrations/index.js';
 
 // Protocol version
 const PROTOCOL_VERSION = '2024-11-05';
@@ -145,6 +169,61 @@ class MCPHandlerImpl implements MCPHandler {
     this.calendarEventCreatorService = new CalendarEventCreatorService();
     this.calendarEventDeleterService = new CalendarEventDeleterService();
     this.workingCadenceService = new WorkingCadenceService();
+  }
+
+  /**
+   * Create SetupContext for setup tool handlers
+   */
+  private createSetupContext(): SetupContext {
+    return {
+      getConfig: () => this.config,
+      setConfig: (config: UserConfig) => {
+        this.config = config;
+      },
+      getWizardSession: () => this.wizardSession,
+      setWizardSession: (session) => {
+        this.wizardSession = session;
+      },
+      initializeServices: (config: UserConfig) => this.initializeServices(config),
+    };
+  }
+
+  /**
+   * Create TaskToolsContext for task tool handlers
+   */
+  private createTaskToolsContext(): TaskToolsContext {
+    return {
+      getConfig: () => this.config,
+      getTodoListManager: () => this.todoListManager,
+      getTaskSynchronizer: () => this.taskSynchronizer,
+      initializeServices: (config: UserConfig) => this.initializeServices(config),
+    };
+  }
+
+  /**
+   * Create ReminderTodoContext for reminder/todo tool handlers
+   */
+  private createReminderTodoContext(): ReminderTodoContext {
+    return {
+      getConfig: () => this.config,
+      getReminderManager: () => this.reminderManager,
+      getTodoListManager: () => this.todoListManager,
+      initializeServices: (config: UserConfig) => this.initializeServices(config),
+    };
+  }
+
+  /**
+   * Create IntegrationToolsContext for integration tool handlers
+   */
+  private createIntegrationToolsContext(): IntegrationToolsContext {
+    return {
+      getConfig: () => this.config,
+      setConfig: (config: UserConfig) => {
+        this.config = config;
+      },
+      getNotionService: () => this.notionService,
+      initializeServices: (config: UserConfig) => this.initializeServices(config),
+    };
   }
 
   /**
@@ -299,7 +378,7 @@ class MCPHandlerImpl implements MCPHandler {
    * Register all tools
    */
   private registerTools(): void {
-    // check_setup_status
+    // check_setup_status - uses extracted handler
     this.registerTool(
       {
         name: 'check_setup_status',
@@ -309,80 +388,10 @@ class MCPHandlerImpl implements MCPHandler {
           properties: {},
         },
       },
-      async () => {
-        const exists = await ConfigLoader.exists();
-        const isValid = this.config !== null;
-
-        if (!exists) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    setupComplete: false,
-                    configExists: false,
-                    message:
-                      'sageの初期設定が必要です。start_setup_wizardを実行してセットアップを開始してください。',
-                    nextAction: 'start_setup_wizard',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!isValid) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    setupComplete: false,
-                    configExists: true,
-                    message:
-                      '設定ファイルが見つかりましたが、読み込みに失敗しました。設定を再作成してください。',
-                    nextAction: 'start_setup_wizard',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  setupComplete: true,
-                  configExists: true,
-                  userName: this.config?.user.name,
-                  message: 'sageは設定済みです。タスク分析やリマインド設定を開始できます。',
-                  availableTools: [
-                    'analyze_tasks',
-                    'set_reminder',
-                    'find_available_slots',
-                    'sync_to_notion',
-                    'update_config',
-                  ],
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
+      async () => handleCheckSetupStatus(this.createSetupContext())
     );
 
-    // start_setup_wizard
+    // start_setup_wizard - uses extracted handler
     this.registerTool(
       {
         name: 'start_setup_wizard',
@@ -398,43 +407,13 @@ class MCPHandlerImpl implements MCPHandler {
           },
         },
       },
-      async (args) => {
-        const mode = (args.mode as 'full' | 'quick') || 'full';
-        this.wizardSession = SetupWizard.createSession(mode);
-        const question = SetupWizard.getCurrentQuestion(this.wizardSession);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  sessionId: this.wizardSession.sessionId,
-                  currentStep: this.wizardSession.currentStep,
-                  totalSteps: this.wizardSession.totalSteps,
-                  progress: Math.round(
-                    (this.wizardSession.currentStep / this.wizardSession.totalSteps) * 100
-                  ),
-                  question: {
-                    id: question.id,
-                    text: question.text,
-                    type: question.type,
-                    options: question.options,
-                    defaultValue: question.defaultValue,
-                    helpText: question.helpText,
-                  },
-                  message: 'セットアップを開始します。以下の質問に回答してください。',
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
+      async (args) =>
+        handleStartSetupWizard(this.createSetupContext(), {
+          mode: args.mode as 'full' | 'quick' | undefined,
+        })
     );
 
-    // answer_wizard_question
+    // answer_wizard_question - uses extracted handler
     this.registerTool(
       {
         name: 'answer_wizard_question',
@@ -454,105 +433,14 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['questionId', 'answer'],
         },
       },
-      async (args) => {
-        const questionId = args.questionId as string;
-        const answer = args.answer as string | string[];
-
-        if (!this.wizardSession) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message:
-                      'セットアップセッションが見つかりません。start_setup_wizardを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        const result = SetupWizard.answerQuestion(this.wizardSession, questionId, answer);
-
-        if (!result.success) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: result.error,
-                    currentQuestion: result.currentQuestion,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (result.isComplete) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    isComplete: true,
-                    sessionId: this.wizardSession.sessionId,
-                    answers: this.wizardSession.answers,
-                    message:
-                      'すべての質問に回答しました。save_configを実行して設定を保存してください。',
-                    nextAction: 'save_config',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        const nextQuestion = SetupWizard.getCurrentQuestion(this.wizardSession);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  success: true,
-                  currentStep: this.wizardSession.currentStep,
-                  totalSteps: this.wizardSession.totalSteps,
-                  progress: Math.round(
-                    (this.wizardSession.currentStep / this.wizardSession.totalSteps) * 100
-                  ),
-                  question: {
-                    id: nextQuestion.id,
-                    text: nextQuestion.text,
-                    type: nextQuestion.type,
-                    options: nextQuestion.options,
-                    defaultValue: nextQuestion.defaultValue,
-                    helpText: nextQuestion.helpText,
-                  },
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
+      async (args) =>
+        handleAnswerWizardQuestion(this.createSetupContext(), {
+          questionId: args.questionId as string,
+          answer: args.answer as string | string[],
+        })
     );
 
-    // save_config
+    // save_config - uses extracted handler
     this.registerTool(
       {
         name: 'save_config',
@@ -568,96 +456,13 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['confirm'],
         },
       },
-      async (args) => {
-        const confirm = args.confirm as boolean;
-
-        if (!confirm) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    saved: false,
-                    message: '設定の保存がキャンセルされました。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.wizardSession) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message:
-                      'セットアップセッションが見つかりません。start_setup_wizardを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        try {
-          const newConfig = SetupWizard.buildConfig(this.wizardSession);
-          await ConfigLoader.save(newConfig);
-          this.config = newConfig;
-          this.wizardSession = null;
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    saved: true,
-                    configPath: ConfigLoader.getConfigPath(),
-                    userName: newConfig.user.name,
-                    message: `設定を保存しました。${newConfig.user.name}さん、sageをご利用いただきありがとうございます！`,
-                    availableTools: [
-                      'analyze_tasks',
-                      'set_reminder',
-                      'find_available_slots',
-                      'sync_to_notion',
-                    ],
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `設定の保存に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleSaveConfig(this.createSetupContext(), {
+          confirm: args.confirm as boolean,
+        })
     );
 
-    // analyze_tasks
+    // analyze_tasks - uses extracted handler
     this.registerTool(
       {
         name: 'analyze_tasks',
@@ -686,80 +491,17 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['tasks'],
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        try {
-          const tasks = args.tasks as Array<{
+      async (args) =>
+        handleAnalyzeTasks(this.createTaskToolsContext(), {
+          tasks: args.tasks as Array<{
             title: string;
             description?: string;
             deadline?: string;
-          }>;
-          const result = await TaskAnalyzer.analyzeTasks(tasks, this.config);
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    summary: result.summary,
-                    tasks: result.analyzedTasks.map((t) => ({
-                      title: t.original.title,
-                      description: t.original.description,
-                      deadline: t.original.deadline,
-                      priority: t.priority,
-                      estimatedMinutes: t.estimatedMinutes,
-                      stakeholders: t.stakeholders,
-                      tags: t.tags,
-                      reasoning: t.reasoning,
-                      suggestedReminders: t.suggestedReminders,
-                    })),
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `タスク分析に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+          }>,
+        })
     );
 
-    // set_reminder
+    // set_reminder - uses extracted handler
     this.registerTool(
       {
         name: 'set_reminder',
@@ -800,125 +542,21 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['taskTitle'],
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.reminderManager) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const result = await this.reminderManager!.setReminder({
-            taskTitle: args.taskTitle as string,
-            targetDate: args.dueDate as string | undefined,
-            reminderType: args.reminderType as string | undefined,
-            list:
-              (args.list as string) ?? this.config.integrations.appleReminders.defaultList,
-            priority: args.priority as Priority | undefined,
-            notes: args.notes as string | undefined,
-          });
-
-          if (result.success) {
-            if (result.delegateToNotion && result.notionRequest) {
-              return {
-                content: [
-                  {
-                    type: 'text',
-                    text: JSON.stringify(
-                      {
-                        success: true,
-                        destination: 'notion_mcp',
-                        method: 'delegate',
-                        delegateToNotion: true,
-                        notionRequest: result.notionRequest,
-                        message: `Notionへの追加はClaude Codeが直接notion-create-pagesツールを使用してください。`,
-                      },
-                      null,
-                      2
-                    ),
-                  },
-                ],
-              };
-            }
-
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: true,
-                      destination: result.destination,
-                      method: result.method,
-                      reminderId: result.reminderId,
-                      reminderUrl: result.reminderUrl ?? result.pageUrl,
-                      message:
-                        result.destination === 'apple_reminders'
-                          ? `Apple Remindersにリマインダーを作成しました: ${args.taskTitle}`
-                          : `Notionにタスクを作成しました: ${args.taskTitle}`,
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: false,
-                    destination: result.destination,
-                    error: result.error,
-                    fallbackText: result.fallbackText,
-                    message: result.fallbackText
-                      ? '自動作成に失敗しました。以下のテキストを手動でコピーしてください。'
-                      : `リマインダー作成に失敗しました: ${result.error}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `リマインダー設定に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleSetReminder(this.createReminderTodoContext(), {
+          taskTitle: args.taskTitle as string,
+          dueDate: args.dueDate as string | undefined,
+          reminderType: args.reminderType as
+            | '1_hour_before'
+            | '3_hours_before'
+            | '1_day_before'
+            | '3_days_before'
+            | '1_week_before'
+            | undefined,
+          list: args.list as string | undefined,
+          priority: args.priority as 'P0' | 'P1' | 'P2' | 'P3' | undefined,
+          notes: args.notes as string | undefined,
+        })
     );
 
     // find_available_slots
@@ -1235,7 +873,7 @@ class MCPHandlerImpl implements MCPHandler {
       }
     );
 
-    // sync_to_notion
+    // sync_to_notion - uses extracted handler
     this.registerTool(
       {
         name: 'sync_to_notion',
@@ -1264,180 +902,18 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['taskTitle'],
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.config.integrations.notion.enabled) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message:
-                      'Notion統合が有効になっていません。update_configでNotion設定を更新してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.notionService) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const taskTitle = args.taskTitle as string;
-          const description = args.description as string | undefined;
-          const priority = args.priority as string | undefined;
-          const dueDate = args.dueDate as string | undefined;
-          const stakeholders = args.stakeholders as string[] | undefined;
-          const estimatedMinutes = args.estimatedMinutes as number | undefined;
-
-          const isAvailable = await this.notionService!.isAvailable();
-
-          const properties = this.notionService!.buildNotionProperties({
-            title: taskTitle,
-            priority,
-            deadline: dueDate,
-            stakeholders,
-            estimatedMinutes,
-            description,
-          });
-
-          if (!isAvailable) {
-            const fallbackText = this.notionService!.generateFallbackTemplate({
-              title: taskTitle,
-              priority,
-              deadline: dueDate,
-              stakeholders,
-              estimatedMinutes,
-              description,
-            });
-
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: false,
-                      method: 'fallback',
-                      message:
-                        'Notion MCP統合が利用できません。以下のテンプレートを手動でNotionにコピーしてください。',
-                      fallbackText,
-                      task: {
-                        taskTitle,
-                        priority: priority ?? 'P3',
-                        dueDate,
-                        stakeholders: stakeholders ?? [],
-                        estimatedMinutes,
-                      },
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          const result = await this.notionService!.createPage({
-            databaseId: this.config.integrations.notion.databaseId,
-            title: taskTitle,
-            properties,
-          });
-
-          if (result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: true,
-                      method: 'mcp',
-                      pageId: result.pageId,
-                      pageUrl: result.pageUrl,
-                      message: `Notionにタスクを同期しました: ${taskTitle}`,
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          const fallbackText = this.notionService!.generateFallbackTemplate({
-            title: taskTitle,
-            priority,
-            deadline: dueDate,
-            stakeholders,
-            estimatedMinutes,
-            description,
-          });
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: false,
-                    method: 'fallback',
-                    error: result.error,
-                    message:
-                      'Notion MCP呼び出しに失敗しました。以下のテンプレートを手動でコピーしてください。',
-                    fallbackText,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `Notion同期に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleSyncToNotion(this.createIntegrationToolsContext(), {
+          taskTitle: args.taskTitle as string,
+          description: args.description as string | undefined,
+          priority: args.priority as 'P0' | 'P1' | 'P2' | 'P3' | undefined,
+          dueDate: args.dueDate as string | undefined,
+          stakeholders: args.stakeholders as string[] | undefined,
+          estimatedMinutes: args.estimatedMinutes as number | undefined,
+        })
     );
 
-    // update_config
+    // update_config - uses extracted handler
     this.registerTool(
       {
         name: 'update_config',
@@ -1465,95 +941,20 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['section', 'updates'],
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        try {
-          const section = args.section as string;
-          const updates = args.updates as Record<string, unknown>;
-
-          const validationResult = validateConfigUpdate(section, updates);
-          if (!validationResult.valid) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      error: true,
-                      message: `設定の検証に失敗しました: ${validationResult.error}`,
-                      invalidFields: validationResult.invalidFields,
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          const updatedConfig = applyConfigUpdates(this.config, section, updates);
-          await ConfigLoader.save(updatedConfig);
-          this.config = updatedConfig;
-
-          if (section === 'integrations') {
-            this.initializeServices(this.config);
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    section,
-                    updatedFields: Object.keys(updates),
-                    message: `設定を更新しました: ${section}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `設定の更新に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleUpdateConfig(this.createIntegrationToolsContext(), {
+          section: args.section as
+            | 'user'
+            | 'calendar'
+            | 'priorityRules'
+            | 'integrations'
+            | 'team'
+            | 'preferences',
+          updates: args.updates as Record<string, unknown>,
+        })
     );
 
-    // list_todos
+    // list_todos - uses extracted handler
     this.registerTool(
       {
         name: 'list_todos',
@@ -1589,108 +990,19 @@ class MCPHandlerImpl implements MCPHandler {
           },
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.todoListManager) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const priority = args.priority as Priority[] | undefined;
-          const status = args.status as TodoStatus[] | undefined;
-          const source = args.source as TaskSource[] | undefined;
-          const todayOnly = args.todayOnly as boolean | undefined;
-          const tags = args.tags as string[] | undefined;
-
-          let todos;
-          if (todayOnly) {
-            todos = await this.todoListManager!.getTodaysTasks();
-          } else {
-            todos = await this.todoListManager!.listTodos({
-              priority,
-              status,
-              source,
-              tags,
-            });
-          }
-
-          const formattedTodos = todos.map((todo) => ({
-            id: todo.id,
-            title: todo.title,
-            priority: todo.priority,
-            status: todo.status,
-            dueDate: todo.dueDate,
-            source: todo.source,
-            tags: todo.tags,
-            estimatedMinutes: todo.estimatedMinutes,
-            stakeholders: todo.stakeholders,
-          }));
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    totalCount: todos.length,
-                    todos: formattedTodos,
-                    message:
-                      todos.length > 0
-                        ? `${todos.length}件のタスクが見つかりました。`
-                        : 'タスクが見つかりませんでした。',
-                    filters: {
-                      priority,
-                      status,
-                      source,
-                      todayOnly,
-                      tags,
-                    },
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `TODOリストの取得に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleListTodos(this.createReminderTodoContext(), {
+          priority: args.priority as ('P0' | 'P1' | 'P2' | 'P3')[] | undefined,
+          status: args.status as
+            | ('not_started' | 'in_progress' | 'completed' | 'cancelled')[]
+            | undefined,
+          source: args.source as ('apple_reminders' | 'notion' | 'manual')[] | undefined,
+          todayOnly: args.todayOnly as boolean | undefined,
+          tags: args.tags as string[] | undefined,
+        })
     );
 
-    // update_task_status
+    // update_task_status - uses extracted handler
     this.registerTool(
       {
         name: 'update_task_status',
@@ -1717,107 +1029,16 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['taskId', 'status', 'source'],
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.todoListManager) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const taskId = args.taskId as string;
-          const status = args.status as TodoStatus;
-          const source = args.source as TaskSource;
-          const syncAcrossSources = args.syncAcrossSources as boolean | undefined;
-
-          const result = await this.todoListManager!.updateTaskStatus(
-            taskId,
-            status,
-            source
-          );
-
-          if (!result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: false,
-                      taskId,
-                      error: result.error,
-                      message: `タスクステータスの更新に失敗しました: ${result.error}`,
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          let syncResult;
-          if (syncAcrossSources) {
-            syncResult = await this.todoListManager!.syncTaskAcrossSources(taskId);
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    taskId,
-                    newStatus: status,
-                    updatedFields: result.updatedFields,
-                    syncedSources: result.syncedSources,
-                    syncResult: syncAcrossSources ? syncResult : undefined,
-                    message: `タスクのステータスを「${status}」に更新しました。`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `タスクステータスの更新に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleUpdateTaskStatus(this.createTaskToolsContext(), {
+          taskId: args.taskId as string,
+          status: args.status as 'not_started' | 'in_progress' | 'completed' | 'cancelled',
+          source: args.source as 'apple_reminders' | 'notion' | 'manual',
+          syncAcrossSources: args.syncAcrossSources as boolean | undefined,
+        })
     );
 
-    // sync_tasks
+    // sync_tasks - uses extracted handler
     this.registerTool(
       {
         name: 'sync_tasks',
@@ -1828,76 +1049,10 @@ class MCPHandlerImpl implements MCPHandler {
           properties: {},
         },
       },
-      async () => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.taskSynchronizer) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const result = await this.taskSynchronizer!.syncAllTasks();
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    totalTasks: result.totalTasks,
-                    syncedTasks: result.syncedTasks,
-                    conflicts: result.conflicts,
-                    errors: result.errors,
-                    durationMs: result.duration,
-                    message:
-                      result.conflicts.length > 0
-                        ? `${result.syncedTasks}件のタスクを同期しました。${result.conflicts.length}件の競合が検出されました。`
-                        : `${result.syncedTasks}件のタスクを同期しました。`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `タスク同期に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async () => handleSyncTasks(this.createTaskToolsContext())
     );
 
-    // detect_duplicates
+    // detect_duplicates - uses extracted handler
     this.registerTool(
       {
         name: 'detect_duplicates',
@@ -1912,101 +1067,10 @@ class MCPHandlerImpl implements MCPHandler {
           },
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.taskSynchronizer) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const autoMerge = args.autoMerge as boolean | undefined;
-          const duplicates = await this.taskSynchronizer!.detectDuplicates();
-
-          const formattedDuplicates = duplicates.map((d) => ({
-            tasks: d.tasks.map((t) => ({
-              id: t.id,
-              title: t.title,
-              source: t.source,
-              status: t.status,
-              priority: t.priority,
-            })),
-            similarity: Math.round(d.similarity * 100),
-            confidence: d.confidence,
-            suggestedMerge: {
-              title: d.suggestedMerge.title,
-              priority: d.suggestedMerge.priority,
-              status: d.suggestedMerge.status,
-              tags: d.suggestedMerge.tags,
-            },
-          }));
-
-          let mergeResults;
-          if (autoMerge) {
-            const highConfidenceDuplicates = duplicates.filter(
-              (d) => d.confidence === 'high'
-            );
-            if (highConfidenceDuplicates.length > 0) {
-              mergeResults =
-                await this.taskSynchronizer!.mergeDuplicates(highConfidenceDuplicates);
-            }
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    duplicatesFound: duplicates.length,
-                    duplicates: formattedDuplicates,
-                    mergeResults: autoMerge ? mergeResults : undefined,
-                    message:
-                      duplicates.length > 0
-                        ? `${duplicates.length}件の重複タスクが検出されました。`
-                        : '重複タスクは見つかりませんでした。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `重複検出に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleDetectDuplicates(this.createTaskToolsContext(), {
+          autoMerge: args.autoMerge as boolean | undefined,
+        })
     );
 
     // get_working_cadence
