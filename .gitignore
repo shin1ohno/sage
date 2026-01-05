@@ -1,3 +1,5 @@
 node_modules
 dist
 coverage
+ecosystem.config.js
+ecosystem.config.cjs
