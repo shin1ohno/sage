@@ -337,10 +337,7 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       expect(session1).not.toBeNull();
       expect(session1!.userId).toBe(userId);
 
-      // Wait for async save to complete before shutdown
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      // Shutdown server
+      // Shutdown server (mutex serializes pending writes)
       await server1.shutdown();
 
       // Act: Restart server
@@ -373,10 +370,7 @@ describe('OAuth Persistence - End-to-End Integration', () => {
         session.expiresAt = Date.now() - 1000;
       }
 
-      // Wait for async save to complete before shutdown
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      // Flush with expired session
+      // Flush with expired session (mutex serializes writes)
       await server1.shutdown();
 
       // Act: Restart server (should filter expired session)
@@ -405,10 +399,7 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       // Verify session is deleted
       expect(server1.validateSession(sessionId)).toBeNull();
 
-      // Wait a bit for async save to complete
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Shutdown server
+      // Shutdown server (mutex serializes pending writes)
       await server1.shutdown();
 
       // Act: Restart server
@@ -505,9 +496,7 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       const authResult = await server2.authenticateUser(testUser.username, 'testpass123');
       expect(authResult.success).toBe(true);
 
-      // Wait for async save to complete before shutdown
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
+      // Shutdown (mutex serializes pending writes)
       await server2.shutdown();
     });
 
@@ -699,9 +688,7 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       const authResult = await server1.authenticateUser(testUser.username, 'testpass123');
       const sessionId = authResult.session!.sessionId;
 
-      // Wait for async save to complete before shutdown
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
+      // Shutdown (mutex serializes pending writes)
       await server1.shutdown();
 
       // Act: Restart 1

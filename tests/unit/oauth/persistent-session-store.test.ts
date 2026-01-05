@@ -48,10 +48,7 @@ describe('PersistentSessionStore', () => {
       const session1 = store.createSession('user-1');
       const session2 = store.createSession('user-2');
 
-      // Wait for async saves to complete (avoid concurrent writes)
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      // Act: Flush to save immediately
+      // Act: Flush to save immediately (mutex serializes concurrent writes)
       await store.flush();
 
       // Create new store instance and load from storage
@@ -466,8 +463,7 @@ describe('PersistentSessionStore', () => {
       // Act: Get session after expiry (triggers removal)
       shortExpiryStore.getSession(session.sessionId);
 
-      // Wait for async save to complete
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Flush to persist removal (mutex serializes writes)
       await shortExpiryStore.flush();
 
       // Load from storage
@@ -528,10 +524,7 @@ describe('PersistentSessionStore', () => {
       const session2 = store.createSession('user-test');
       const session3 = store.createSession('user-test');
 
-      // Wait for async saves
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      // Act: Flush and reload
+      // Act: Flush and reload (mutex serializes writes)
       await store.flush();
       const newStore = new PersistentSessionStore(encryptionService, tempStoragePath);
       await newStore.loadFromStorage();
@@ -639,10 +632,7 @@ describe('PersistentSessionStore', () => {
       // Arrange: Create session
       store.createSession('user-test');
 
-      // Wait for async save
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      // Act: Multiple flush calls
+      // Act: Multiple flush calls (mutex serializes writes)
       await store.flush();
       await store.flush();
       await store.flush();
