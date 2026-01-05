@@ -9,13 +9,9 @@
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import { generateCodeVerifier, generateCodeChallenge } from './pkce.js';
-import { createCipheriv, createDecipheriv, randomBytes, scrypt } from 'crypto';
-import { promisify } from 'util';
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { EncryptionService } from './encryption-service.js';
 import { join } from 'path';
 import { homedir } from 'os';
-
-const scryptAsync = promisify(scrypt);
 
 /**
  * Google OAuth Tokens
@@ -63,17 +59,32 @@ export const GOOGLE_CALENDAR_SCOPES = [
 export class GoogleOAuthHandler {
   private codeVerifier: string | null = null;
   private config: GoogleOAuthConfig;
-  private readonly encryptionKey: string;
+  private readonly encryptionService: EncryptionService;
   private readonly tokensStoragePath: string;
+  private initialized: boolean = false;
 
   constructor(config: GoogleOAuthConfig, encryptionKey?: string, userId?: string) {
     this.config = config;
-    // Use provided encryption key or generate from environment
-    this.encryptionKey = encryptionKey || process.env.SAGE_ENCRYPTION_KEY || 'sage-default-encryption-key-change-me';
+    // Initialize EncryptionService with provided key
+    this.encryptionService = new EncryptionService({
+      encryptionKey: encryptionKey || process.env.SAGE_ENCRYPTION_KEY,
+    });
     // Store tokens at ~/.sage/google_oauth_tokens_{userId}.enc
     const sageDir = join(homedir(), '.sage');
     const userIdSuffix = userId ? `_${userId}` : '';
     this.tokensStoragePath = join(sageDir, `google_oauth_tokens${userIdSuffix}.enc`);
+  }
+
+  /**
+   * Initialize encryption service
+   *
+   * Must be called before any token storage operations.
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.encryptionService.initialize();
+      this.initialized = true;
+    }
   }
 
   /**
@@ -85,62 +96,6 @@ export class GoogleOAuthHandler {
       this.config.clientSecret,
       redirectUri || this.config.redirectUri
     );
-  }
-
-  /**
-   * Encrypt data using AES-256-GCM
-   */
-  private async encrypt(data: string): Promise<string> {
-    // Derive key from encryption key using scrypt
-    const salt = randomBytes(16);
-    const key = (await scryptAsync(this.encryptionKey, salt, 32)) as Buffer;
-
-    // Generate IV
-    const iv = randomBytes(16);
-
-    // Create cipher
-    const cipher = createCipheriv('aes-256-gcm', key, iv);
-
-    // Encrypt data
-    let encrypted = cipher.update(data, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-
-    // Get auth tag
-    const authTag = cipher.getAuthTag();
-
-    // Combine: salt:iv:authTag:encrypted
-    return `${salt.toString('hex')}:${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
-  }
-
-  /**
-   * Decrypt data using AES-256-GCM
-   */
-  private async decrypt(encryptedData: string): Promise<string> {
-    // Split encrypted data
-    const parts = encryptedData.split(':');
-    if (parts.length !== 4) {
-      throw new Error('Invalid encrypted data format');
-    }
-
-    const [saltHex, ivHex, authTagHex, encrypted] = parts;
-
-    // Convert from hex
-    const salt = Buffer.from(saltHex, 'hex');
-    const iv = Buffer.from(ivHex, 'hex');
-    const authTag = Buffer.from(authTagHex, 'hex');
-
-    // Derive key from encryption key using scrypt
-    const key = (await scryptAsync(this.encryptionKey, salt, 32)) as Buffer;
-
-    // Create decipher
-    const decipher = createDecipheriv('aes-256-gcm', key, iv);
-    decipher.setAuthTag(authTag);
-
-    // Decrypt data
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-
-    return decrypted;
   }
 
   /**
@@ -288,6 +243,9 @@ export class GoogleOAuthHandler {
    */
   async storeTokens(tokens: GoogleOAuthTokens): Promise<void> {
     try {
+      // Ensure encryption service is initialized
+      await this.ensureInitialized();
+
       // Convert to stored format
       const storedTokens: StoredTokens = {
         accessToken: tokens.accessToken,
@@ -296,16 +254,9 @@ export class GoogleOAuthHandler {
         scope: tokens.scope,
       };
 
-      // Encrypt tokens
+      // Encrypt and store tokens using EncryptionService
       const tokensJson = JSON.stringify(storedTokens);
-      const encrypted = await this.encrypt(tokensJson);
-
-      // Ensure ~/.sage directory exists
-      const sageDir = join(homedir(), '.sage');
-      await mkdir(sageDir, { recursive: true });
-
-      // Write encrypted tokens to file
-      await writeFile(this.tokensStoragePath, encrypted, 'utf8');
+      await this.encryptionService.encryptToFile(tokensJson, this.tokensStoragePath);
     } catch (error) {
       throw new Error(
         `Failed to store tokens: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -323,11 +274,17 @@ export class GoogleOAuthHandler {
    */
   async getTokens(): Promise<GoogleOAuthTokens | null> {
     try {
-      // Read encrypted tokens from file
-      const encrypted = await readFile(this.tokensStoragePath, 'utf8');
+      // Ensure encryption service is initialized
+      await this.ensureInitialized();
 
-      // Decrypt tokens
-      const tokensJson = await this.decrypt(encrypted);
+      // Decrypt tokens from file using EncryptionService
+      const tokensJson = await this.encryptionService.decryptFromFile(this.tokensStoragePath);
+
+      // Return null if file not found
+      if (tokensJson === null) {
+        return null;
+      }
+
       const storedTokens: StoredTokens = JSON.parse(tokensJson);
 
       // Convert to GoogleOAuthTokens format
@@ -338,10 +295,6 @@ export class GoogleOAuthHandler {
         scope: storedTokens.scope,
       };
     } catch (error) {
-      // Return null if file not found (user hasn't authenticated yet)
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return null;
-      }
       throw new Error(
         `Failed to get tokens: ${error instanceof Error ? error.message : 'Unknown error'}`
       );

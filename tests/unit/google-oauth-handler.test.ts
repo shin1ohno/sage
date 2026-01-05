@@ -19,6 +19,42 @@ jest.mock('googleapis', () => ({
 
 jest.mock('fs/promises');
 
+// Mock EncryptionService
+jest.mock('../../src/oauth/encryption-service.js', () => {
+  return {
+    EncryptionService: jest.fn().mockImplementation(() => ({
+      initialize: jest.fn().mockResolvedValue(undefined),
+      encrypt: jest.fn().mockImplementation(async (data: string) => {
+        // Simple mock encryption: just base64 encode
+        return Buffer.from(data).toString('base64');
+      }),
+      decrypt: jest.fn().mockImplementation(async (data: string) => {
+        // Simple mock decryption: just base64 decode
+        return Buffer.from(data, 'base64').toString('utf-8');
+      }),
+      encryptToFile: jest.fn().mockImplementation(async (data: string, filePath: string) => {
+        // Use the mocked fs.writeFile
+        const encrypted = Buffer.from(data).toString('base64');
+        await fs.mkdir(require('path').join(require('os').homedir(), '.sage'), { recursive: true });
+        await fs.writeFile(filePath, encrypted, 'utf8');
+      }),
+      decryptFromFile: jest.fn().mockImplementation(async (filePath: string) => {
+        try {
+          // Use the mocked fs.readFile
+          const encrypted = await fs.readFile(filePath, 'utf-8');
+          return Buffer.from(encrypted, 'base64').toString('utf-8');
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            return null;
+          }
+          throw error;
+        }
+      }),
+      isInitialized: jest.fn().mockReturnValue(true),
+    })),
+  };
+});
+
 describe('GoogleOAuthHandler', () => {
   const mockConfig = {
     clientId: 'test-client-id',

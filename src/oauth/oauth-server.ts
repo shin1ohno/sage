@@ -5,7 +5,8 @@
  * Main OAuth server that coordinates all OAuth components and handles requests.
  */
 
-import { randomBytes, createHash } from 'crypto';
+import { createHash } from 'crypto';
+import { join } from 'path';
 import {
   AuthorizationServerMetadata,
   ProtectedResourceMetadata,
@@ -25,7 +26,12 @@ import { createTokenService, TokenService, generateKeyPair } from './token-servi
 import { createAuthorizationCodeStore, AuthorizationCodeStore } from './code-store.js';
 import { createRefreshTokenStore, RefreshTokenStore } from './refresh-token-store.js';
 import { createClientStore, ClientStore, ClientRegistrationResult } from './client-store.js';
+import { createSessionStore, SessionStore } from './session-store.js';
 import { verifyCodeChallenge } from './pkce.js';
+import { EncryptionService } from './encryption-service.js';
+import { PersistentRefreshTokenStore } from './persistent-refresh-token-store.js';
+import { PersistentClientStore } from './persistent-client-store.js';
+import { PersistentSessionStore } from './persistent-session-store.js';
 
 /**
  * OAuth Server Configuration
@@ -39,50 +45,9 @@ export interface OAuthServerConfig {
   users?: OAuthUser[];
   privateKey?: string;
   publicKey?: string;
-}
-
-/**
- * Session Store Interface
- */
-interface SessionStore {
-  createSession(userId: string): UserSession;
-  getSession(sessionId: string): UserSession | null;
-  deleteSession(sessionId: string): void;
-}
-
-/**
- * In-memory Session Store
- */
-class InMemorySessionStore implements SessionStore {
-  private sessions: Map<string, UserSession> = new Map();
-  private sessionExpiryMs = 24 * 60 * 60 * 1000; // 24 hours
-
-  createSession(userId: string): UserSession {
-    const sessionId = randomBytes(32).toString('hex');
-    const now = Date.now();
-    const session: UserSession = {
-      sessionId,
-      userId,
-      createdAt: now,
-      expiresAt: now + this.sessionExpiryMs,
-    };
-    this.sessions.set(sessionId, session);
-    return session;
-  }
-
-  getSession(sessionId: string): UserSession | null {
-    const session = this.sessions.get(sessionId);
-    if (!session) return null;
-    if (Date.now() > session.expiresAt) {
-      this.sessions.delete(sessionId);
-      return null;
-    }
-    return session;
-  }
-
-  deleteSession(sessionId: string): void {
-    this.sessions.delete(sessionId);
-  }
+  enablePersistence?: boolean; // Default: true
+  encryptionService?: EncryptionService;
+  storageBasePath?: string; // Base directory for storage files (for testing)
 }
 
 /**
@@ -107,6 +72,7 @@ export class OAuthServer {
   private users: Map<string, OAuthUser>;
   private pendingAuthRequests: Map<string, PendingAuthRequest> = new Map();
   private loginAttempts: Map<string, { count: number; lastAttempt: number }> = new Map();
+  private encryptionService?: EncryptionService;
 
   private privateKey: string;
   private publicKey: string;
@@ -124,13 +90,43 @@ export class OAuthServer {
       config.authorizationCodeExpiry || DEFAULT_TOKEN_EXPIRY.authorizationCode
     );
 
-    // Initialize stores
+    // Determine if persistence is enabled (default: true)
+    const enablePersistence = config.enablePersistence !== false;
+
+    // Initialize stores based on persistence setting
+    if (enablePersistence) {
+      // Create EncryptionService if not provided
+      this.encryptionService = config.encryptionService || new EncryptionService();
+
+      // Determine storage paths (use custom base path if provided, for testing)
+      const basePath = config.storageBasePath;
+      const refreshTokenPath = basePath ? join(basePath, 'oauth_refresh_tokens.enc') : undefined;
+      const clientPath = basePath ? join(basePath, 'oauth_clients.enc') : undefined;
+      const sessionPath = basePath ? join(basePath, 'oauth_sessions.enc') : undefined;
+
+      // Create persistent stores
+      this.refreshTokenStore = new PersistentRefreshTokenStore(
+        { expirySeconds: refreshTokenExpirySec },
+        this.encryptionService,
+        refreshTokenPath
+      );
+      this.clientStore = new PersistentClientStore(
+        { allowedRedirectUris: [...(config.allowedRedirectUris || []), ...CLAUDE_CALLBACK_URLS] },
+        this.encryptionService,
+        clientPath
+      );
+      this.sessionStore = new PersistentSessionStore(this.encryptionService, sessionPath);
+    } else {
+      // Create in-memory stores (for testing)
+      this.refreshTokenStore = createRefreshTokenStore({ expirySeconds: refreshTokenExpirySec });
+      this.clientStore = createClientStore({
+        allowedRedirectUris: [...(config.allowedRedirectUris || []), ...CLAUDE_CALLBACK_URLS],
+      });
+      this.sessionStore = createSessionStore();
+    }
+
+    // Authorization code store always uses in-memory (short-lived, not needed for persistence)
     this.codeStore = createAuthorizationCodeStore({ expirySeconds: authCodeExpirySec });
-    this.refreshTokenStore = createRefreshTokenStore({ expirySeconds: refreshTokenExpirySec });
-    this.clientStore = createClientStore({
-      allowedRedirectUris: [...(config.allowedRedirectUris || []), ...CLAUDE_CALLBACK_URLS],
-    });
-    this.sessionStore = new InMemorySessionStore();
 
     // Initialize token service (will be updated when keys are available)
     this.tokenService = createTokenService({
@@ -148,9 +144,10 @@ export class OAuthServer {
   }
 
   /**
-   * Initialize the server with generated keys if not provided
+   * Initialize the server with generated keys and load persisted data
    */
   async initialize(): Promise<void> {
+    // Generate keys if not provided
     if (!this.privateKey || !this.publicKey) {
       const keys = await generateKeyPair();
       this.privateKey = keys.privateKey;
@@ -164,6 +161,50 @@ export class OAuthServer {
         accessTokenExpiry: this.config.accessTokenExpiry || DEFAULT_TOKEN_EXPIRY.accessToken,
       });
     }
+
+    // Initialize encryption service and load persisted data if persistence is enabled
+    if (this.encryptionService) {
+      await this.encryptionService.initialize();
+
+      // Load persisted data in parallel
+      await Promise.all([
+        this.hasMethod(this.refreshTokenStore, 'loadFromStorage')
+          ? (this.refreshTokenStore as PersistentRefreshTokenStore).loadFromStorage()
+          : Promise.resolve(),
+        this.hasMethod(this.clientStore, 'loadFromStorage')
+          ? (this.clientStore as PersistentClientStore).loadFromStorage()
+          : Promise.resolve(),
+        this.hasMethod(this.sessionStore, 'loadFromStorage')
+          ? (this.sessionStore as PersistentSessionStore).loadFromStorage()
+          : Promise.resolve(),
+      ]);
+
+      console.log('[OAuth] Persistent storage initialized');
+
+      // Log startup metrics
+      this.logStartupMetrics();
+    }
+  }
+
+  /**
+   * Log startup metrics
+   */
+  private logStartupMetrics(): void {
+    const metrics = this.getMetrics();
+    console.log('[OAuth] Startup Metrics:');
+    console.log(`  - Refresh Tokens: ${metrics.refreshTokens.count} (${metrics.refreshTokens.expiredCount} expired, ${metrics.refreshTokens.rotatedCount} rotated)`);
+    console.log(`  - OAuth Clients: ${metrics.clients.count}`);
+    console.log(`  - Sessions: ${metrics.sessions.count} (${metrics.sessions.expiredCount} expired)`);
+    if (metrics.storage) {
+      console.log(`  - Storage: ${metrics.storage.tokensSize} bytes (tokens), ${metrics.storage.clientsSize} bytes (clients), ${metrics.storage.sessionsSize} bytes (sessions)`);
+    }
+  }
+
+  /**
+   * Type guard to check if object has a method
+   */
+  private hasMethod(obj: any, methodName: string): boolean {
+    return obj && typeof obj[methodName] === 'function';
   }
 
   private parseExpiryToSeconds(expiry: string): number {
@@ -613,6 +654,148 @@ export class OAuthServer {
       scope,
       description: SCOPE_DEFINITIONS[scope as keyof typeof SCOPE_DEFINITIONS],
     }));
+  }
+
+  /**
+   * Shutdown the server and flush all pending data
+   *
+   * Call this method before server shutdown to ensure all data is persisted.
+   */
+  async shutdown(): Promise<void> {
+    if (this.encryptionService) {
+      await Promise.all([
+        this.hasMethod(this.refreshTokenStore, 'flush')
+          ? (this.refreshTokenStore as PersistentRefreshTokenStore).flush()
+          : Promise.resolve(),
+        this.hasMethod(this.clientStore, 'flush')
+          ? (this.clientStore as PersistentClientStore).flush()
+          : Promise.resolve(),
+        this.hasMethod(this.sessionStore, 'flush')
+          ? (this.sessionStore as PersistentSessionStore).flush()
+          : Promise.resolve(),
+      ]);
+
+      console.log('[OAuth] All data flushed to storage');
+    }
+  }
+
+  /**
+   * Get metrics for monitoring
+   */
+  getMetrics(): {
+    refreshTokens: { count: number; expiredCount: number; rotatedCount: number };
+    clients: { count: number };
+    sessions: { count: number; expiredCount: number };
+    storage?: {
+      tokensSize: number;
+      clientsSize: number;
+      sessionsSize: number;
+    };
+  } {
+    const refreshTokens = this.hasMethod(this.refreshTokenStore, 'getMetrics')
+      ? (this.refreshTokenStore as PersistentRefreshTokenStore).getMetrics()
+      : { count: 0, expiredCount: 0, rotatedCount: 0 };
+
+    const clients = this.hasMethod(this.clientStore, 'getMetrics')
+      ? (this.clientStore as PersistentClientStore).getMetrics()
+      : { count: 0 };
+
+    const sessions = this.hasMethod(this.sessionStore, 'getMetrics')
+      ? (this.sessionStore as PersistentSessionStore).getMetrics()
+      : { count: 0, expiredCount: 0 };
+
+    // Get storage file sizes if persistence is enabled
+    let storage: { tokensSize: number; clientsSize: number; sessionsSize: number } | undefined;
+    if (this.encryptionService) {
+      const { homedir } = require('os');
+      const { join } = require('path');
+
+      try {
+        const tokensPath = join(homedir(), '.sage', 'oauth_refresh_tokens.enc');
+        const clientsPath = join(homedir(), '.sage', 'oauth_clients.enc');
+        const sessionsPath = join(homedir(), '.sage', 'oauth_sessions.enc');
+
+        storage = {
+          tokensSize: this.getFileSize(tokensPath),
+          clientsSize: this.getFileSize(clientsPath),
+          sessionsSize: this.getFileSize(sessionsPath),
+        };
+      } catch {
+        // Storage files may not exist yet
+      }
+    }
+
+    return {
+      refreshTokens,
+      clients,
+      sessions,
+      storage,
+    };
+  }
+
+  /**
+   * Get health status for monitoring
+   */
+  getHealthStatus(): {
+    healthy: boolean;
+    encryption: {
+      initialized: boolean;
+      keySource: string;
+    };
+    storage: {
+      accessible: boolean;
+      lastSave?: string;
+    };
+    issues: string[];
+  } {
+    const issues: string[] = [];
+    let storageAccessible = true;
+
+    // Check encryption service
+    const encryptionStatus = this.encryptionService
+      ? this.encryptionService.getHealthStatus()
+      : { initialized: false, keySource: 'none', keyStoragePath: '' };
+
+    if (!encryptionStatus.initialized && this.encryptionService) {
+      issues.push('Encryption service not initialized');
+    }
+
+    // Check storage accessibility
+    if (this.encryptionService) {
+      const { existsSync } = require('fs');
+      const { homedir } = require('os');
+      const { join } = require('path');
+
+      const storageDir = join(homedir(), '.sage');
+      if (!existsSync(storageDir)) {
+        issues.push('Storage directory does not exist');
+        storageAccessible = false;
+      }
+    }
+
+    return {
+      healthy: issues.length === 0,
+      encryption: {
+        initialized: encryptionStatus.initialized,
+        keySource: encryptionStatus.keySource,
+      },
+      storage: {
+        accessible: storageAccessible,
+      },
+      issues,
+    };
+  }
+
+  /**
+   * Get file size safely
+   */
+  private getFileSize(path: string): number {
+    try {
+      const { statSync } = require('fs');
+      return statSync(path).size;
+    } catch {
+      return 0;
+    }
   }
 }
 

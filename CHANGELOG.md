@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **OAuth Token Persistence** - Remote MCP server now persists OAuth tokens across server restarts
+  - Automatic encryption and persistence of refresh tokens, client registrations, and user sessions
+  - AES-256-GCM encryption for all stored OAuth data
+  - Secure encryption key management via `SAGE_ENCRYPTION_KEY` environment variable or auto-generated key at `~/.sage/oauth_encryption_key`
+  - Automatic cleanup of expired tokens and sessions
+  - Write debouncing for optimal performance (refresh tokens)
+  - Atomic file writes to prevent data corruption
+  - Storage location: `~/.sage/` directory
+    - `oauth_refresh_tokens.enc` - Encrypted refresh tokens
+    - `oauth_clients.enc` - Encrypted client registrations
+    - `oauth_sessions.enc` - Encrypted user sessions
+    - `oauth_encryption_key` - Encryption key (auto-generated if not provided)
+  - **No re-authentication required after server restarts**
+  - Graceful shutdown handlers (SIGTERM/SIGINT) to flush pending writes
+
+### Changed
+- **EncryptionService** - Extracted encryption logic for reuse across OAuth components
+  - Supports key loading from environment variable or persistent file
+  - Uses scrypt for key derivation
+  - Format: `salt:iv:authTag:encrypted`
+  - Secure file permissions (600) for all sensitive files
+
+### Security
+- **Enhanced OAuth Security**
+  - All OAuth tokens encrypted at rest using AES-256-GCM
+  - Encryption keys stored with restricted file permissions (600)
+  - Automatic session limits (100 max) to prevent memory exhaustion
+  - Expired token cleanup on server startup
+  - Secure temp file pattern for atomic writes
+
+### Migration Notes
+- **First startup after upgrade**: Users may need to re-authenticate once as existing in-memory tokens are not migrated
+- **Encryption key management**: For production deployments, set `SAGE_ENCRYPTION_KEY` environment variable to ensure token portability across server reinstalls
+- **No breaking changes**: All existing functionality preserved, persistence is enabled by default
+
 ## [0.8.7] - 2026-01-05
 
 ### Fixed

@@ -30,6 +30,8 @@ export interface HTTPServerWithConfigOptions {
   host?: string;
   /** Override auth secret from environment */
   authSecret?: string;
+  /** Enable debug logging */
+  debug?: boolean;
 }
 
 /**
@@ -102,9 +104,11 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   private mcpHandler: MCPHandler | null = null;
   private oauthServer: OAuthServer | null = null;
   private oauthHandler: OAuthHandler | null = null;
+  private debug: boolean = false;
 
   constructor(config: RemoteConfig, options: HTTPServerWithConfigOptions) {
     this.config = config;
+    this.debug = options.debug ?? false;
 
     // Apply priority: CLI > Environment > Config > Default
     this.effectivePort = options.port ?? config.remote.port;
@@ -175,9 +179,13 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         authorizationCodeExpiry: '10m',
         allowedRedirectUris: oauthConfig.allowedRedirectUris || [],
         users,
+        enablePersistence: true,
       });
 
       await this.oauthServer.initialize();
+
+      console.log('[OAuth] Persistence enabled - tokens will survive server restarts');
+      console.log('[OAuth] Storage location: ~/.sage/');
       this.oauthHandler = new OAuthHandler(this.oauthServer, {
         issuer,
         accessTokenExpiry: oauthConfig.accessTokenExpiry || '1h',
@@ -185,6 +193,16 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         allowedRedirectUris: oauthConfig.allowedRedirectUris || [],
         users,
       });
+
+      // Register shutdown handlers for OAuth persistence
+      const shutdownHandler = async () => {
+        console.log('Shutting down, flushing OAuth data...');
+        await this.oauthServer!.shutdown();
+        process.exit(0);
+      };
+
+      process.on('SIGTERM', shutdownHandler);
+      process.on('SIGINT', shutdownHandler);
     }
 
     return new Promise((resolve, reject) => {
@@ -207,6 +225,12 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   async stop(): Promise<void> {
     if (!this.running || !this.server) {
       return;
+    }
+
+    // Flush OAuth data if enabled
+    if (this.oauthServer) {
+      console.log('Shutting down, flushing OAuth data...');
+      await this.oauthServer.shutdown();
     }
 
     return new Promise((resolve) => {
@@ -245,12 +269,23 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     return this.config;
   }
 
+  /**
+   * Log debug message if debug mode is enabled
+   */
+  private debugLog(message: string, ...args: any[]): void {
+    if (this.debug) {
+      console.log(`[DEBUG] ${message}`, ...args);
+    }
+  }
+
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
     const url = req.url || '/';
     const method = req.method || 'GET';
     const origin = req.headers.origin;
     // Extract path without query parameters for routing
     const path = url.split('?')[0];
+
+    this.debugLog(`${method} ${path}`, { origin, headers: req.headers });
 
     // Add CORS headers
     const corsHeaders = this.getCORSHeaders(origin);
@@ -268,6 +303,12 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     // Health check endpoint (no auth required)
     if (path === '/health' && method === 'GET') {
       this.handleHealthCheck(res);
+      return;
+    }
+
+    // OAuth health check endpoint (no auth required)
+    if (path === '/oauth/health' && method === 'GET') {
+      this.handleOAuthHealthCheck(res);
       return;
     }
 
@@ -364,6 +405,41 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     res.end(JSON.stringify(health));
   }
 
+  /**
+   * Handle OAuth health check request
+   */
+  private handleOAuthHealthCheck(res: ServerResponse): void {
+    if (!this.oauthServer) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'OAuth not enabled' }));
+      return;
+    }
+
+    try {
+      const health = this.oauthServer.getHealthStatus();
+      const metrics = this.oauthServer.getMetrics();
+
+      const response = {
+        ...health,
+        metrics,
+        timestamp: new Date().toISOString(),
+      };
+
+      const statusCode = health.healthy ? 200 : 503;
+      res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(response, null, 2));
+
+      this.debugLog('OAuth health check:', response);
+    } catch (error) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        healthy: false,
+        error: 'Failed to get health status',
+        timestamp: new Date().toISOString(),
+      }));
+    }
+  }
+
   private handleAuthToken(req: IncomingMessage, res: ServerResponse): void {
     // Check if auth is enabled
     if (!this.isAuthEnabled() || !this.authenticator) {
@@ -444,31 +520,39 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     const token = this.extractToken(req);
 
     if (!token) {
+      this.debugLog('Authentication failed: No token provided');
       return { valid: false, error: 'Authentication required' };
     }
+
+    this.debugLog('Verifying token...');
 
     // Verify token based on authentication type
     if (this.oauthServer) {
       const result = await this.oauthServer.verifyAccessToken(token);
       if (result.valid) {
+        this.debugLog('OAuth token verified successfully');
         return { valid: true, token };
       }
       // If OAuth fails and static tokens are enabled, try static token verification
       if (this.authenticator) {
         const staticResult = await this.authenticator.verifyToken(token);
         if (staticResult.valid) {
+          this.debugLog('Static token verified successfully');
           return { valid: true, token };
         }
       }
+      this.debugLog('Token verification failed:', result.error);
       return { valid: false, error: result.error };
     }
 
     // Fall back to JWT verification only
     if (this.authenticator) {
       const result = await this.authenticator.verifyToken(token);
+      this.debugLog('JWT token verification:', result.valid ? 'success' : 'failed');
       return { valid: result.valid, error: result.error, token: result.valid ? token : undefined };
     }
 
+    this.debugLog('No authentication configured');
     return { valid: false, error: 'No authentication configured' };
   }
 

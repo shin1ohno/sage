@@ -28,6 +28,8 @@ export interface CLIOptions {
   authSecret?: string;
   /** Generate a bearer token for remote access */
   generateToken: boolean;
+  /** Enable debug logging */
+  debug: boolean;
 }
 
 /** Default port for HTTP server (used when invalid port specified) */
@@ -119,6 +121,7 @@ export function parseArgs(args: string[]): CLIOptions {
   const envHost = process.env.SAGE_HOST;
   const envConfig = process.env.SAGE_CONFIG_PATH;
   const envAuthSecret = process.env.SAGE_AUTH_SECRET;
+  const envDebug = process.env.SAGE_DEBUG === 'true';
 
   // Parse CLI arguments
   const cliRemote = hasFlag(args, '--remote', '-r');
@@ -128,6 +131,7 @@ export function parseArgs(args: string[]): CLIOptions {
   const cliHelp = hasFlag(args, '--help', '-h');
   const cliVersion = hasFlag(args, '--version', '-v');
   const cliGenerateToken = hasFlag(args, '--generate-token', '-t');
+  const cliDebug = hasFlag(args, '--debug', '-d');
 
   // CLI takes precedence over environment variables
   const remote = cliRemote || envRemote;
@@ -153,6 +157,9 @@ export function parseArgs(args: string[]): CLIOptions {
   // Parse config with CLI priority
   const config = cliConfig || envConfig || undefined;
 
+  // Parse debug with CLI priority
+  const debug = cliDebug || envDebug;
+
   return {
     remote,
     port,
@@ -162,6 +169,7 @@ export function parseArgs(args: string[]): CLIOptions {
     version: cliVersion,
     authSecret: envAuthSecret,
     generateToken: cliGenerateToken,
+    debug,
   };
 }
 
@@ -182,6 +190,7 @@ Options:
   --config, -c <path>    Path to configuration file
   --port, -p <number>    HTTP server port (default: 3000)
   --host, -H <address>   HTTP server host (default: 0.0.0.0)
+  --debug, -d            Enable debug logging
   --help, -h             Show this help message
   --version, -v          Show version
 
@@ -191,6 +200,7 @@ Environment Variables:
   SAGE_HOST              HTTP server host
   SAGE_CONFIG_PATH       Path to configuration file
   SAGE_AUTH_SECRET       JWT authentication secret key
+  SAGE_DEBUG             Set to 'true' to enable debug logging
 
 Examples:
   npx sage                           # Run in Stdio mode (Local MCP)

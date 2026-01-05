@@ -194,6 +194,7 @@ Usage with Claude Code:
         port: options.port,
         host: options.host,
         authSecret: options.authSecret,
+        debug: options.debug,
       });
 
       return {

@@ -61,6 +61,29 @@ sage:
   - Estimated: 90 minutes
 ```
 
+### OAuth Token Persistence
+
+sage now includes **persistent OAuth token storage** for Remote MCP server:
+
+- **Automatic token persistence**: OAuth refresh tokens, client registrations, and user sessions are automatically saved and restored across server restarts
+- **Encrypted storage**: All tokens are encrypted using AES-256-GCM before being stored on disk
+- **Secure key management**: Encryption keys can be provided via `SAGE_ENCRYPTION_KEY` environment variable or auto-generated at `~/.sage/oauth_encryption_key`
+- **No re-authentication needed**: Users no longer need to re-authenticate after server restarts
+
+**Storage Location**: All OAuth data is stored in `~/.sage/` directory:
+- `oauth_refresh_tokens.enc` - Encrypted refresh tokens
+- `oauth_clients.enc` - Encrypted client registrations
+- `oauth_sessions.enc` - Encrypted user sessions
+- `oauth_encryption_key` - Encryption key (auto-generated if not provided)
+
+**Setup**: To use a custom encryption key (recommended for production), set the environment variable:
+```bash
+export SAGE_ENCRYPTION_KEY="your-secure-random-key-at-least-32-characters"
+npx @shin1ohno/sage --remote
+```
+
+If no key is provided, sage will automatically generate one and store it securely with 600 file permissions.
+
 ### Google Calendar Integration
 
 sage now supports multiple calendar sources:

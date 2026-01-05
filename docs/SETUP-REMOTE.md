@@ -63,7 +63,78 @@ Remote MCP Server を実行する Mac で:
 npm install -g @shin1ohno/sage
 ```
 
-### Step 2: Remote MCP Server を起動
+### Step 2: Encryption Key の設定（OAuth Persistence）
+
+sage は OAuth トークンを暗号化して永続化します。サーバー再起動後も再認証不要でトークンが維持されます。
+
+#### Encryption Key の管理方法
+
+**方法1: 環境変数で指定（本番環境推奨）**
+
+```bash
+# 安全なランダムキーを生成（32文字以上）
+openssl rand -hex 32
+
+# 環境変数に設定
+export SAGE_ENCRYPTION_KEY="your-generated-encryption-key-at-least-32-characters"
+```
+
+**方法2: 自動生成（開発環境）**
+
+環境変数を設定しない場合、sage は自動的にキーを生成して `~/.sage/oauth_encryption_key` に保存します。
+
+```bash
+# キーなしで起動 - 自動生成される
+npx @shin1ohno/sage --remote
+
+# 生成されたキーの場所を確認
+ls -l ~/.sage/oauth_encryption_key
+# -rw------- 1 user staff 64 Jan 6 10:00 /Users/user/.sage/oauth_encryption_key
+```
+
+#### 暗号化キーのベストプラクティス
+
+1. **本番環境では必ず `SAGE_ENCRYPTION_KEY` 環境変数を使用**
+   - 自動生成されたキーはサーバーの再インストール時に失われます
+   - 環境変数で管理すれば、サーバー移行時にトークンを維持できます
+
+2. **キーは安全に保管**
+   - パスワードマネージャーに保存
+   - サーバー設定管理ツール（Ansible、Terraform等）で管理
+   - 決して git にコミットしない
+
+3. **pm2 や launchd で環境変数を設定**
+   ```bash
+   # pm2の例
+   pm2 start "npx @shin1ohno/sage --remote" --name sage-remote \
+     --env SAGE_ENCRYPTION_KEY="your-key-here"
+
+   # launchd の例（EnvironmentVariables に追加）
+   <key>SAGE_ENCRYPTION_KEY</key>
+   <string>your-key-here</string>
+   ```
+
+4. **キーファイルのバックアップ（自動生成を使用する場合）**
+   ```bash
+   # バックアップ
+   cp ~/.sage/oauth_encryption_key ~/.sage/oauth_encryption_key.backup
+
+   # リストア
+   cp ~/.sage/oauth_encryption_key.backup ~/.sage/oauth_encryption_key
+   ```
+
+#### 暗号化されたデータの保存場所
+
+OAuth データは `~/.sage/` ディレクトリに保存されます：
+
+| ファイル | 内容 | 暗号化 |
+|---------|------|-------|
+| `oauth_encryption_key` | 暗号化キー（自動生成時のみ） | なし（600パーミッション） |
+| `oauth_refresh_tokens.enc` | リフレッシュトークン | AES-256-GCM |
+| `oauth_clients.enc` | クライアント登録情報 | AES-256-GCM |
+| `oauth_sessions.enc` | ユーザーセッション | AES-256-GCM |
+
+### Step 3: Remote MCP Server を起動
 
 sage は **OAuth 2.1** を完全実装しており、Claude iOS App と安全に連携できます。
 
@@ -142,7 +213,7 @@ npx @shin1ohno/sage --remote
 > **⚠️ セキュリティ警告**: 認証なしモードはローカルネットワーク内でのみ使用してください。
 > インターネット経由でアクセスする場合は必ず OAuth 2.0 認証を有効にしてください。
 
-### Step 3: Mac の IP アドレスを確認
+### Step 4: Mac の IP アドレスを確認
 
 ```bash
 # Wi-Fi の IP アドレスを確認
@@ -151,7 +222,7 @@ ipconfig getifaddr en0
 # 例: 192.168.1.100
 ```
 
-### Step 4: ファイアウォールの設定
+### Step 5: ファイアウォールの設定
 
 macOS のファイアウォールでポート 3000 を許可:
 
@@ -159,7 +230,7 @@ macOS のファイアウォールでポート 3000 を許可:
 2. 「オプション...」をクリック
 3. 必要に応じて設定を調整
 
-### Step 5: 認証トークンを取得
+### Step 6: 認証トークンを取得
 
 #### 方法1: CLI で生成（推奨）
 
@@ -195,7 +266,7 @@ curl -X POST http://localhost:3000/auth/token \
 }
 ```
 
-### Step 6: クライアントから接続
+### Step 7: クライアントから接続
 
 iOS/iPadOS の Claude App で Remote MCP Server を設定:
 
