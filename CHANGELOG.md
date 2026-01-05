@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-01-06
+
+### Fixed
+- **OAuth Persistence Race Condition** - Fix ENOENT errors during concurrent file writes
+  - Add `FileMutex` class for per-file write serialization
+  - Integrate mutex into `EncryptionService.encryptToFile()` and `decryptFromFile()`
+  - Prevents race conditions when multiple OAuth operations save simultaneously
+  - Add `waitForPendingWrites()` for graceful shutdown support
+  - Add mutex metrics to health status for monitoring
+
+### Added
+- **FileMutex Utility** - New utility class for serializing file operations
+  - Per-file locking allows parallel writes to different files
+  - Promise queue pattern with no external dependencies
+  - Built-in metrics tracking (wait times, queue depth)
+  - Warning logs for high contention (>10 queued ops) or long waits (>5s)
+
 ## [0.9.0] - 2026-01-06
 
 ### Added
