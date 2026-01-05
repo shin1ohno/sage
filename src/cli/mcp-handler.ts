@@ -14,8 +14,6 @@ import { NotionMCPService } from '../integrations/notion-mcp.js';
 import { TodoListManager } from '../integrations/todo-list-manager.js';
 import { TaskSynchronizer } from '../integrations/task-synchronizer.js';
 import { CalendarEventResponseService, type EventResponseType } from '../integrations/calendar-event-response.js';
-import { CalendarEventCreatorService } from '../integrations/calendar-event-creator.js';
-import { CalendarEventDeleterService } from '../integrations/calendar-event-deleter.js';
 import { WorkingCadenceService } from '../services/working-cadence.js';
 import { CalendarSourceManager } from '../integrations/calendar-source-manager.js';
 import { GoogleCalendarService } from '../integrations/google-calendar-service.js';
@@ -135,8 +133,6 @@ class MCPHandlerImpl implements MCPHandler {
   private todoListManager: TodoListManager | null = null;
   private taskSynchronizer: TaskSynchronizer | null = null;
   private calendarEventResponseService: CalendarEventResponseService | null = null;
-  private calendarEventCreatorService: CalendarEventCreatorService | null = null;
-  private calendarEventDeleterService: CalendarEventDeleterService | null = null;
   private workingCadenceService: WorkingCadenceService | null = null;
   private calendarSourceManager: CalendarSourceManager | null = null;
   private googleCalendarService: GoogleCalendarService | null = null;
@@ -198,8 +194,6 @@ class MCPHandlerImpl implements MCPHandler {
     this.todoListManager = new TodoListManager();
     this.taskSynchronizer = new TaskSynchronizer();
     this.calendarEventResponseService = new CalendarEventResponseService();
-    this.calendarEventCreatorService = new CalendarEventCreatorService();
-    this.calendarEventDeleterService = new CalendarEventDeleterService();
     this.workingCadenceService = new WorkingCadenceService();
   }
 
@@ -1010,125 +1004,12 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['eventId', 'response'],
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.calendarEventResponseService) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const eventId = args.eventId as string;
-          const response = args.response as EventResponseType;
-          const comment = args.comment as string | undefined;
-
-          const isAvailable =
-            await this.calendarEventResponseService!.isEventKitAvailable();
-
-          if (!isAvailable) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: false,
-                      message:
-                        'カレンダーイベント返信機能はmacOSでのみ利用可能です。',
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          const result = await this.calendarEventResponseService!.respondToEvent({
-            eventId,
-            response,
-            comment,
-          });
-
-          if (result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: true,
-                      eventId: result.eventId,
-                      eventTitle: result.eventTitle,
-                      newStatus: result.newStatus,
-                      method: result.method,
-                      instanceOnly: result.instanceOnly,
-                      message: result.message,
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: false,
-                    eventId: result.eventId,
-                    eventTitle: result.eventTitle,
-                    skipped: result.skipped,
-                    reason: result.reason,
-                    error: result.error,
-                    message: result.skipped
-                      ? `イベントをスキップしました: ${result.reason}`
-                      : `イベント返信に失敗しました: ${result.error}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `カレンダーイベント返信に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleRespondToCalendarEvent(this.createCalendarToolsContext(), {
+          eventId: args.eventId as string,
+          response: args.response as EventResponseType,
+          comment: args.comment as string | undefined,
+        })
     );
 
     // respond_to_calendar_events_batch
@@ -1160,102 +1041,12 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['eventIds', 'response'],
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.calendarEventResponseService) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const eventIds = args.eventIds as string[];
-          const response = args.response as EventResponseType;
-          const comment = args.comment as string | undefined;
-
-          const isAvailable =
-            await this.calendarEventResponseService!.isEventKitAvailable();
-
-          if (!isAvailable) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: false,
-                      message:
-                        'カレンダーイベント返信機能はmacOSでのみ利用可能です。',
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          const result =
-            await this.calendarEventResponseService!.respondToEventsBatch({
-              eventIds,
-              response,
-              comment,
-            });
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: result.success,
-                    summary: result.summary,
-                    details: {
-                      succeeded: result.details.succeeded,
-                      skipped: result.details.skipped,
-                      failed: result.details.failed,
-                    },
-                    message: result.message,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `カレンダーイベント一括返信に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleRespondToCalendarEventsBatch(this.createCalendarToolsContext(), {
+          eventIds: args.eventIds as string[],
+          response: args.response as EventResponseType,
+          comment: args.comment as string | undefined,
+        })
     );
 
     // create_calendar_event
@@ -1293,126 +1084,15 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['title', 'startDate', 'endDate'],
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.calendarEventCreatorService) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const title = args.title as string;
-          const startDate = args.startDate as string;
-          const endDate = args.endDate as string;
-          const location = args.location as string | undefined;
-          const notes = args.notes as string | undefined;
-          const calendarName = args.calendarName as string | undefined;
-          const alarms = args.alarms as string[] | undefined;
-
-          const isAvailable = await this.calendarEventCreatorService!.isEventKitAvailable();
-
-          if (!isAvailable) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: false,
-                      message: 'カレンダーイベント作成機能はmacOSでのみ利用可能です。',
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          const result = await this.calendarEventCreatorService!.createEvent({
-            title,
-            startDate,
-            endDate,
-            location,
-            notes,
-            calendarName,
-            alarms,
-          });
-
-          if (result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: true,
-                      eventId: result.eventId,
-                      title: result.title,
-                      startDate: result.startDate,
-                      endDate: result.endDate,
-                      calendarName: result.calendarName,
-                      isAllDay: result.isAllDay,
-                      message: result.message,
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: false,
-                    error: result.error,
-                    message: result.message,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `カレンダーイベント作成に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleCreateCalendarEvent(this.createCalendarToolsContext(), {
+          title: args.title as string,
+          startDate: args.startDate as string,
+          endDate: args.endDate as string,
+          location: args.location as string | undefined,
+          notes: args.notes as string | undefined,
+          calendarName: args.calendarName as string | undefined,
+        })
     );
 
     // delete_calendar_event
@@ -1435,114 +1115,10 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['eventId'],
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.calendarEventDeleterService) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const eventId = args.eventId as string;
-          const calendarName = args.calendarName as string | undefined;
-
-          const isAvailable = await this.calendarEventDeleterService!.isEventKitAvailable();
-
-          if (!isAvailable) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: false,
-                      message: 'カレンダーイベント削除機能はmacOSでのみ利用可能です。',
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          const result = await this.calendarEventDeleterService!.deleteEvent({
-            eventId,
-            calendarName,
-          });
-
-          if (result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: true,
-                      eventId: result.eventId,
-                      title: result.title,
-                      calendarName: result.calendarName,
-                      message: result.message,
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: false,
-                    eventId: result.eventId,
-                    error: result.error,
-                    message: result.message,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `カレンダーイベント削除に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleDeleteCalendarEvent(this.createCalendarToolsContext(), {
+          eventId: args.eventId as string,
+        })
     );
 
     // delete_calendar_events_batch
@@ -1566,101 +1142,10 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['eventIds'],
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.calendarEventDeleterService) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const eventIds = args.eventIds as string[];
-          const calendarName = args.calendarName as string | undefined;
-
-          const isAvailable = await this.calendarEventDeleterService!.isEventKitAvailable();
-
-          if (!isAvailable) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: false,
-                      message: 'カレンダーイベント削除機能はmacOSでのみ利用可能です。',
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          const result = await this.calendarEventDeleterService!.deleteEventsBatch({
-            eventIds,
-            calendarName,
-          });
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: result.success,
-                    totalCount: result.totalCount,
-                    successCount: result.successCount,
-                    failedCount: result.failedCount,
-                    results: result.results.map((r) => ({
-                      eventId: r.eventId,
-                      success: r.success,
-                      title: r.title,
-                      calendarName: r.calendarName,
-                      error: r.error,
-                    })),
-                    message: result.message,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `カレンダーイベント一括削除に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleDeleteCalendarEventsBatch(this.createCalendarToolsContext(), {
+          eventIds: args.eventIds as string[],
+        })
     );
 
     // list_calendar_sources - uses extracted handler
