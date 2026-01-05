@@ -93,6 +93,14 @@ sage now supports multiple calendar sources:
 - **Automatic fallback**: If one source fails, sage automatically uses the other
 - **Event deduplication**: Intelligent merging prevents duplicate events
 
+**Supported Event Types**: sage supports all Google Calendar event types:
+- `default` - Standard meetings and events
+- `outOfOffice` - Vacation and out-of-office blocks with auto-decline
+- `focusTime` - Focus time blocks with Google Chat status integration
+- `workingLocation` - Remote work, office, or custom location (all-day)
+- `birthday` - Birthday and anniversary events (all-day, yearly recurring)
+- `fromGmail` - Auto-generated events from Gmail (read-only, cannot be created)
+
 **Setup**: See [Configuration Guide](docs/CONFIGURATION.md#google-calendar-integration) for Google OAuth setup instructions.
 
 ### Smart Reminder Routing

@@ -287,6 +287,8 @@ describe('GoogleCalendarService', () => {
         status: 'confirmed',
         iCalUID: 'ical-123',
         calendar: undefined,
+        eventType: 'default',
+        typeSpecificProperties: undefined,
       });
     });
 
@@ -555,12 +557,26 @@ describe('GoogleCalendarService', () => {
   });
 
   describe('updateEvent', () => {
+    // Default mock event (eventType: 'default') - allows all field updates
+    const mockDefaultEvent: GoogleCalendarEvent = {
+      id: 'event-123',
+      summary: 'Original Title',
+      start: { dateTime: '2026-01-15T10:00:00Z' },
+      end: { dateTime: '2026-01-15T11:00:00Z' },
+      iCalUID: 'ical-123',
+      // No eventType field means it defaults to 'default'
+    };
+
     beforeEach(async () => {
       await service.authenticate();
       jest.clearAllMocks();
       // Reset retryWithBackoff mock to default behavior
       const { retryWithBackoff } = require('../../src/utils/retry.js');
       retryWithBackoff.mockImplementation(async (fn: any) => fn());
+      // Default: mock events.get to return a 'default' type event
+      mockCalendarClient.events.get.mockResolvedValue({
+        data: mockDefaultEvent,
+      });
     });
 
     it('should update event fields successfully', async () => {
@@ -581,6 +597,11 @@ describe('GoogleCalendarService', () => {
       });
 
       expect(event.title).toBe('Updated Title');
+      expect(mockCalendarClient.events.get).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventId: 'event-123',
+        })
+      );
       expect(mockCalendarClient.events.patch).toHaveBeenCalledWith(
         expect.objectContaining({
           eventId: 'event-123',
@@ -682,6 +703,214 @@ describe('GoogleCalendarService', () => {
       await expect(
         service.updateEvent('non-existent-event', { title: 'Updated' })
       ).rejects.toThrow();
+    });
+
+    // Task 15: Event type restriction tests
+    describe('event type restrictions', () => {
+      it('should allow updating summary of birthday event', async () => {
+        // Mock events.get to return a birthday event
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: {
+            id: 'birthday-123',
+            summary: 'Original Birthday',
+            start: { date: '2026-01-15' },
+            end: { date: '2026-01-16' },
+            iCalUID: 'ical-birthday-123',
+            eventType: 'birthday',
+          },
+        });
+
+        mockCalendarClient.events.patch.mockResolvedValueOnce({
+          data: {
+            id: 'birthday-123',
+            summary: 'Updated Birthday',
+            start: { date: '2026-01-15' },
+            end: { date: '2026-01-16' },
+            iCalUID: 'ical-birthday-123',
+            eventType: 'birthday',
+          },
+        });
+
+        const event = await service.updateEvent('birthday-123', {
+          title: 'Updated Birthday',
+        });
+
+        expect(event.title).toBe('Updated Birthday');
+        expect(mockCalendarClient.events.patch).toHaveBeenCalled();
+      });
+
+      it('should reject updating location of birthday event', async () => {
+        // Mock events.get to return a birthday event
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: {
+            id: 'birthday-123',
+            summary: 'Birthday Event',
+            start: { date: '2026-01-15' },
+            end: { date: '2026-01-16' },
+            iCalUID: 'ical-birthday-123',
+            eventType: 'birthday',
+          },
+        });
+
+        await expect(
+          service.updateEvent('birthday-123', {
+            location: 'New Location',
+          })
+        ).rejects.toThrow(/Cannot update location for birthday events/);
+
+        expect(mockCalendarClient.events.patch).not.toHaveBeenCalled();
+      });
+
+      it('should reject updating description of birthday event', async () => {
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: {
+            id: 'birthday-123',
+            summary: 'Birthday Event',
+            start: { date: '2026-01-15' },
+            end: { date: '2026-01-16' },
+            iCalUID: 'ical-birthday-123',
+            eventType: 'birthday',
+          },
+        });
+
+        await expect(
+          service.updateEvent('birthday-123', {
+            description: 'New Description',
+          })
+        ).rejects.toThrow(/Cannot update description for birthday events/);
+      });
+
+      it('should allow updating attendees of fromGmail event', async () => {
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: {
+            id: 'gmail-123',
+            summary: 'Flight Booking',
+            start: { dateTime: '2026-01-15T10:00:00Z' },
+            end: { dateTime: '2026-01-15T12:00:00Z' },
+            iCalUID: 'ical-gmail-123',
+            eventType: 'fromGmail',
+          },
+        });
+
+        mockCalendarClient.events.patch.mockResolvedValueOnce({
+          data: {
+            id: 'gmail-123',
+            summary: 'Flight Booking',
+            start: { dateTime: '2026-01-15T10:00:00Z' },
+            end: { dateTime: '2026-01-15T12:00:00Z' },
+            iCalUID: 'ical-gmail-123',
+            eventType: 'fromGmail',
+            attendees: [{ email: 'friend@example.com', responseStatus: 'needsAction' }],
+          },
+        });
+
+        const event = await service.updateEvent('gmail-123', {
+          attendees: ['friend@example.com'],
+        });
+
+        expect(event.attendees).toContain('friend@example.com');
+        expect(mockCalendarClient.events.patch).toHaveBeenCalled();
+      });
+
+      it('should reject updating start/end of fromGmail event', async () => {
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: {
+            id: 'gmail-123',
+            summary: 'Flight Booking',
+            start: { dateTime: '2026-01-15T10:00:00Z' },
+            end: { dateTime: '2026-01-15T12:00:00Z' },
+            iCalUID: 'ical-gmail-123',
+            eventType: 'fromGmail',
+          },
+        });
+
+        await expect(
+          service.updateEvent('gmail-123', {
+            start: '2026-01-16T10:00:00Z',
+          })
+        ).rejects.toThrow(/Cannot update start date\/time for fromGmail events/);
+
+        expect(mockCalendarClient.events.patch).not.toHaveBeenCalled();
+      });
+
+      it('should reject updating title of fromGmail event', async () => {
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: {
+            id: 'gmail-123',
+            summary: 'Flight Booking',
+            start: { dateTime: '2026-01-15T10:00:00Z' },
+            end: { dateTime: '2026-01-15T12:00:00Z' },
+            iCalUID: 'ical-gmail-123',
+            eventType: 'fromGmail',
+          },
+        });
+
+        await expect(
+          service.updateEvent('gmail-123', {
+            title: 'New Title',
+          })
+        ).rejects.toThrow(/Cannot update summary for fromGmail events/);
+      });
+
+      it('should allow all updates for default events', async () => {
+        mockCalendarClient.events.patch.mockResolvedValueOnce({
+          data: {
+            id: 'event-123',
+            summary: 'Updated Title',
+            location: 'New Location',
+            description: 'New Description',
+            start: { dateTime: '2026-01-15T10:00:00Z' },
+            end: { dateTime: '2026-01-15T11:00:00Z' },
+            iCalUID: 'ical-123',
+          },
+        });
+
+        const event = await service.updateEvent('event-123', {
+          title: 'Updated Title',
+          location: 'New Location',
+          description: 'New Description',
+        });
+
+        expect(event.title).toBe('Updated Title');
+        expect(event.location).toBe('New Location');
+        expect(event.description).toBe('New Description');
+      });
+
+      it('should allow all updates for focusTime events', async () => {
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: {
+            id: 'focus-123',
+            summary: 'Focus Time',
+            start: { dateTime: '2026-01-15T10:00:00Z' },
+            end: { dateTime: '2026-01-15T12:00:00Z' },
+            iCalUID: 'ical-focus-123',
+            eventType: 'focusTime',
+            focusTimeProperties: {
+              autoDeclineMode: 'declineAllConflictingInvitations',
+            },
+          },
+        });
+
+        mockCalendarClient.events.patch.mockResolvedValueOnce({
+          data: {
+            id: 'focus-123',
+            summary: 'Deep Work',
+            location: 'Home Office',
+            start: { dateTime: '2026-01-15T10:00:00Z' },
+            end: { dateTime: '2026-01-15T12:00:00Z' },
+            iCalUID: 'ical-focus-123',
+            eventType: 'focusTime',
+          },
+        });
+
+        const event = await service.updateEvent('focus-123', {
+          title: 'Deep Work',
+          location: 'Home Office',
+        });
+
+        expect(event.title).toBe('Deep Work');
+        expect(mockCalendarClient.events.patch).toHaveBeenCalled();
+      });
     });
   });
 
@@ -1229,6 +1458,1115 @@ describe('GoogleCalendarService', () => {
       await service.authenticate();
 
       expect(mockOAuthHandler.getOAuth2Client).toHaveBeenCalledWith(mockTokens);
+    });
+  });
+
+  // ============================================================
+  // Task 31: createEvent() with outOfOffice type
+  // Requirements: 1.1, 1.2, 1.3
+  // ============================================================
+  describe('createEvent() with outOfOffice type', () => {
+    beforeEach(async () => {
+      await service.authenticate();
+      jest.clearAllMocks();
+      const { retryWithBackoff } = require('../../src/utils/retry.js');
+      retryWithBackoff.mockImplementation(async (fn: any) => fn());
+    });
+
+    it('should create outOfOffice event with autoDeclineMode', async () => {
+      const mockCreatedEvent: GoogleCalendarEvent = {
+        id: 'ooo-event-123',
+        summary: 'Out of Office - Vacation',
+        start: { dateTime: '2026-01-20T09:00:00Z' },
+        end: { dateTime: '2026-01-24T17:00:00Z' },
+        iCalUID: 'ical-ooo-123',
+        eventType: 'outOfOffice',
+        outOfOfficeProperties: {
+          autoDeclineMode: 'declineAllConflictingInvitations',
+        },
+      };
+
+      mockCalendarClient.events.insert.mockResolvedValueOnce({
+        data: mockCreatedEvent,
+      });
+
+      const event = await service.createEvent({
+        title: 'Out of Office - Vacation',
+        start: '2026-01-20T09:00:00Z',
+        end: '2026-01-24T17:00:00Z',
+        eventType: 'outOfOffice',
+        outOfOfficeProperties: {
+          autoDeclineMode: 'declineAllConflictingInvitations',
+        },
+      });
+
+      expect(event.id).toBe('ooo-event-123');
+      expect(event.eventType).toBe('outOfOffice');
+      expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({
+            summary: 'Out of Office - Vacation',
+            eventType: 'outOfOffice',
+            outOfOfficeProperties: {
+              autoDeclineMode: 'declineAllConflictingInvitations',
+              declineMessage: undefined,
+            },
+          }),
+        })
+      );
+    });
+
+    it('should create outOfOffice event with custom declineMessage', async () => {
+      const mockCreatedEvent: GoogleCalendarEvent = {
+        id: 'ooo-event-456',
+        summary: 'Out of Office - Conference',
+        start: { dateTime: '2026-02-10T08:00:00Z' },
+        end: { dateTime: '2026-02-12T18:00:00Z' },
+        iCalUID: 'ical-ooo-456',
+        eventType: 'outOfOffice',
+        outOfOfficeProperties: {
+          autoDeclineMode: 'declineOnlyNewConflictingInvitations',
+          declineMessage: 'I am attending a conference and will not be available.',
+        },
+      };
+
+      mockCalendarClient.events.insert.mockResolvedValueOnce({
+        data: mockCreatedEvent,
+      });
+
+      const event = await service.createEvent({
+        title: 'Out of Office - Conference',
+        start: '2026-02-10T08:00:00Z',
+        end: '2026-02-12T18:00:00Z',
+        eventType: 'outOfOffice',
+        outOfOfficeProperties: {
+          autoDeclineMode: 'declineOnlyNewConflictingInvitations',
+          declineMessage: 'I am attending a conference and will not be available.',
+        },
+      });
+
+      expect(event.id).toBe('ooo-event-456');
+      expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({
+            outOfOfficeProperties: {
+              autoDeclineMode: 'declineOnlyNewConflictingInvitations',
+              declineMessage: 'I am attending a conference and will not be available.',
+            },
+          }),
+        })
+      );
+    });
+
+    it('should reject invalid autoDeclineMode values', async () => {
+      await expect(
+        service.createEvent({
+          title: 'Out of Office',
+          start: '2026-01-20T09:00:00Z',
+          end: '2026-01-24T17:00:00Z',
+          eventType: 'outOfOffice',
+          outOfOfficeProperties: {
+            autoDeclineMode: 'invalidMode' as any,
+          },
+        })
+      ).rejects.toThrow();
+
+      expect(mockCalendarClient.events.insert).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============================================================
+  // Task 32: createEvent() with focusTime type
+  // Requirements: 2.1, 2.2, 2.3, 2.4
+  // ============================================================
+  describe('createEvent() with focusTime type', () => {
+    beforeEach(async () => {
+      await service.authenticate();
+      jest.clearAllMocks();
+      const { retryWithBackoff } = require('../../src/utils/retry.js');
+      retryWithBackoff.mockImplementation(async (fn: any) => fn());
+    });
+
+    it('should create focusTime event with chatStatus', async () => {
+      const mockCreatedEvent: GoogleCalendarEvent = {
+        id: 'focus-event-123',
+        summary: 'Deep Work Block',
+        start: { dateTime: '2026-01-15T09:00:00Z' },
+        end: { dateTime: '2026-01-15T12:00:00Z' },
+        iCalUID: 'ical-focus-123',
+        eventType: 'focusTime',
+        focusTimeProperties: {
+          autoDeclineMode: 'declineAllConflictingInvitations',
+          chatStatus: 'doNotDisturb',
+        },
+      };
+
+      mockCalendarClient.events.insert.mockResolvedValueOnce({
+        data: mockCreatedEvent,
+      });
+
+      const event = await service.createEvent({
+        title: 'Deep Work Block',
+        start: '2026-01-15T09:00:00Z',
+        end: '2026-01-15T12:00:00Z',
+        eventType: 'focusTime',
+        focusTimeProperties: {
+          autoDeclineMode: 'declineAllConflictingInvitations',
+          chatStatus: 'doNotDisturb',
+        },
+      });
+
+      expect(event.id).toBe('focus-event-123');
+      expect(event.eventType).toBe('focusTime');
+      expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({
+            summary: 'Deep Work Block',
+            eventType: 'focusTime',
+            focusTimeProperties: {
+              autoDeclineMode: 'declineAllConflictingInvitations',
+              declineMessage: undefined,
+              chatStatus: 'doNotDisturb',
+            },
+          }),
+        })
+      );
+    });
+
+    it('should create focusTime event with autoDeclineMode', async () => {
+      const mockCreatedEvent: GoogleCalendarEvent = {
+        id: 'focus-event-456',
+        summary: 'Coding Session',
+        start: { dateTime: '2026-01-16T14:00:00Z' },
+        end: { dateTime: '2026-01-16T17:00:00Z' },
+        iCalUID: 'ical-focus-456',
+        eventType: 'focusTime',
+        focusTimeProperties: {
+          autoDeclineMode: 'declineNone',
+        },
+      };
+
+      mockCalendarClient.events.insert.mockResolvedValueOnce({
+        data: mockCreatedEvent,
+      });
+
+      const event = await service.createEvent({
+        title: 'Coding Session',
+        start: '2026-01-16T14:00:00Z',
+        end: '2026-01-16T17:00:00Z',
+        eventType: 'focusTime',
+        focusTimeProperties: {
+          autoDeclineMode: 'declineNone',
+        },
+      });
+
+      expect(event.id).toBe('focus-event-456');
+      expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({
+            focusTimeProperties: expect.objectContaining({
+              autoDeclineMode: 'declineNone',
+            }),
+          }),
+        })
+      );
+    });
+
+    it('should reject invalid chatStatus values', async () => {
+      await expect(
+        service.createEvent({
+          title: 'Focus Time',
+          start: '2026-01-15T09:00:00Z',
+          end: '2026-01-15T12:00:00Z',
+          eventType: 'focusTime',
+          focusTimeProperties: {
+            autoDeclineMode: 'declineAllConflictingInvitations',
+            chatStatus: 'invalidStatus' as any,
+          },
+        })
+      ).rejects.toThrow();
+
+      expect(mockCalendarClient.events.insert).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============================================================
+  // Task 33: createEvent() with workingLocation type
+  // Requirements: 3.1, 3.2, 3.3, 3.4, 3.5
+  // ============================================================
+  describe('createEvent() with workingLocation type', () => {
+    beforeEach(async () => {
+      await service.authenticate();
+      jest.clearAllMocks();
+      const { retryWithBackoff } = require('../../src/utils/retry.js');
+      retryWithBackoff.mockImplementation(async (fn: any) => fn());
+    });
+
+    it('should create homeOffice workingLocation event', async () => {
+      const mockCreatedEvent: GoogleCalendarEvent = {
+        id: 'wl-event-123',
+        summary: 'Working from Home',
+        start: { date: '2026-01-15' },
+        end: { date: '2026-01-16' },
+        iCalUID: 'ical-wl-123',
+        eventType: 'workingLocation',
+        workingLocationProperties: {
+          type: 'homeOffice',
+          homeOffice: true,
+        },
+      };
+
+      mockCalendarClient.events.insert.mockResolvedValueOnce({
+        data: mockCreatedEvent,
+      });
+
+      const event = await service.createEvent({
+        title: 'Working from Home',
+        start: '2026-01-15T00:00:00Z',
+        end: '2026-01-16T00:00:00Z',
+        isAllDay: true,
+        eventType: 'workingLocation',
+        workingLocationProperties: {
+          type: 'homeOffice',
+          homeOffice: true,
+        },
+      });
+
+      expect(event.id).toBe('wl-event-123');
+      expect(event.eventType).toBe('workingLocation');
+      expect(event.isAllDay).toBe(true);
+      expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({
+            eventType: 'workingLocation',
+            workingLocationProperties: expect.objectContaining({
+              type: 'homeOffice',
+              homeOffice: {},
+            }),
+            start: { date: '2026-01-15' },
+            end: { date: '2026-01-16' },
+          }),
+        })
+      );
+    });
+
+    it('should create officeLocation workingLocation event with buildingId', async () => {
+      const mockCreatedEvent: GoogleCalendarEvent = {
+        id: 'wl-event-456',
+        summary: 'Working at HQ',
+        start: { date: '2026-01-17' },
+        end: { date: '2026-01-18' },
+        iCalUID: 'ical-wl-456',
+        eventType: 'workingLocation',
+        workingLocationProperties: {
+          type: 'officeLocation',
+          officeLocation: {
+            buildingId: 'building-123',
+            floorId: '5th',
+            label: 'Main Office',
+          },
+        },
+      };
+
+      mockCalendarClient.events.insert.mockResolvedValueOnce({
+        data: mockCreatedEvent,
+      });
+
+      const event = await service.createEvent({
+        title: 'Working at HQ',
+        start: '2026-01-17T00:00:00Z',
+        end: '2026-01-18T00:00:00Z',
+        isAllDay: true,
+        eventType: 'workingLocation',
+        workingLocationProperties: {
+          type: 'officeLocation',
+          officeLocation: {
+            buildingId: 'building-123',
+            floorId: '5th',
+            label: 'Main Office',
+          },
+        },
+      });
+
+      expect(event.id).toBe('wl-event-456');
+      expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({
+            eventType: 'workingLocation',
+            workingLocationProperties: expect.objectContaining({
+              type: 'officeLocation',
+              officeLocation: {
+                buildingId: 'building-123',
+                floorId: '5th',
+                floorSectionId: undefined,
+                deskId: undefined,
+                label: 'Main Office',
+              },
+            }),
+          }),
+        })
+      );
+    });
+
+    it('should create customLocation workingLocation event', async () => {
+      const mockCreatedEvent: GoogleCalendarEvent = {
+        id: 'wl-event-789',
+        summary: 'Working at Coffee Shop',
+        start: { date: '2026-01-20' },
+        end: { date: '2026-01-21' },
+        iCalUID: 'ical-wl-789',
+        eventType: 'workingLocation',
+        workingLocationProperties: {
+          type: 'customLocation',
+          customLocation: {
+            label: 'Downtown Coffee Shop',
+          },
+        },
+      };
+
+      mockCalendarClient.events.insert.mockResolvedValueOnce({
+        data: mockCreatedEvent,
+      });
+
+      const event = await service.createEvent({
+        title: 'Working at Coffee Shop',
+        start: '2026-01-20T00:00:00Z',
+        end: '2026-01-21T00:00:00Z',
+        isAllDay: true,
+        eventType: 'workingLocation',
+        workingLocationProperties: {
+          type: 'customLocation',
+          customLocation: {
+            label: 'Downtown Coffee Shop',
+          },
+        },
+      });
+
+      expect(event.id).toBe('wl-event-789');
+      expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({
+            workingLocationProperties: expect.objectContaining({
+              type: 'customLocation',
+              customLocation: {
+                label: 'Downtown Coffee Shop',
+              },
+            }),
+          }),
+        })
+      );
+    });
+
+    it('should reject mismatched type and properties', async () => {
+      // Type is homeOffice but providing customLocation properties
+      await expect(
+        service.createEvent({
+          title: 'Invalid Working Location',
+          start: '2026-01-15T00:00:00Z',
+          end: '2026-01-16T00:00:00Z',
+          isAllDay: true,
+          eventType: 'workingLocation',
+          workingLocationProperties: {
+            type: 'homeOffice',
+            customLocation: {
+              label: 'Wrong property for homeOffice type',
+            },
+          } as any,
+        })
+      ).rejects.toThrow();
+
+      expect(mockCalendarClient.events.insert).not.toHaveBeenCalled();
+    });
+
+    it('should enforce all-day constraint', async () => {
+      // workingLocation events must be all-day
+      await expect(
+        service.createEvent({
+          title: 'Working from Home',
+          start: '2026-01-15T09:00:00Z',
+          end: '2026-01-15T17:00:00Z',
+          isAllDay: false,
+          eventType: 'workingLocation',
+          workingLocationProperties: {
+            type: 'homeOffice',
+            homeOffice: true,
+          },
+        })
+      ).rejects.toThrow(/all-day/i);
+
+      expect(mockCalendarClient.events.insert).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============================================================
+  // Task 34: createEvent() with birthday type
+  // Requirements: 4.4
+  // ============================================================
+  describe('createEvent() with birthday type', () => {
+    beforeEach(async () => {
+      await service.authenticate();
+      jest.clearAllMocks();
+      const { retryWithBackoff } = require('../../src/utils/retry.js');
+      retryWithBackoff.mockImplementation(async (fn: any) => fn());
+    });
+
+    it('should create birthday event with yearly recurrence', async () => {
+      const mockCreatedEvent: GoogleCalendarEvent = {
+        id: 'birthday-event-123',
+        summary: "John's Birthday",
+        start: { date: '2026-03-15' },
+        end: { date: '2026-03-16' },
+        iCalUID: 'ical-birthday-123',
+        eventType: 'birthday',
+        birthdayProperties: {
+          type: 'birthday',
+        },
+      };
+
+      mockCalendarClient.events.insert.mockResolvedValueOnce({
+        data: mockCreatedEvent,
+      });
+
+      const event = await service.createEvent({
+        title: "John's Birthday",
+        start: '2026-03-15T00:00:00Z',
+        end: '2026-03-16T00:00:00Z',
+        isAllDay: true,
+        eventType: 'birthday',
+        birthdayProperties: {
+          type: 'birthday',
+        },
+      });
+
+      expect(event.id).toBe('birthday-event-123');
+      expect(event.eventType).toBe('birthday');
+      expect(event.isAllDay).toBe(true);
+      expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({
+            summary: "John's Birthday",
+            eventType: 'birthday',
+            start: { date: '2026-03-15' },
+            end: { date: '2026-03-16' },
+          }),
+        })
+      );
+    });
+
+    it('should enforce all-day constraint', async () => {
+      // birthday events must be all-day
+      await expect(
+        service.createEvent({
+          title: "John's Birthday",
+          start: '2026-03-15T10:00:00Z',
+          end: '2026-03-15T22:00:00Z',
+          isAllDay: false,
+          eventType: 'birthday',
+          birthdayProperties: {
+            type: 'birthday',
+          },
+        })
+      ).rejects.toThrow(/all-day/i);
+
+      expect(mockCalendarClient.events.insert).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============================================================
+  // Task 35: createEvent() rejecting fromGmail type
+  // Requirements: 5.4
+  // ============================================================
+  describe('createEvent() with fromGmail type', () => {
+    beforeEach(async () => {
+      await service.authenticate();
+      jest.clearAllMocks();
+      const { retryWithBackoff } = require('../../src/utils/retry.js');
+      retryWithBackoff.mockImplementation(async (fn: any) => fn());
+    });
+
+    it('should reject fromGmail creation with descriptive error', async () => {
+      await expect(
+        service.createEvent({
+          title: 'Flight Booking',
+          start: '2026-02-01T10:00:00Z',
+          end: '2026-02-01T12:00:00Z',
+          eventType: 'fromGmail',
+        })
+      ).rejects.toThrow(/fromGmail events cannot be created/i);
+
+      expect(mockCalendarClient.events.insert).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============================================================
+  // Task 36: listEvents() with event type filtering
+  // Requirements: 7.1, 7.2, 7.3, 7.4
+  // ============================================================
+  describe('listEvents() with event type filtering', () => {
+    const mockFocusTimeEvent: GoogleCalendarEvent = {
+      id: 'focus-123',
+      summary: 'Focus Time Block',
+      start: { dateTime: '2026-01-15T09:00:00Z' },
+      end: { dateTime: '2026-01-15T12:00:00Z' },
+      iCalUID: 'ical-focus-123',
+      eventType: 'focusTime',
+      focusTimeProperties: {
+        autoDeclineMode: 'declineAllConflictingInvitations',
+        chatStatus: 'doNotDisturb',
+      },
+    };
+
+    const mockOutOfOfficeEvent: GoogleCalendarEvent = {
+      id: 'ooo-123',
+      summary: 'Vacation',
+      start: { dateTime: '2026-01-20T00:00:00Z' },
+      end: { dateTime: '2026-01-24T00:00:00Z' },
+      iCalUID: 'ical-ooo-123',
+      eventType: 'outOfOffice',
+      outOfOfficeProperties: {
+        autoDeclineMode: 'declineAllConflictingInvitations',
+      },
+    };
+
+    const mockDefaultEvent: GoogleCalendarEvent = {
+      id: 'default-123',
+      summary: 'Team Meeting',
+      start: { dateTime: '2026-01-15T14:00:00Z' },
+      end: { dateTime: '2026-01-15T15:00:00Z' },
+      iCalUID: 'ical-default-123',
+      // eventType defaults to 'default' when not specified
+    };
+
+    const mockWorkingLocationEvent: GoogleCalendarEvent = {
+      id: 'wl-123',
+      summary: 'Working from Home',
+      start: { date: '2026-01-15' },
+      end: { date: '2026-01-16' },
+      iCalUID: 'ical-wl-123',
+      eventType: 'workingLocation',
+      workingLocationProperties: {
+        type: 'homeOffice',
+        homeOffice: true,
+      },
+    };
+
+    beforeEach(async () => {
+      await service.authenticate();
+      jest.clearAllMocks();
+      const { retryWithBackoff } = require('../../src/utils/retry.js');
+      retryWithBackoff.mockImplementation(async (fn: any) => fn());
+    });
+
+    it('should return only focusTime events when eventTypes=["focusTime"]', async () => {
+      mockCalendarClient.events.list.mockResolvedValueOnce({
+        data: {
+          items: [
+            mockFocusTimeEvent,
+            mockOutOfOfficeEvent,
+            mockDefaultEvent,
+            mockWorkingLocationEvent,
+          ],
+        },
+      });
+
+      const events = await service.listEvents({
+        startDate: '2026-01-15T00:00:00Z',
+        endDate: '2026-01-25T00:00:00Z',
+        eventTypes: ['focusTime'],
+      });
+
+      expect(events).toHaveLength(1);
+      expect(events[0].id).toBe('focus-123');
+      expect(events[0].eventType).toBe('focusTime');
+    });
+
+    it('should return multiple types when eventTypes=["outOfOffice", "focusTime"]', async () => {
+      mockCalendarClient.events.list.mockResolvedValueOnce({
+        data: {
+          items: [
+            mockFocusTimeEvent,
+            mockOutOfOfficeEvent,
+            mockDefaultEvent,
+            mockWorkingLocationEvent,
+          ],
+        },
+      });
+
+      const events = await service.listEvents({
+        startDate: '2026-01-15T00:00:00Z',
+        endDate: '2026-01-25T00:00:00Z',
+        eventTypes: ['outOfOffice', 'focusTime'],
+      });
+
+      expect(events).toHaveLength(2);
+      expect(events.map(e => e.eventType).sort()).toEqual(['focusTime', 'outOfOffice']);
+    });
+
+    it('should return all event types when eventTypes is not provided', async () => {
+      mockCalendarClient.events.list.mockResolvedValueOnce({
+        data: {
+          items: [
+            mockFocusTimeEvent,
+            mockOutOfOfficeEvent,
+            mockDefaultEvent,
+            mockWorkingLocationEvent,
+          ],
+        },
+      });
+
+      const events = await service.listEvents({
+        startDate: '2026-01-15T00:00:00Z',
+        endDate: '2026-01-25T00:00:00Z',
+      });
+
+      expect(events).toHaveLength(4);
+    });
+
+    it('should handle empty result when no events match filter', async () => {
+      mockCalendarClient.events.list.mockResolvedValueOnce({
+        data: {
+          items: [mockDefaultEvent], // Only default event
+        },
+      });
+
+      const events = await service.listEvents({
+        startDate: '2026-01-15T00:00:00Z',
+        endDate: '2026-01-25T00:00:00Z',
+        eventTypes: ['focusTime', 'outOfOffice'], // Filter for types not present
+      });
+
+      expect(events).toHaveLength(0);
+    });
+  });
+
+  // ============================================================
+  // Task 37: updateEvent() with event type restrictions
+  // Requirements: 4.5, 5.3, 6.6
+  // ============================================================
+  describe('updateEvent() with event type restrictions', () => {
+    beforeEach(async () => {
+      await service.authenticate();
+      jest.clearAllMocks();
+      const { retryWithBackoff } = require('../../src/utils/retry.js');
+      retryWithBackoff.mockImplementation(async (fn: any) => fn());
+    });
+
+    it('should allow updating summary of birthday event', async () => {
+      mockCalendarClient.events.get.mockResolvedValueOnce({
+        data: {
+          id: 'birthday-123',
+          summary: 'Original Birthday',
+          start: { date: '2026-03-15' },
+          end: { date: '2026-03-16' },
+          iCalUID: 'ical-birthday-123',
+          eventType: 'birthday',
+          birthdayProperties: {
+            type: 'birthday',
+          },
+        },
+      });
+
+      mockCalendarClient.events.patch.mockResolvedValueOnce({
+        data: {
+          id: 'birthday-123',
+          summary: 'Updated Birthday Name',
+          start: { date: '2026-03-15' },
+          end: { date: '2026-03-16' },
+          iCalUID: 'ical-birthday-123',
+          eventType: 'birthday',
+        },
+      });
+
+      const event = await service.updateEvent('birthday-123', {
+        title: 'Updated Birthday Name',
+      });
+
+      expect(event.title).toBe('Updated Birthday Name');
+      expect(mockCalendarClient.events.patch).toHaveBeenCalled();
+    });
+
+    it('should reject updating location of birthday event', async () => {
+      mockCalendarClient.events.get.mockResolvedValueOnce({
+        data: {
+          id: 'birthday-123',
+          summary: 'Birthday Event',
+          start: { date: '2026-03-15' },
+          end: { date: '2026-03-16' },
+          iCalUID: 'ical-birthday-123',
+          eventType: 'birthday',
+          birthdayProperties: {
+            type: 'birthday',
+          },
+        },
+      });
+
+      await expect(
+        service.updateEvent('birthday-123', {
+          location: 'Party Venue',
+        })
+      ).rejects.toThrow(/Cannot update.*location.*birthday/i);
+
+      expect(mockCalendarClient.events.patch).not.toHaveBeenCalled();
+    });
+
+    it('should allow updating colorId of fromGmail event', async () => {
+      // Note: colorId is handled through reminders in the current implementation
+      // The test verifies that allowed fields (reminders) can be updated for fromGmail events
+      mockCalendarClient.events.get.mockResolvedValueOnce({
+        data: {
+          id: 'gmail-123',
+          summary: 'Flight Booking',
+          start: { dateTime: '2026-02-01T10:00:00Z' },
+          end: { dateTime: '2026-02-01T12:00:00Z' },
+          iCalUID: 'ical-gmail-123',
+          eventType: 'fromGmail',
+        },
+      });
+
+      mockCalendarClient.events.patch.mockResolvedValueOnce({
+        data: {
+          id: 'gmail-123',
+          summary: 'Flight Booking',
+          start: { dateTime: '2026-02-01T10:00:00Z' },
+          end: { dateTime: '2026-02-01T12:00:00Z' },
+          iCalUID: 'ical-gmail-123',
+          eventType: 'fromGmail',
+          reminders: {
+            useDefault: false,
+            overrides: [{ method: 'popup', minutes: 60 }],
+          },
+        },
+      });
+
+      const event = await service.updateEvent('gmail-123', {
+        reminders: {
+          useDefault: false,
+          overrides: [{ method: 'popup', minutes: 60 }],
+        },
+      });
+
+      expect(event.id).toBe('gmail-123');
+      expect(mockCalendarClient.events.patch).toHaveBeenCalled();
+    });
+
+    it('should reject updating start/end of fromGmail event', async () => {
+      mockCalendarClient.events.get.mockResolvedValueOnce({
+        data: {
+          id: 'gmail-123',
+          summary: 'Flight Booking',
+          start: { dateTime: '2026-02-01T10:00:00Z' },
+          end: { dateTime: '2026-02-01T12:00:00Z' },
+          iCalUID: 'ical-gmail-123',
+          eventType: 'fromGmail',
+        },
+      });
+
+      await expect(
+        service.updateEvent('gmail-123', {
+          start: '2026-02-02T10:00:00Z',
+        })
+      ).rejects.toThrow(/Cannot update.*start.*fromGmail/i);
+
+      expect(mockCalendarClient.events.patch).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============================================================
+  // Task 39: Backward compatibility tests
+  // Requirements: Ensure existing code continues to work with new event type features
+  // ============================================================
+  describe('Backward compatibility', () => {
+    beforeEach(async () => {
+      await service.authenticate();
+      jest.clearAllMocks();
+      const { retryWithBackoff } = require('../../src/utils/retry.js');
+      retryWithBackoff.mockImplementation(async (fn: any) => fn());
+    });
+
+    describe('handling events without eventType field', () => {
+      it('should handle CalendarEvent without eventType field (undefined)', async () => {
+        // Mock event without eventType field (typical of older API responses or EventKit)
+        const mockEventWithoutType: GoogleCalendarEvent = {
+          id: 'event-no-type-123',
+          summary: 'Legacy Event',
+          start: { dateTime: '2026-01-15T10:00:00Z' },
+          end: { dateTime: '2026-01-15T11:00:00Z' },
+          iCalUID: 'ical-legacy-123',
+          // eventType is intentionally omitted
+        };
+
+        mockCalendarClient.events.list.mockResolvedValueOnce({
+          data: {
+            items: [mockEventWithoutType],
+          },
+        });
+
+        const events = await service.listEvents({
+          startDate: '2026-01-15T00:00:00Z',
+          endDate: '2026-01-16T00:00:00Z',
+        });
+
+        expect(events).toHaveLength(1);
+        expect(events[0].id).toBe('event-no-type-123');
+        // Should default to 'default' eventType
+        expect(events[0].eventType).toBe('default');
+        // typeSpecificProperties should be undefined for default events
+        expect(events[0].typeSpecificProperties).toBeUndefined();
+      });
+
+      it('should default to "default" eventType when creating events without specifying type', async () => {
+        const mockCreatedEvent: GoogleCalendarEvent = {
+          id: 'new-event-123',
+          summary: 'Simple Meeting',
+          start: { dateTime: '2026-01-15T10:00:00Z' },
+          end: { dateTime: '2026-01-15T11:00:00Z' },
+          iCalUID: 'ical-new-123',
+          // No eventType in response - typical for default events
+        };
+
+        mockCalendarClient.events.insert.mockResolvedValueOnce({
+          data: mockCreatedEvent,
+        });
+
+        // Create event without specifying eventType
+        const event = await service.createEvent({
+          title: 'Simple Meeting',
+          start: '2026-01-15T10:00:00Z',
+          end: '2026-01-15T11:00:00Z',
+          // eventType is intentionally omitted
+        });
+
+        expect(event.id).toBe('new-event-123');
+        expect(event.title).toBe('Simple Meeting');
+        // Should default to 'default' eventType
+        expect(event.eventType).toBe('default');
+        // Request body should NOT include eventType when not specified
+        expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            requestBody: expect.not.objectContaining({
+              eventType: expect.anything(),
+            }),
+          })
+        );
+      });
+    });
+
+    describe('maintaining existing CalendarEvent fields', () => {
+      it('should maintain all existing CalendarEvent fields in responses', async () => {
+        // Mock a complete Google Calendar event with all fields
+        const mockCompleteEvent: GoogleCalendarEvent = {
+          id: 'complete-event-123',
+          summary: 'Complete Event',
+          description: 'This is a complete event with all fields',
+          location: 'Conference Room A',
+          start: { dateTime: '2026-01-15T10:00:00+09:00', timeZone: 'Asia/Tokyo' },
+          end: { dateTime: '2026-01-15T11:00:00+09:00', timeZone: 'Asia/Tokyo' },
+          attendees: [
+            { email: 'attendee1@example.com', responseStatus: 'accepted' },
+            { email: 'attendee2@example.com', responseStatus: 'tentative' },
+          ],
+          iCalUID: 'ical-complete-123',
+          status: 'confirmed',
+          organizer: { email: 'organizer@example.com', displayName: 'Organizer' },
+          // eventType is omitted to test backward compatibility
+        };
+
+        mockCalendarClient.events.list.mockResolvedValueOnce({
+          data: {
+            items: [mockCompleteEvent],
+          },
+        });
+
+        const events = await service.listEvents({
+          startDate: '2026-01-15T00:00:00Z',
+          endDate: '2026-01-16T00:00:00Z',
+        });
+
+        expect(events).toHaveLength(1);
+        const event = events[0];
+
+        // Verify all existing CalendarEvent fields are preserved
+        expect(event.id).toBe('complete-event-123');
+        expect(event.title).toBe('Complete Event');
+        expect(event.description).toBe('This is a complete event with all fields');
+        expect(event.location).toBe('Conference Room A');
+        expect(event.start).toBe('2026-01-15T10:00:00+09:00');
+        expect(event.end).toBe('2026-01-15T11:00:00+09:00');
+        expect(event.isAllDay).toBe(false);
+        expect(event.source).toBe('google');
+        expect(event.attendees).toEqual(['attendee1@example.com', 'attendee2@example.com']);
+        expect(event.iCalUID).toBe('ical-complete-123');
+        expect(event.status).toBe('confirmed');
+        // eventType should default to 'default' for backward compatibility
+        expect(event.eventType).toBe('default');
+      });
+
+      it('should work correctly when typeSpecificProperties is undefined', async () => {
+        // Default event without type-specific properties
+        const mockDefaultEvent: GoogleCalendarEvent = {
+          id: 'default-event-123',
+          summary: 'Regular Meeting',
+          start: { dateTime: '2026-01-15T14:00:00Z' },
+          end: { dateTime: '2026-01-15T15:00:00Z' },
+          iCalUID: 'ical-default-123',
+          eventType: 'default',
+          // No type-specific properties
+        };
+
+        mockCalendarClient.events.list.mockResolvedValueOnce({
+          data: {
+            items: [mockDefaultEvent],
+          },
+        });
+
+        const events = await service.listEvents({
+          startDate: '2026-01-15T00:00:00Z',
+          endDate: '2026-01-16T00:00:00Z',
+        });
+
+        expect(events).toHaveLength(1);
+        expect(events[0].eventType).toBe('default');
+        // typeSpecificProperties should be undefined for 'default' events
+        expect(events[0].typeSpecificProperties).toBeUndefined();
+      });
+    });
+
+    describe('update operations backward compatibility', () => {
+      it('should allow all updates for events without eventType (treated as default)', async () => {
+        // Mock get to return event without eventType field
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: {
+            id: 'legacy-event-123',
+            summary: 'Legacy Event',
+            start: { dateTime: '2026-01-15T10:00:00Z' },
+            end: { dateTime: '2026-01-15T11:00:00Z' },
+            iCalUID: 'ical-legacy-123',
+            // No eventType field
+          },
+        });
+
+        mockCalendarClient.events.patch.mockResolvedValueOnce({
+          data: {
+            id: 'legacy-event-123',
+            summary: 'Updated Legacy Event',
+            location: 'New Location',
+            description: 'New Description',
+            start: { dateTime: '2026-01-15T11:00:00Z' },
+            end: { dateTime: '2026-01-15T12:00:00Z' },
+            iCalUID: 'ical-legacy-123',
+          },
+        });
+
+        // Should allow all field updates for events without eventType
+        const event = await service.updateEvent('legacy-event-123', {
+          title: 'Updated Legacy Event',
+          location: 'New Location',
+          description: 'New Description',
+          start: '2026-01-15T11:00:00Z',
+          end: '2026-01-15T12:00:00Z',
+        });
+
+        expect(event.title).toBe('Updated Legacy Event');
+        expect(event.location).toBe('New Location');
+        expect(mockCalendarClient.events.patch).toHaveBeenCalled();
+      });
+    });
+
+    describe('all-day event backward compatibility', () => {
+      it('should correctly handle all-day events without eventType', async () => {
+        const mockAllDayEvent: GoogleCalendarEvent = {
+          id: 'allday-event-123',
+          summary: 'All Day Event',
+          start: { date: '2026-01-15' },
+          end: { date: '2026-01-16' },
+          iCalUID: 'ical-allday-123',
+          // No eventType field
+        };
+
+        mockCalendarClient.events.list.mockResolvedValueOnce({
+          data: {
+            items: [mockAllDayEvent],
+          },
+        });
+
+        const events = await service.listEvents({
+          startDate: '2026-01-15T00:00:00Z',
+          endDate: '2026-01-16T00:00:00Z',
+        });
+
+        expect(events).toHaveLength(1);
+        expect(events[0].isAllDay).toBe(true);
+        expect(events[0].start).toBe('2026-01-15');
+        expect(events[0].end).toBe('2026-01-16');
+        expect(events[0].eventType).toBe('default');
+      });
+    });
+
+    describe('mixed events backward compatibility', () => {
+      it('should handle mixed events with and without eventType in same response', async () => {
+        // Mix of events: some with eventType, some without
+        const mixedEvents: GoogleCalendarEvent[] = [
+          {
+            id: 'event-with-type-1',
+            summary: 'Focus Time Block',
+            start: { dateTime: '2026-01-15T09:00:00Z' },
+            end: { dateTime: '2026-01-15T12:00:00Z' },
+            iCalUID: 'ical-focus-123',
+            eventType: 'focusTime',
+            focusTimeProperties: {
+              autoDeclineMode: 'declineAllConflictingInvitations',
+            },
+          },
+          {
+            id: 'event-without-type-1',
+            summary: 'Legacy Meeting',
+            start: { dateTime: '2026-01-15T14:00:00Z' },
+            end: { dateTime: '2026-01-15T15:00:00Z' },
+            iCalUID: 'ical-legacy-123',
+            // No eventType
+          },
+          {
+            id: 'event-with-type-2',
+            summary: 'Working from Home',
+            start: { date: '2026-01-15' },
+            end: { date: '2026-01-16' },
+            iCalUID: 'ical-wl-123',
+            eventType: 'workingLocation',
+            workingLocationProperties: {
+              type: 'homeOffice',
+              homeOffice: true,
+            },
+          },
+        ];
+
+        mockCalendarClient.events.list.mockResolvedValueOnce({
+          data: {
+            items: mixedEvents,
+          },
+        });
+
+        const events = await service.listEvents({
+          startDate: '2026-01-15T00:00:00Z',
+          endDate: '2026-01-16T00:00:00Z',
+        });
+
+        expect(events).toHaveLength(3);
+
+        // Event with focusTime type
+        const focusEvent = events.find(e => e.id === 'event-with-type-1');
+        expect(focusEvent?.eventType).toBe('focusTime');
+        expect(focusEvent?.typeSpecificProperties?.eventType).toBe('focusTime');
+
+        // Event without eventType should default to 'default'
+        const legacyEvent = events.find(e => e.id === 'event-without-type-1');
+        expect(legacyEvent?.eventType).toBe('default');
+        expect(legacyEvent?.typeSpecificProperties).toBeUndefined();
+
+        // Event with workingLocation type
+        const wlEvent = events.find(e => e.id === 'event-with-type-2');
+        expect(wlEvent?.eventType).toBe('workingLocation');
+        expect(wlEvent?.typeSpecificProperties?.eventType).toBe('workingLocation');
+      });
     });
   });
 });

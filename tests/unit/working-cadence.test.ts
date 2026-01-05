@@ -387,3 +387,327 @@ describe('WorkingCadenceService', () => {
     });
   });
 });
+
+/**
+ * WorkingCadenceService Tests with CalendarSourceManager (focusTime integration)
+ * Task 38: Tests for focusTime event analysis and deep work detection
+ */
+describe('WorkingCadenceService with focusTime integration', () => {
+  let mockCalendarSourceManager: {
+    getEvents: jest.Mock;
+  };
+
+  const mockConfig: import('../../src/types/config.js').UserConfig = {
+    version: '1.0.0',
+    createdAt: '2025-01-01T00:00:00.000Z',
+    lastUpdated: '2025-01-01T00:00:00.000Z',
+    user: {
+      name: '田中太郎',
+      email: 'tanaka@example.com',
+      timezone: 'Asia/Tokyo',
+      role: 'Engineer',
+    },
+    calendar: {
+      workingHours: {
+        start: '09:00',
+        end: '18:00',
+      },
+      meetingHeavyDays: ['Tuesday', 'Thursday'],
+      deepWorkDays: ['Monday', 'Wednesday'],
+      deepWorkBlocks: [],
+      timeZone: 'Asia/Tokyo',
+    },
+    priorityRules: {
+      p0Conditions: [],
+      p1Conditions: [],
+      p2Conditions: [],
+      defaultPriority: 'P3',
+    },
+    estimation: {
+      simpleTaskMinutes: 25,
+      mediumTaskMinutes: 50,
+      complexTaskMinutes: 90,
+      projectTaskMinutes: 180,
+      keywordMapping: {
+        simple: [],
+        medium: [],
+        complex: [],
+        project: [],
+      },
+    },
+    reminders: {
+      defaultTypes: ['1_day_before'],
+      weeklyReview: {
+        enabled: true,
+        day: 'Friday',
+        time: '17:00',
+        description: '週次レビュー',
+      },
+      customRules: [],
+    },
+    team: {
+      frequentCollaborators: [],
+      departments: [],
+    },
+    integrations: {
+      appleReminders: {
+        enabled: true,
+        threshold: 7,
+        unit: 'days',
+        defaultList: 'Reminders',
+        lists: {},
+      },
+      notion: {
+        enabled: false,
+        threshold: 8,
+        unit: 'days',
+        databaseId: '',
+      },
+      googleCalendar: {
+        enabled: false,
+        defaultCalendar: 'primary',
+        conflictDetection: true,
+        lookAheadDays: 14,
+      },
+    },
+    preferences: {
+      language: 'ja',
+      dateFormat: 'YYYY-MM-DD',
+      timeFormat: '24h',
+    },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    MockedConfigLoader.load.mockResolvedValue(mockConfig);
+    MockedConfigLoader.exists.mockResolvedValue(true);
+
+    // Create mock CalendarSourceManager
+    mockCalendarSourceManager = {
+      getEvents: jest.fn(),
+    };
+  });
+
+  describe('focusTime analysis', () => {
+    it('should detect Deep Work Day when >=4h focusTime events exist on that day', async () => {
+      // Create focusTime events totaling 5 hours on Friday
+      mockCalendarSourceManager.getEvents.mockResolvedValue([
+        {
+          id: 'focus-1',
+          title: 'Focus Time',
+          start: new Date('2025-01-17T09:00:00Z').toISOString(), // Friday
+          end: new Date('2025-01-17T12:00:00Z').toISOString(), // 3 hours
+          isAllDay: false,
+          source: 'google',
+          eventType: 'focusTime',
+        },
+        {
+          id: 'focus-2',
+          title: 'Deep Work',
+          start: new Date('2025-01-17T14:00:00Z').toISOString(), // Friday
+          end: new Date('2025-01-17T16:00:00Z').toISOString(), // 2 hours
+          isAllDay: false,
+          source: 'google',
+          eventType: 'focusTime',
+        },
+      ]);
+
+      const service = new WorkingCadenceService(mockCalendarSourceManager as any);
+      const result = await service.getWorkingCadence();
+
+      expect(result.success).toBe(true);
+      expect(result.focusTimeStats).toBeDefined();
+      expect(result.focusTimeStats?.detectedDeepWorkDays).toContain('Friday');
+      // Friday should now be in enhanced deep work days (config has Mon, Wed)
+      expect(result.weeklyPattern.deepWorkDays).toContain('Friday');
+    });
+
+    it('should combine config.deepWorkDays with focusTime analysis', async () => {
+      // Config has Monday and Wednesday as deep work days
+      // Add focusTime events on Friday (>=4h)
+      mockCalendarSourceManager.getEvents.mockResolvedValue([
+        {
+          id: 'focus-1',
+          title: 'Focus Time',
+          start: new Date('2025-01-17T08:00:00Z').toISOString(), // Friday
+          end: new Date('2025-01-17T12:00:00Z').toISOString(), // 4 hours
+          isAllDay: false,
+          source: 'google',
+          eventType: 'focusTime',
+        },
+      ]);
+
+      const service = new WorkingCadenceService(mockCalendarSourceManager as any);
+      const result = await service.getWorkingCadence();
+
+      expect(result.success).toBe(true);
+      // Should include both config days and detected days
+      expect(result.weeklyPattern.deepWorkDays).toContain('Monday');
+      expect(result.weeklyPattern.deepWorkDays).toContain('Wednesday');
+      expect(result.weeklyPattern.deepWorkDays).toContain('Friday');
+      // focusTimeStats should show enhancement
+      expect(result.focusTimeStats?.enhanced).toBe(true);
+    });
+
+    it('should recommend scheduling focusTime on low-meeting days', async () => {
+      // Create focusTime events on Monday (a low-meeting day in config)
+      mockCalendarSourceManager.getEvents.mockResolvedValue([
+        {
+          id: 'focus-1',
+          title: 'Focus Time',
+          start: new Date('2025-01-13T09:00:00Z').toISOString(), // Monday
+          end: new Date('2025-01-13T11:00:00Z').toISOString(), // 2 hours
+          isAllDay: false,
+          source: 'google',
+          eventType: 'focusTime',
+        },
+      ]);
+
+      const service = new WorkingCadenceService(mockCalendarSourceManager as any);
+      const result = await service.getWorkingCadence();
+
+      expect(result.success).toBe(true);
+      // Should have a recommendation about focusTime blocks
+      const focusTimeRecommendation = result.recommendations.find(
+        (r) => r.recommendation.includes('Focus Time')
+      );
+      expect(focusTimeRecommendation).toBeDefined();
+      expect(focusTimeRecommendation?.bestDays).toContain('Monday');
+    });
+
+    it('should calculate total focusTime hours per day', async () => {
+      // Create multiple focusTime events on the same day
+      mockCalendarSourceManager.getEvents.mockResolvedValue([
+        {
+          id: 'focus-1',
+          title: 'Morning Focus',
+          start: new Date('2025-01-15T09:00:00Z').toISOString(), // Wednesday
+          end: new Date('2025-01-15T11:00:00Z').toISOString(), // 2 hours = 120 minutes
+          isAllDay: false,
+          source: 'google',
+          eventType: 'focusTime',
+        },
+        {
+          id: 'focus-2',
+          title: 'Afternoon Focus',
+          start: new Date('2025-01-15T14:00:00Z').toISOString(), // Wednesday
+          end: new Date('2025-01-15T16:30:00Z').toISOString(), // 2.5 hours = 150 minutes
+          isAllDay: false,
+          source: 'google',
+          eventType: 'focusTime',
+        },
+      ]);
+
+      const service = new WorkingCadenceService(mockCalendarSourceManager as any);
+      const result = await service.getWorkingCadence();
+
+      expect(result.success).toBe(true);
+      expect(result.focusTimeStats).toBeDefined();
+      // Should aggregate to 270 minutes (4.5 hours) for Wednesday
+      const wednesdayBlock = result.focusTimeStats?.focusTimeBlocks.find(
+        (b) => b.day === 'Wednesday'
+      );
+      expect(wednesdayBlock).toBeDefined();
+      expect(wednesdayBlock?.duration).toBe(270); // 120 + 150 minutes
+    });
+
+    it('should include focusTimeStats in the result', async () => {
+      mockCalendarSourceManager.getEvents.mockResolvedValue([
+        {
+          id: 'focus-1',
+          title: 'Focus Time',
+          start: new Date('2025-01-13T09:00:00Z').toISOString(), // Monday
+          end: new Date('2025-01-13T13:00:00Z').toISOString(), // 4 hours
+          isAllDay: false,
+          source: 'google',
+          eventType: 'focusTime',
+        },
+        {
+          id: 'focus-2',
+          title: 'Focus Time',
+          start: new Date('2025-01-17T10:00:00Z').toISOString(), // Friday
+          end: new Date('2025-01-17T15:00:00Z').toISOString(), // 5 hours
+          isAllDay: false,
+          source: 'google',
+          eventType: 'focusTime',
+        },
+      ]);
+
+      const service = new WorkingCadenceService(mockCalendarSourceManager as any);
+      const result = await service.getWorkingCadence();
+
+      expect(result.success).toBe(true);
+      expect(result.focusTimeStats).toBeDefined();
+      expect(result.focusTimeStats?.focusTimeBlocks).toHaveLength(2);
+      expect(result.focusTimeStats?.detectedDeepWorkDays).toContain('Monday');
+      expect(result.focusTimeStats?.detectedDeepWorkDays).toContain('Friday');
+      // Monday was already in config, Friday is new
+      expect(result.focusTimeStats?.enhanced).toBe(true);
+    });
+
+    it('should not detect Deep Work Day when focusTime is less than 4 hours', async () => {
+      // Create focusTime events totaling 3 hours on Saturday (not in config deepWorkDays)
+      mockCalendarSourceManager.getEvents.mockResolvedValue([
+        {
+          id: 'focus-1',
+          title: 'Focus Time',
+          start: new Date('2025-01-18T10:00:00Z').toISOString(), // Saturday
+          end: new Date('2025-01-18T13:00:00Z').toISOString(), // 3 hours
+          isAllDay: false,
+          source: 'google',
+          eventType: 'focusTime',
+        },
+      ]);
+
+      const service = new WorkingCadenceService(mockCalendarSourceManager as any);
+      const result = await service.getWorkingCadence();
+
+      expect(result.success).toBe(true);
+      expect(result.focusTimeStats).toBeDefined();
+      // Saturday should NOT be in detectedDeepWorkDays (only 3h < 4h threshold)
+      expect(result.focusTimeStats?.detectedDeepWorkDays).not.toContain('Saturday');
+      // Saturday should remain in normalDays
+      expect(result.weeklyPattern.normalDays).toContain('Saturday');
+    });
+
+    it('should handle empty focusTime events gracefully', async () => {
+      // No focusTime events
+      mockCalendarSourceManager.getEvents.mockResolvedValue([
+        {
+          id: 'meeting-1',
+          title: 'Team Meeting',
+          start: new Date('2025-01-13T10:00:00Z').toISOString(),
+          end: new Date('2025-01-13T11:00:00Z').toISOString(),
+          isAllDay: false,
+          source: 'google',
+          eventType: 'default',
+        },
+      ]);
+
+      const service = new WorkingCadenceService(mockCalendarSourceManager as any);
+      const result = await service.getWorkingCadence();
+
+      expect(result.success).toBe(true);
+      expect(result.focusTimeStats).toBeDefined();
+      expect(result.focusTimeStats?.focusTimeBlocks).toHaveLength(0);
+      expect(result.focusTimeStats?.detectedDeepWorkDays).toHaveLength(0);
+      expect(result.focusTimeStats?.enhanced).toBe(false);
+    });
+
+    it('should continue working when CalendarSourceManager fails', async () => {
+      // Mock CalendarSourceManager to throw an error
+      mockCalendarSourceManager.getEvents.mockRejectedValue(
+        new Error('Calendar API unavailable')
+      );
+
+      const service = new WorkingCadenceService(mockCalendarSourceManager as any);
+      const result = await service.getWorkingCadence();
+
+      // Should still return success with config-based deep work days
+      expect(result.success).toBe(true);
+      expect(result.weeklyPattern.deepWorkDays).toEqual(['Monday', 'Wednesday']);
+      // focusTimeStats should be undefined when calendar loading fails
+      expect(result.focusTimeStats).toBeUndefined();
+    });
+  });
+});

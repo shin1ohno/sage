@@ -11,8 +11,13 @@
 import type { UserConfig } from '../../types/index.js';
 import type { CalendarSourceManager } from '../../integrations/calendar-source-manager.js';
 import type { CalendarEventResponseService } from '../../integrations/calendar-event-response.js';
-import type { GoogleCalendarService } from '../../integrations/google-calendar-service.js';
+import type { GoogleCalendarService, CreateEventRequest } from '../../integrations/google-calendar-service.js';
 import type { WorkingCadenceService } from '../../services/working-cadence.js';
+import type {
+  GoogleCalendarEventType,
+  AutoDeclineMode,
+  CalendarEvent as ExtendedCalendarEvent,
+} from '../../types/google-calendar-types.js';
 import { createToolResponse, createErrorFromCatch } from '../registry.js';
 
 /**
@@ -32,6 +37,24 @@ export interface CalendarToolsContext {
 // Input Types
 // ============================================================
 
+/**
+ * Input for finding available time slots
+ *
+ * @property durationMinutes - Required duration in minutes
+ * @property startDate - Start date for search (ISO 8601 format)
+ * @property endDate - End date for search (ISO 8601 format)
+ * @property preferDeepWork - Prefer deep work time slots
+ * @property minDurationMinutes - Minimum slot duration in minutes
+ * @property maxDurationMinutes - Maximum slot duration in minutes
+ * @property preferredWorkingLocation - Filter slots by working location preference.
+ *   Valid values: 'homeOffice', 'officeLocation', 'any' (default: 'any')
+ *   Requirement: 3.7, 7.5 (google-calendar-event-types spec)
+ * @property respectBlockingEventTypes - Whether to respect blocking event types
+ *   (outOfOffice, focusTime) when calculating availability.
+ *   When true (default), these event types block the time slot.
+ *   When false, only 'default' events are considered blocking.
+ *   Requirement: 7.5 (google-calendar-event-types spec)
+ */
 export interface FindAvailableSlotsInput {
   durationMinutes: number;
   startDate?: string;
@@ -39,12 +62,28 @@ export interface FindAvailableSlotsInput {
   preferDeepWork?: boolean;
   minDurationMinutes?: number;
   maxDurationMinutes?: number;
+  /** Filter slots by working location preference. Default: 'any' */
+  preferredWorkingLocation?: 'homeOffice' | 'officeLocation' | 'any';
+  /** Whether to respect blocking event types (outOfOffice, focusTime). Default: true */
+  respectBlockingEventTypes?: boolean;
 }
 
+/**
+ * Input for listing calendar events
+ *
+ * @property startDate - Start date in ISO 8601 format (e.g., 2025-01-15)
+ * @property endDate - End date in ISO 8601 format (e.g., 2025-01-20)
+ * @property calendarId - Optional calendar ID to filter events
+ * @property eventTypes - Optional array of event type names to filter results.
+ *   Valid types: 'default', 'outOfOffice', 'focusTime', 'workingLocation', 'birthday', 'fromGmail'
+ *   When specified, only events matching these types are returned.
+ *   When omitted, all event types are returned.
+ */
 export interface ListCalendarEventsInput {
   startDate: string;
   endDate: string;
   calendarId?: string;
+  eventTypes?: string[];
 }
 
 export interface RespondToCalendarEventInput {
@@ -61,6 +100,32 @@ export interface RespondToCalendarEventsBatchInput {
   comment?: string;
 }
 
+/**
+ * Input for creating a calendar event
+ *
+ * @property title - Event title/summary
+ * @property startDate - Start date/time in ISO 8601 format (e.g., 2025-01-15T10:00:00+09:00)
+ * @property endDate - End date/time in ISO 8601 format (e.g., 2025-01-15T11:00:00+09:00)
+ * @property location - Optional event location
+ * @property notes - Optional event notes/description
+ * @property calendarName - Optional calendar name to create the event in
+ * @property alarms - Optional array of alarm settings (e.g., ['-15m', '-1h'])
+ * @property preferredSource - Optional preferred calendar source ('eventkit' or 'google')
+ * @property eventType - Optional event type. Valid types:
+ *   'default' (regular event), 'outOfOffice', 'focusTime', 'workingLocation', 'birthday'.
+ *   Note: 'fromGmail' cannot be created via API.
+ *   When omitted, defaults to 'default'.
+ * @property autoDeclineMode - For outOfOffice/focusTime events: auto-decline behavior.
+ *   Valid values: 'declineNone', 'declineAllConflictingInvitations', 'declineOnlyNewConflictingInvitations'
+ * @property declineMessage - For outOfOffice/focusTime events: custom decline message
+ * @property chatStatus - For focusTime events: chat status during focus time.
+ *   Valid values: 'available', 'doNotDisturb'
+ * @property workingLocationType - For workingLocation events: type of working location.
+ *   Valid values: 'homeOffice', 'officeLocation', 'customLocation'
+ * @property workingLocationLabel - For workingLocation events: optional label for the location
+ * @property birthdayType - For birthday events: type of birthday.
+ *   Valid values: 'birthday', 'anniversary', 'other'
+ */
 export interface CreateCalendarEventInput {
   title: string;
   startDate: string;
@@ -70,6 +135,13 @@ export interface CreateCalendarEventInput {
   calendarName?: string;
   alarms?: string[];
   preferredSource?: 'eventkit' | 'google';
+  eventType?: string;
+  autoDeclineMode?: string;
+  declineMessage?: string;
+  chatStatus?: string;
+  workingLocationType?: string;
+  workingLocationLabel?: string;
+  birthdayType?: string;
 }
 
 export interface DeleteCalendarEventInput {
@@ -197,16 +269,43 @@ export async function handleFindAvailableSlots(
 }
 
 /**
+ * Valid event type names for filtering
+ * These correspond to Google Calendar API v3 event types
+ */
+const VALID_EVENT_TYPES = [
+  'default',
+  'outOfOffice',
+  'focusTime',
+  'workingLocation',
+  'birthday',
+  'fromGmail',
+] as const;
+
+type ValidEventType = (typeof VALID_EVENT_TYPES)[number];
+
+/**
+ * Validate that eventTypes array contains valid event type names
+ * @param eventTypes - Array of event type names to validate
+ * @returns Array of valid event types (invalid entries are filtered out)
+ */
+function validateEventTypes(eventTypes: string[]): ValidEventType[] {
+  return eventTypes.filter((type): type is ValidEventType =>
+    VALID_EVENT_TYPES.includes(type as ValidEventType)
+  );
+}
+
+/**
  * list_calendar_events handler
  *
  * List calendar events for a specified period.
- * Requirement: 16.1-16.12, Task 27
+ * Supports filtering by event types (default, outOfOffice, focusTime, workingLocation, birthday, fromGmail).
+ * Requirement: 16.1-16.12, Task 27, Task 18 (eventTypes filter)
  */
 export async function handleListCalendarEvents(
   ctx: CalendarToolsContext,
   args: ListCalendarEventsInput
 ) {
-  const { startDate, endDate, calendarId } = args;
+  const { startDate, endDate, calendarId, eventTypes } = args;
   const config = ctx.getConfig();
 
   if (!config) {
@@ -234,34 +333,56 @@ export async function handleListCalendarEvents(
       });
     }
 
-    const events = await calendarSourceManager!.getEvents(
+    // Fetch all events from calendar sources
+    // Cast to ExtendedCalendarEvent to access eventType and typeSpecificProperties
+    // Note: CalendarSourceManager returns events with these fields populated from Google Calendar,
+    // but the base CalendarEvent type from calendar-service.ts doesn't include them yet.
+    // The ExtendedCalendarEvent type from google-calendar-types.ts includes these fields.
+    let events = (await calendarSourceManager!.getEvents(
       startDate,
       endDate,
       calendarId
-    );
+    )) as ExtendedCalendarEvent[];
+
+    // Filter by event types if specified
+    // Note: CalendarSourceManager.getEvents() does not support eventTypes filtering directly,
+    // so we perform client-side filtering here
+    let validatedEventTypes: ValidEventType[] | undefined;
+    if (eventTypes && eventTypes.length > 0) {
+      validatedEventTypes = validateEventTypes(eventTypes);
+      if (validatedEventTypes.length > 0) {
+        events = events.filter((event) => {
+          // EventKit events without eventType are treated as 'default'
+          const eventType = event.eventType || 'default';
+          return validatedEventTypes!.includes(eventType as ValidEventType);
+        });
+      }
+    }
 
     return createToolResponse({
       success: true,
       sources: enabledSources,
       events: events.map((event) => {
-        // Use type assertion via unknown for optional fields added in Task 25
-        const eventRecord = event as unknown as Record<string, unknown>;
+        // Include eventType and typeSpecificProperties in the response (Task 18)
         return {
           id: event.id,
           title: event.title,
           start: event.start,
           end: event.end,
           isAllDay: event.isAllDay,
-          calendar: eventRecord.calendar,
-          location: eventRecord.location,
-          source: eventRecord.source,
+          calendar: event.calendar,
+          location: event.location,
+          source: event.source,
+          eventType: event.eventType || 'default',
+          typeSpecificProperties: event.typeSpecificProperties,
         };
       }),
       period: { start: startDate, end: endDate },
       totalEvents: events.length,
+      eventTypesFilter: validatedEventTypes,
       message:
         events.length > 0
-          ? `${events.length}件のイベントが見つかりました (ソース: ${enabledSources.join(', ')})。`
+          ? `${events.length}件のイベントが見つかりました (ソース: ${enabledSources.join(', ')})${validatedEventTypes ? ` フィルター: ${validatedEventTypes.join(', ')}` : ''}。`
           : '指定した期間にイベントが見つかりませんでした。',
     });
   } catch (error) {
@@ -450,14 +571,39 @@ export async function handleRespondToCalendarEventsBatch(
 /**
  * create_calendar_event handler
  *
- * Create a new calendar event.
- * Requirement: 18.1-18.11, Task 29
+ * Create a new calendar event with support for Google Calendar event types.
+ * Requirement: 18.1-18.11, Task 29, Task 19 (Event Type Support)
+ *
+ * Supports creating:
+ * - default: Standard calendar events
+ * - outOfOffice: Vacation/OOO blocks with auto-decline
+ * - focusTime: Deep work blocks with chat status
+ * - workingLocation: Home/office/custom location events
+ * - birthday: Birthday/anniversary events
+ *
+ * Note: 'fromGmail' events cannot be created via API (read-only).
+ * Note: EventKit only supports 'default' event type. Non-default event types
+ *       are automatically routed to Google Calendar.
  */
 export async function handleCreateCalendarEvent(
   ctx: CalendarToolsContext,
   args: CreateCalendarEventInput
 ) {
-  const { title, startDate, endDate, location, notes, preferredSource } = args;
+  const {
+    title,
+    startDate,
+    endDate,
+    location,
+    notes,
+    preferredSource,
+    eventType,
+    autoDeclineMode,
+    declineMessage,
+    chatStatus,
+    workingLocationType,
+    workingLocationLabel,
+    birthdayType,
+  } = args;
   const config = ctx.getConfig();
 
   if (!config) {
@@ -485,7 +631,8 @@ export async function handleCreateCalendarEvent(
       });
     }
 
-    const request = {
+    // Build base request using CreateEventRequest type
+    const request: CreateEventRequest = {
       title,
       start: startDate,
       end: endDate,
@@ -493,15 +640,136 @@ export async function handleCreateCalendarEvent(
       description: notes,
     };
 
+    // Determine effective event type (default to 'default' if not specified)
+    // Input eventType is string | undefined, need to cast to GoogleCalendarEventType
+    const effectiveEventType = (eventType || 'default') as GoogleCalendarEventType;
+
+    // Validate eventType before proceeding
+    const validEventTypes: GoogleCalendarEventType[] = [
+      'default',
+      'outOfOffice',
+      'focusTime',
+      'workingLocation',
+      'birthday',
+      'fromGmail',
+    ];
+    if (!validEventTypes.includes(effectiveEventType)) {
+      return createToolResponse({
+        success: false,
+        error: true,
+        message: `無効なイベントタイプです: ${eventType}。有効な値: ${validEventTypes.join(', ')}`,
+      });
+    }
+
+    // Add event type if not default
+    if (effectiveEventType !== 'default') {
+      request.eventType = effectiveEventType;
+
+      // Build type-specific properties based on eventType
+      switch (effectiveEventType) {
+        case 'outOfOffice':
+          if (autoDeclineMode) {
+            request.outOfOfficeProperties = {
+              autoDeclineMode: autoDeclineMode as AutoDeclineMode,
+              declineMessage,
+            };
+          }
+          break;
+
+        case 'focusTime':
+          if (autoDeclineMode) {
+            request.focusTimeProperties = {
+              autoDeclineMode: autoDeclineMode as AutoDeclineMode,
+              declineMessage,
+              chatStatus: chatStatus as 'available' | 'doNotDisturb' | undefined,
+            };
+          }
+          break;
+
+        case 'workingLocation':
+          if (workingLocationType) {
+            // Mark as all-day event (required for workingLocation)
+            request.isAllDay = true;
+
+            // Cast to the expected type
+            const locationType = workingLocationType as 'homeOffice' | 'officeLocation' | 'customLocation';
+
+            // Build workingLocationProperties with all sub-properties at once
+            if (locationType === 'homeOffice') {
+              request.workingLocationProperties = {
+                type: locationType,
+                homeOffice: true,
+              };
+            } else if (locationType === 'customLocation' && workingLocationLabel) {
+              request.workingLocationProperties = {
+                type: locationType,
+                customLocation: {
+                  label: workingLocationLabel,
+                },
+              };
+            } else if (locationType === 'officeLocation') {
+              request.workingLocationProperties = {
+                type: locationType,
+                officeLocation: {
+                  label: workingLocationLabel,
+                },
+              };
+            } else {
+              // Fallback: just set the type
+              request.workingLocationProperties = {
+                type: locationType,
+              };
+            }
+          }
+          break;
+
+        case 'birthday':
+          // Mark as all-day event (required for birthday)
+          request.isAllDay = true;
+
+          // Cast birthdayType to the expected type
+          const birthType = (birthdayType || 'birthday') as 'birthday' | 'anniversary' | 'custom' | 'other' | 'self';
+          request.birthdayProperties = {
+            type: birthType,
+          };
+          break;
+
+        case 'fromGmail':
+          // fromGmail events cannot be created via API
+          return createToolResponse({
+            success: false,
+            error: true,
+            message:
+              'fromGmailイベントはAPIから作成できません。これらのイベントはGmailメッセージから自動生成されます。',
+          });
+      }
+    }
+
+    // Determine source routing: non-default event types must use Google Calendar
+    // because EventKit does not support event types
+    let effectivePreferredSource = preferredSource;
+    if (effectiveEventType !== 'default') {
+      // Force Google Calendar for non-default event types
+      if (!enabledSources.includes('google')) {
+        return createToolResponse({
+          success: false,
+          error: true,
+          message: `${effectiveEventType}イベントの作成にはGoogle Calendarが必要です。Google Calendarを有効にしてください。`,
+        });
+      }
+      effectivePreferredSource = 'google';
+    }
+
     const event = await calendarSourceManager!.createEvent(
       request,
-      preferredSource
+      effectivePreferredSource
     );
 
     // Use type assertion via unknown for optional fields
     const eventRecord = event as unknown as Record<string, unknown>;
 
-    return createToolResponse({
+    // Build response with event type information
+    const response: Record<string, unknown> = {
       success: true,
       eventId: event.id,
       title: event.title,
@@ -510,8 +778,28 @@ export async function handleCreateCalendarEvent(
       source: event.source || 'unknown',
       calendarName: eventRecord.calendar,
       isAllDay: event.isAllDay,
-      message: `カレンダーイベントを作成しました: ${event.title} (ソース: ${event.source || 'unknown'})`,
-    });
+    };
+
+    // Include eventType in response if not default
+    if (effectiveEventType !== 'default') {
+      response.eventType = effectiveEventType;
+    }
+
+    // Add type-specific info to message
+    let messageDetail = '';
+    if (effectiveEventType === 'outOfOffice') {
+      messageDetail = ' (不在設定)';
+    } else if (effectiveEventType === 'focusTime') {
+      messageDetail = ' (フォーカスタイム)';
+    } else if (effectiveEventType === 'workingLocation') {
+      messageDetail = ` (勤務場所: ${workingLocationType})`;
+    } else if (effectiveEventType === 'birthday') {
+      messageDetail = ' (誕生日/記念日)';
+    }
+
+    response.message = `カレンダーイベントを作成しました: ${event.title}${messageDetail} (ソース: ${event.source || 'unknown'})`;
+
+    return createToolResponse(response);
   } catch (error) {
     return createErrorFromCatch('カレンダーイベント作成に失敗しました', error);
   }

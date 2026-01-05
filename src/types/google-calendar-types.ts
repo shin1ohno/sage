@@ -4,9 +4,102 @@
  * Design: .claude/specs/google-calendar-api/design.md (Data Models section)
  */
 
+// ============================================================
+// Event Type Discriminated Union
+// ============================================================
+
+/**
+ * Google Calendar Event Type
+ * Represents all 6 event types supported by Google Calendar API v3
+ * Requirement: 6.2
+ */
+export type GoogleCalendarEventType =
+  | 'default'
+  | 'outOfOffice'
+  | 'focusTime'
+  | 'workingLocation'
+  | 'birthday'
+  | 'fromGmail';
+
+/**
+ * Auto Decline Mode for Out of Office and Focus Time events
+ * Requirement: 1, 2
+ */
+export type AutoDeclineMode =
+  | 'declineNone'
+  | 'declineAllConflictingInvitations'
+  | 'declineOnlyNewConflictingInvitations';
+
+/**
+ * Out of Office Properties
+ * Used for vacation blocks and automatic decline functionality
+ * Requirement: 1
+ */
+export interface OutOfOfficeProperties {
+  autoDeclineMode: AutoDeclineMode;
+  declineMessage?: string;
+}
+
+/**
+ * Focus Time Properties
+ * Used for deep work time blocks with Google Chat integration
+ * Requirement: 2
+ */
+export interface FocusTimeProperties {
+  autoDeclineMode: AutoDeclineMode;
+  declineMessage?: string;
+  chatStatus?: 'available' | 'doNotDisturb';
+}
+
+/**
+ * Working Location Properties
+ * Records remote/office/custom location information
+ * Requirement: 3
+ */
+export interface WorkingLocationProperties {
+  type: 'homeOffice' | 'officeLocation' | 'customLocation';
+  homeOffice?: boolean;
+  customLocation?: {
+    label: string;
+  };
+  officeLocation?: {
+    buildingId?: string;
+    floorId?: string;
+    floorSectionId?: string;
+    deskId?: string;
+    label?: string;
+  };
+}
+
+/**
+ * Birthday Properties
+ * Manages birthdays, anniversaries, and other recurring personal events
+ * Requirement: 4
+ */
+export interface BirthdayProperties {
+  type: 'birthday' | 'anniversary' | 'custom' | 'other' | 'self';
+  customTypeName?: string;
+  /** People API resource name (read-only) */
+  readonly contact?: string;
+}
+
+/**
+ * Event Type Specific Properties (discriminated union)
+ * Combines eventType with corresponding properties for type-safe handling
+ * Requirement: 6.3
+ */
+export type EventTypeSpecificProperties =
+  | { eventType: 'default'; properties?: never }
+  | { eventType: 'outOfOffice'; properties: OutOfOfficeProperties }
+  | { eventType: 'focusTime'; properties: FocusTimeProperties }
+  | { eventType: 'workingLocation'; properties: WorkingLocationProperties }
+  | { eventType: 'birthday'; properties: BirthdayProperties }
+  | { eventType: 'fromGmail'; properties?: never };
+
 /**
  * Google Calendar Event (internal representation from Google Calendar API)
- * Requirement: 2
+ * Supports all 6 event types: default, outOfOffice, focusTime, workingLocation, birthday, fromGmail
+ * Requirement: 2, 6
  */
 export interface GoogleCalendarEvent {
   id: string;
@@ -41,6 +134,36 @@ export interface GoogleCalendarEvent {
     email: string;
     displayName?: string;
   };
+  /**
+   * Event type from Google Calendar API
+   * Defaults to 'default' if not specified
+   * Requirement: 6.2
+   */
+  eventType?: GoogleCalendarEventType;
+  /**
+   * Properties for out of office events (vacation, leave)
+   * Only present when eventType is 'outOfOffice'
+   * Requirement: 1
+   */
+  outOfOfficeProperties?: OutOfOfficeProperties;
+  /**
+   * Properties for focus time events (deep work blocks)
+   * Only present when eventType is 'focusTime'
+   * Requirement: 2
+   */
+  focusTimeProperties?: FocusTimeProperties;
+  /**
+   * Properties for working location events
+   * Only present when eventType is 'workingLocation'
+   * Requirement: 3
+   */
+  workingLocationProperties?: WorkingLocationProperties;
+  /**
+   * Properties for birthday/anniversary events
+   * Only present when eventType is 'birthday'
+   * Requirement: 4
+   */
+  birthdayProperties?: BirthdayProperties;
 }
 
 /**
@@ -105,6 +228,7 @@ export interface SyncStatus {
 /**
  * Extended Calendar Event with additional fields for Google Calendar integration
  * Extends the base CalendarEvent from calendar-service.ts
+ * Supports event types and type-specific properties for enhanced functionality
  * Requirement: 2, 3, 4, 5, 6
  */
 export interface CalendarEvent {
@@ -120,16 +244,111 @@ export interface CalendarEvent {
   attendees?: string[]; // Email addresses
   status?: 'confirmed' | 'tentative' | 'cancelled';
   iCalUID?: string; // For deduplication
+  /**
+   * Event type for Google Calendar events
+   * Defaults to 'default' for standard events
+   * Requirement: 6.2
+   */
+  eventType?: GoogleCalendarEventType;
+  /**
+   * Type-specific properties combining eventType with corresponding properties
+   * Enables type-safe access to event-specific data
+   * Requirement: 6.3
+   */
+  typeSpecificProperties?: EventTypeSpecificProperties;
+}
+
+/**
+ * Detect event type from Google Calendar event
+ * Checks eventType field first, then falls back to detecting from type-specific properties
+ * Requirement: 6.2
+ * @param googleEvent Google Calendar API event object
+ * @returns GoogleCalendarEventType ('default' if not detected)
+ */
+export function detectEventType(googleEvent: GoogleCalendarEvent): GoogleCalendarEventType {
+  // Primary: Check for explicit eventType field
+  if (googleEvent.eventType) {
+    return googleEvent.eventType;
+  }
+
+  // Fallback: Detect from type-specific properties
+  if (googleEvent.outOfOfficeProperties) {
+    return 'outOfOffice';
+  }
+  if (googleEvent.focusTimeProperties) {
+    return 'focusTime';
+  }
+  if (googleEvent.workingLocationProperties) {
+    return 'workingLocation';
+  }
+  if (googleEvent.birthdayProperties) {
+    return 'birthday';
+  }
+
+  // Default to 'default' if no eventType detected
+  return 'default';
+}
+
+/**
+ * Extract type-specific properties from Google Calendar event
+ * Returns the appropriate properties object based on detected eventType
+ * Requirement: 6.3
+ * @param googleEvent Google Calendar API event object
+ * @param eventType The detected event type
+ * @returns EventTypeSpecificProperties or undefined for 'default' and 'fromGmail' types
+ */
+export function extractTypeSpecificProperties(
+  googleEvent: GoogleCalendarEvent,
+  eventType: GoogleCalendarEventType
+): EventTypeSpecificProperties | undefined {
+  switch (eventType) {
+    case 'outOfOffice':
+      if (googleEvent.outOfOfficeProperties) {
+        return { eventType: 'outOfOffice', properties: googleEvent.outOfOfficeProperties };
+      }
+      return undefined;
+    case 'focusTime':
+      if (googleEvent.focusTimeProperties) {
+        return { eventType: 'focusTime', properties: googleEvent.focusTimeProperties };
+      }
+      return undefined;
+    case 'workingLocation':
+      if (googleEvent.workingLocationProperties) {
+        return { eventType: 'workingLocation', properties: googleEvent.workingLocationProperties };
+      }
+      return undefined;
+    case 'birthday':
+      if (googleEvent.birthdayProperties) {
+        return { eventType: 'birthday', properties: googleEvent.birthdayProperties };
+      }
+      return undefined;
+    case 'fromGmail':
+      // fromGmail events have no type-specific properties
+      return undefined;
+    case 'default':
+    default:
+      // default events have no type-specific properties
+      return undefined;
+  }
 }
 
 /**
  * Convert Google Calendar Event to unified CalendarEvent format
- * Requirement: 2
+ * Calls detectEventType() to determine eventType and extractTypeSpecificProperties() for type-specific data
+ * Preserves all existing fields for backward compatibility
+ * Requirement: 2, 6, 6.2, 6.3, 8.4, 9.3
  * @param googleEvent Google Calendar API event object
- * @returns Unified CalendarEvent object
+ * @returns Unified CalendarEvent object with eventType and typeSpecificProperties
  */
 export function convertGoogleToCalendarEvent(googleEvent: GoogleCalendarEvent): CalendarEvent {
+  // Detect event type using helper function
+  const eventType = detectEventType(googleEvent);
+
+  // Extract type-specific properties using helper function
+  const typeSpecificProperties = extractTypeSpecificProperties(googleEvent, eventType);
+
   return {
+    // Existing fields (backward compatibility)
     id: googleEvent.id,
     title: googleEvent.summary,
     start: googleEvent.start.dateTime || googleEvent.start.date || '',
@@ -142,6 +361,9 @@ export function convertGoogleToCalendarEvent(googleEvent: GoogleCalendarEvent): 
     attendees: googleEvent.attendees?.map((a) => a.email),
     status: googleEvent.status,
     iCalUID: googleEvent.iCalUID,
+    // New fields for event type support
+    eventType,
+    typeSpecificProperties,
   };
 }
 

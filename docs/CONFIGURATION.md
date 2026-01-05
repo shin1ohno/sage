@@ -555,6 +555,55 @@ sage でGoogle Calendarを有効にしてください
 - **HTTPS**: すべてのGoogle API通信はHTTPS（TLS 1.2+）で保護されます
 - **アクセス取り消し**: [Google Account Security](https://myaccount.google.com/permissions)でいつでもSageのアクセスを取り消せます
 
+### サポートされているイベントタイプ
+
+sageはGoogle Calendar API v3の全6つのイベントタイプをサポートしています:
+
+| イベントタイプ | 説明 | 作成 | 更新 | 削除 |
+|---------------|------|------|------|------|
+| `default` | 通常のミーティングやイベント | Yes | Yes | Yes |
+| `outOfOffice` | 休暇・不在ブロック（自動辞退機能付き） | Yes | Yes | Yes |
+| `focusTime` | 集中作業時間（Google Chat連携） | Yes | Yes | Yes |
+| `workingLocation` | リモートワーク/オフィス出社/カスタム場所（終日） | Yes | Yes | Yes |
+| `birthday` | 誕生日・記念日（終日、年次繰り返し） | Yes | Limited | Yes |
+| `fromGmail` | Gmail由来のイベント（フライト予約等） | No | Limited | No |
+
+**注意**: `fromGmail`イベントはGmailから自動生成されるため、API経由での作成はできません。更新も一部のフィールド（colorId、reminders等）のみに制限されています。
+
+#### イベントタイプの使用例
+
+**focusTimeイベントの作成**:
+```
+sage で集中作業時間を作成してください:
+- タイトル: "Deep Work"
+- 日時: 明日 9:00-12:00
+- イベントタイプ: focusTime
+- チャットステータス: doNotDisturb
+- 自動辞退: 有効
+```
+
+**outOfOfficeイベントの作成**:
+```
+sage で不在ブロックを作成してください:
+- タイトル: "年末年始休暇"
+- 期間: 12月29日から1月3日まで
+- イベントタイプ: outOfOffice
+- 自動辞退メッセージ: "年末年始休暇のため不在です。1月4日以降にご連絡ください。"
+```
+
+**workingLocationイベントの作成**:
+```
+sage でリモートワーク日を登録してください:
+- 日付: 来週の月曜日
+- イベントタイプ: workingLocation
+- 場所タイプ: homeOffice
+```
+
+**イベントタイプでフィルタリング**:
+```
+sage で今週の集中作業時間を一覧表示してください（eventTypes: focusTime）
+```
+
 ---
 
 #### googleCalendar - カレンダー（レガシー）

@@ -12,26 +12,129 @@ import type {
   CalendarEvent,
   CalendarInfo,
   GoogleCalendarEvent,
+  GoogleCalendarEventType,
+  OutOfOfficeProperties,
+  FocusTimeProperties,
+  WorkingLocationProperties,
+  BirthdayProperties,
 } from '../types/google-calendar-types.js';
-import { convertGoogleToCalendarEvent } from '../types/google-calendar-types.js';
+import { convertGoogleToCalendarEvent, detectEventType } from '../types/google-calendar-types.js';
 import { retryWithBackoff } from '../utils/retry.js';
+import { CreateEventRequestSchema } from '../config/validation.js';
+
+/**
+ * Allowed update fields per event type
+ * Requirement: 4.5, 5.3, 6.6 - Event type update restrictions
+ *
+ * @description Defines which fields can be updated for each event type.
+ * - birthday: Can only update summary, colorId, reminders, and date (start/end)
+ * - fromGmail: Can only update colorId, reminders, visibility, transparency, status, attendees, extendedProperties
+ * - default, outOfOffice, focusTime, workingLocation: All fields allowed
+ */
+const ALLOWED_UPDATE_FIELDS: Record<GoogleCalendarEventType, Set<string>> = {
+  birthday: new Set(['title', 'reminders', 'start', 'end', 'isAllDay']),
+  fromGmail: new Set(['reminders', 'attendees']),
+  default: new Set(['title', 'location', 'description', 'start', 'end', 'isAllDay', 'attendees', 'reminders', 'eventType', 'outOfOfficeProperties', 'focusTimeProperties', 'workingLocationProperties', 'birthdayProperties']),
+  outOfOffice: new Set(['title', 'location', 'description', 'start', 'end', 'isAllDay', 'attendees', 'reminders', 'eventType', 'outOfOfficeProperties', 'focusTimeProperties', 'workingLocationProperties', 'birthdayProperties']),
+  focusTime: new Set(['title', 'location', 'description', 'start', 'end', 'isAllDay', 'attendees', 'reminders', 'eventType', 'outOfOfficeProperties', 'focusTimeProperties', 'workingLocationProperties', 'birthdayProperties']),
+  workingLocation: new Set(['title', 'location', 'description', 'start', 'end', 'isAllDay', 'attendees', 'reminders', 'eventType', 'outOfOfficeProperties', 'focusTimeProperties', 'workingLocationProperties', 'birthdayProperties']),
+};
+
+/**
+ * Get human-readable field names for error messages
+ */
+function getReadableFieldName(field: string): string {
+  const fieldNames: Record<string, string> = {
+    title: 'summary',
+    location: 'location',
+    description: 'description',
+    start: 'start date/time',
+    end: 'end date/time',
+    isAllDay: 'all-day setting',
+    attendees: 'attendees',
+    reminders: 'reminders',
+    eventType: 'event type',
+    outOfOfficeProperties: 'out of office properties',
+    focusTimeProperties: 'focus time properties',
+    workingLocationProperties: 'working location properties',
+    birthdayProperties: 'birthday properties',
+  };
+  return fieldNames[field] || field;
+}
+
+/**
+ * Validate update fields against event type restrictions
+ * Requirement: 4.5, 5.3, 6.6 - Event type update restrictions
+ *
+ * @param eventType - The event type of the existing event
+ * @param updates - The fields being updated
+ * @throws Error if disallowed fields are being updated
+ */
+function validateUpdateFieldsForEventType(
+  eventType: GoogleCalendarEventType,
+  updates: Partial<CreateEventRequest>
+): void {
+  const allowedFields = ALLOWED_UPDATE_FIELDS[eventType];
+
+  // Get the keys of the updates object that have defined values
+  const updateKeys = Object.keys(updates).filter(
+    (key) => updates[key as keyof typeof updates] !== undefined
+  );
+
+  // Find disallowed fields
+  const disallowedFields = updateKeys.filter((key) => !allowedFields.has(key));
+
+  if (disallowedFields.length > 0) {
+    const readableDisallowed = disallowedFields.map(getReadableFieldName).join(', ');
+    const readableAllowed = Array.from(allowedFields).map(getReadableFieldName).join(', ');
+
+    throw new Error(
+      `Cannot update ${readableDisallowed} for ${eventType} events. ` +
+      `Allowed fields for ${eventType} events: ${readableAllowed}.`
+    );
+  }
+}
 
 /**
  * Request interface for listing events
+ *
+ * @property startDate - Start of date range in ISO 8601 (YYYY-MM-DD) or RFC3339 (YYYY-MM-DDTHH:MM:SSZ) format
+ * @property endDate - End of date range in ISO 8601 (YYYY-MM-DD) or RFC3339 (YYYY-MM-DDTHH:MM:SSZ) format
+ * @property calendarId - Calendar ID (optional, defaults to 'primary')
+ * @property eventTypes - Optional array of event types to filter by (e.g., ['default', 'focusTime', 'outOfOffice']).
+ *                        When specified, only events matching these types will be returned.
+ *                        Valid values: 'default', 'outOfOffice', 'focusTime', 'workingLocation', 'birthday', 'fromGmail'
  */
 export interface ListEventsRequest {
-  startDate: string; // ISO 8601 date (YYYY-MM-DD) or RFC3339 (YYYY-MM-DDTHH:MM:SSZ)
-  endDate: string; // ISO 8601 date (YYYY-MM-DD) or RFC3339 (YYYY-MM-DDTHH:MM:SSZ)
-  calendarId?: string; // Calendar ID (optional, defaults to 'primary')
+  startDate: string;
+  endDate: string;
+  calendarId?: string;
+  eventTypes?: GoogleCalendarEventType[];
 }
 
 /**
  * Request interface for creating events
+ *
+ * @property title - Event title/summary
+ * @property start - Start date/time in ISO 8601 format
+ * @property end - End date/time in ISO 8601 format
+ * @property isAllDay - Whether this is an all-day event (default: false)
+ * @property location - Event location
+ * @property description - Event description
+ * @property attendees - Array of attendee email addresses
+ * @property reminders - Reminder configuration
+ * @property eventType - Type of event to create (default: 'default').
+ *                       Valid values: 'default', 'outOfOffice', 'focusTime', 'workingLocation', 'birthday'
+ *                       Note: 'fromGmail' is read-only and cannot be used for event creation
+ * @property outOfOfficeProperties - Properties for out-of-office events (required when eventType is 'outOfOffice')
+ * @property focusTimeProperties - Properties for focus time events (required when eventType is 'focusTime')
+ * @property workingLocationProperties - Properties for working location events (required when eventType is 'workingLocation')
+ * @property birthdayProperties - Properties for birthday events (required when eventType is 'birthday')
  */
 export interface CreateEventRequest {
   title: string;
-  start: string; // ISO 8601
-  end: string; // ISO 8601
+  start: string;
+  end: string;
   isAllDay?: boolean;
   location?: string;
   description?: string;
@@ -43,6 +146,11 @@ export interface CreateEventRequest {
       minutes: number;
     }>;
   };
+  eventType?: GoogleCalendarEventType;
+  outOfOfficeProperties?: OutOfOfficeProperties;
+  focusTimeProperties?: FocusTimeProperties;
+  workingLocationProperties?: WorkingLocationProperties;
+  birthdayProperties?: BirthdayProperties;
 }
 
 /**
@@ -135,6 +243,112 @@ export class GoogleCalendarService {
       // (Health check should not throw errors)
       return false;
     }
+  }
+
+  /**
+   * Validate event type and properties
+   *
+   * Uses CreateEventRequestSchema to validate the request, ensuring that:
+   * - Event type is valid (not 'fromGmail' which is read-only)
+   * - Type-specific properties match the event type
+   * - All-day constraint is enforced for birthday/workingLocation events
+   *
+   * @param request - CreateEventRequest to validate
+   * @throws ZodError if validation fails with descriptive error messages
+   */
+  private validateEventTypeProperties(request: CreateEventRequest): void {
+    // Use Zod schema for comprehensive validation
+    // parse() throws ZodError with descriptive messages if validation fails
+    CreateEventRequestSchema.parse(request);
+  }
+
+  /**
+   * Build event type payload for Google Calendar API
+   *
+   * Transforms event type data from CreateEventRequest into Google Calendar API format.
+   * Handles all 6 event types: default, outOfOffice, focusTime, workingLocation, birthday, fromGmail.
+   *
+   * @param request - CreateEventRequest containing event type and type-specific properties
+   * @returns Partial calendar_v3.Schema$Event with eventType and type-specific properties
+   */
+  private buildEventTypePayload(request: CreateEventRequest): Partial<calendar_v3.Schema$Event> {
+    const eventType = request.eventType || 'default';
+    const payload: Partial<calendar_v3.Schema$Event> = {};
+
+    // Set eventType field (only if not default, as default is the API's default)
+    if (eventType !== 'default') {
+      payload.eventType = eventType;
+    }
+
+    switch (eventType) {
+      case 'outOfOffice':
+        if (request.outOfOfficeProperties) {
+          payload.outOfOfficeProperties = {
+            autoDeclineMode: request.outOfOfficeProperties.autoDeclineMode,
+            declineMessage: request.outOfOfficeProperties.declineMessage,
+          };
+        }
+        break;
+
+      case 'focusTime':
+        if (request.focusTimeProperties) {
+          payload.focusTimeProperties = {
+            autoDeclineMode: request.focusTimeProperties.autoDeclineMode,
+            declineMessage: request.focusTimeProperties.declineMessage,
+            chatStatus: request.focusTimeProperties.chatStatus,
+          };
+        }
+        break;
+
+      case 'workingLocation':
+        if (request.workingLocationProperties) {
+          const props = request.workingLocationProperties;
+          // Build workingLocationProperties based on type
+          const workingLocationPayload: calendar_v3.Schema$EventWorkingLocationProperties = {
+            type: props.type,
+          };
+
+          if (props.type === 'homeOffice' && props.homeOffice !== undefined) {
+            // homeOffice is an empty object in Google Calendar API
+            workingLocationPayload.homeOffice = {};
+          } else if (props.type === 'officeLocation' && props.officeLocation) {
+            workingLocationPayload.officeLocation = {
+              buildingId: props.officeLocation.buildingId,
+              floorId: props.officeLocation.floorId,
+              floorSectionId: props.officeLocation.floorSectionId,
+              deskId: props.officeLocation.deskId,
+              label: props.officeLocation.label,
+            };
+          } else if (props.type === 'customLocation' && props.customLocation) {
+            workingLocationPayload.customLocation = {
+              label: props.customLocation.label,
+            };
+          }
+
+          payload.workingLocationProperties = workingLocationPayload;
+        }
+        break;
+
+      case 'birthday':
+        // Note: birthdayProperties is not directly supported in Google Calendar API Schema$Event
+        // Birthday events are typically created through Google Contacts and synced automatically.
+        // Setting eventType to 'birthday' is sufficient; the API handles the rest.
+        // If birthdayProperties are provided, they are used for internal tracking only.
+        break;
+
+      case 'fromGmail':
+        // fromGmail is read-only and cannot be created
+        // This case should be handled by validation (Task 11), but we include it here for completeness
+        // Setting eventType allows API to reject the request with appropriate error
+        break;
+
+      case 'default':
+      default:
+        // For default events, no additional properties are needed
+        break;
+    }
+
+    return payload;
   }
 
   /**
@@ -236,9 +450,21 @@ export class GoogleCalendarService {
       } while (pageToken);
 
       // Convert GoogleCalendarEvent[] to CalendarEvent[]
-      return allEvents.map(event =>
+      const convertedEvents = allEvents.map(event =>
         convertGoogleToCalendarEvent(event as GoogleCalendarEvent)
       );
+
+      // Filter by eventTypes if specified (client-side filtering)
+      // Google Calendar API doesn't support filtering by eventType in the API call
+      if (request.eventTypes && request.eventTypes.length > 0) {
+        return convertedEvents.filter(event =>
+          // Event's eventType must be in the requested eventTypes array
+          // Events without eventType are treated as 'default'
+          request.eventTypes!.includes(event.eventType || 'default')
+        );
+      }
+
+      return convertedEvents;
     } catch (error) {
       throw new Error(
         `Failed to list events from Google Calendar: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -263,6 +489,10 @@ export class GoogleCalendarService {
     request: CreateEventRequest,
     calendarId?: string
   ): Promise<CalendarEvent> {
+    // Validate event type and properties before API call
+    // This throws ZodError if validation fails
+    this.validateEventTypeProperties(request);
+
     // Ensure client is authenticated
     if (!this.calendarClient) {
       await this.authenticate();
@@ -306,6 +536,10 @@ export class GoogleCalendarService {
       if (request.reminders) {
         eventBody.reminders = request.reminders;
       }
+
+      // Build and merge event type-specific payload
+      const eventTypePayload = this.buildEventTypePayload(request);
+      Object.assign(eventBody, eventTypePayload);
 
       // Create event with retry logic
       const response: calendar_v3.Schema$Event = await retryWithBackoff(
@@ -360,17 +594,18 @@ export class GoogleCalendarService {
 
   /**
    * Update a calendar event
-   * Requirement: 4, 10 (Calendar event updates with partial updates and retry logic)
+   * Requirement: 4, 10, 4.5, 5.3, 6.6 (Calendar event updates with partial updates, retry logic, and event type restrictions)
    *
    * Updates an existing event in Google Calendar using the patch API for partial updates.
    * Supports all-day events, reminders, attendees, and recurring events.
    * Includes retry logic with exponential backoff for transient failures.
+   * Enforces event type restrictions (birthday and fromGmail events have limited updatable fields).
    *
    * @param eventId - Event ID to update
    * @param updates - Partial CreateEventRequest with fields to update
    * @param calendarId - Calendar ID (optional, defaults to 'primary')
    * @returns Updated calendar event
-   * @throws Error if authentication fails or API request fails after retries
+   * @throws Error if authentication fails, API request fails after retries, or disallowed fields are being updated
    */
   async updateEvent(
     eventId: string,
@@ -385,6 +620,57 @@ export class GoogleCalendarService {
     const targetCalendarId = calendarId || 'primary';
 
     try {
+      // Step 1: Fetch existing event to determine its eventType
+      // Requirement: 4.5, 5.3, 6.6 - Event type update restrictions
+      const existingEvent = await retryWithBackoff(
+        async () => {
+          return (
+            await this.calendarClient!.events.get({
+              calendarId: targetCalendarId,
+              eventId: eventId,
+            })
+          ).data;
+        },
+        {
+          maxAttempts: 3,
+          initialDelay: 1000,
+          shouldRetry: (error: Error) => {
+            const message = error.message.toLowerCase();
+            if (
+              message.includes('not found') ||
+              message.includes('404')
+            ) {
+              return false;
+            }
+            if (
+              message.includes('unauthorized') ||
+              message.includes('401') ||
+              message.includes('forbidden') ||
+              message.includes('403')
+            ) {
+              return false;
+            }
+            if (
+              message.includes('rate limit') ||
+              message.includes('429') ||
+              message.includes('500') ||
+              message.includes('503') ||
+              message.includes('service unavailable') ||
+              message.includes('temporary')
+            ) {
+              return true;
+            }
+            return true;
+          },
+        }
+      );
+
+      // Step 2: Detect the event type using the helper function
+      const eventType = detectEventType(existingEvent as GoogleCalendarEvent);
+
+      // Step 3: Validate that the update fields are allowed for this event type
+      validateUpdateFieldsForEventType(eventType, updates);
+
       // Build Google Calendar patch object (only include provided fields)
       const patchBody: calendar_v3.Schema$Event = {};
 

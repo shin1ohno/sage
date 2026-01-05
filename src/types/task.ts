@@ -66,10 +66,25 @@ export interface Reminder {
   message?: string;
 }
 
+/**
+ * Working location information for a time slot
+ * Requirement: 3.7 (google-calendar-event-types spec)
+ */
+export interface WorkingLocationInfo {
+  type: 'homeOffice' | 'officeLocation' | 'customLocation' | 'unknown';
+  label?: string;
+}
+
 export interface TimeSlot {
   start: string;
   end: string;
   durationMinutes: number;
+  /**
+   * Working location context for the time slot
+   * Populated when working location events are present for the slot's date
+   * Requirement: 3.7 (google-calendar-event-types spec)
+   */
+  workingLocation?: WorkingLocationInfo;
 }
 
 export interface AvailableSlot extends TimeSlot {

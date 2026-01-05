@@ -97,6 +97,15 @@ export interface SlotRequest {
 }
 
 /**
+ * Working location information for a time slot
+ * Requirement: 3.7 (Working Location Aware Scheduling)
+ */
+export interface SlotWorkingLocation {
+  type: 'homeOffice' | 'officeLocation' | 'customLocation' | 'unknown';
+  label?: string;
+}
+
+/**
  * Available slot
  */
 export interface AvailableSlot {
@@ -108,6 +117,12 @@ export interface AvailableSlot {
   conflicts: string[];
   dayType: 'deep-work' | 'meeting-heavy' | 'normal';
   source: CalendarMethod;
+  /**
+   * Working location context for this time slot
+   * Populated from workingLocation events for the same day
+   * Requirement: 3.7
+   */
+  workingLocation?: SlotWorkingLocation;
 }
 
 /**

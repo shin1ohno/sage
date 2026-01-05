@@ -10,6 +10,8 @@
 
 import { ConfigLoader } from '../config/loader.js';
 import type { CalendarConfig, DeepWorkBlock, UserConfig } from '../types/config.js';
+import type { CalendarEvent } from '../types/google-calendar-types.js';
+import type { CalendarSourceManager } from '../integrations/calendar-source-manager.js';
 
 // Request/Response types
 export interface GetWorkingCadenceRequest {
@@ -68,6 +70,16 @@ export interface WorkingCadenceResult {
 
   /** Generated summary message */
   summary: string;
+
+  /** Focus time statistics from calendar events (optional) */
+  focusTimeStats?: {
+    /** Total focus time blocks by day of week */
+    focusTimeBlocks: Array<{ day: string; duration: number }>;
+    /** Days detected as deep work from focusTime events (>=4h) */
+    detectedDeepWorkDays: string[];
+    /** Whether deep work days were enhanced by focusTime analysis */
+    enhanced: boolean;
+  };
 }
 
 export interface DeepWorkBlockInfo {
@@ -102,6 +114,16 @@ const DAY_MAP: Record<string, string> = {
 };
 
 export class WorkingCadenceService {
+  private calendarSourceManager?: CalendarSourceManager;
+
+  /**
+   * Constructor
+   * @param calendarSourceManager Optional CalendarSourceManager for focusTime analysis
+   */
+  constructor(calendarSourceManager?: CalendarSourceManager) {
+    this.calendarSourceManager = calendarSourceManager;
+  }
+
   /**
    * Get working cadence information
    */
@@ -131,32 +153,85 @@ export class WorkingCadenceService {
     // Calculate working hours
     const workingHours = this.calculateWorkingHours(config.calendar.workingHours);
 
-    // Build weekly pattern
-    const weeklyPattern = this.buildWeeklyPattern(config.calendar);
+    // Load calendar events and analyze focusTime (if CalendarSourceManager is available)
+    let focusTimeStats: WorkingCadenceResult['focusTimeStats'];
+    let enhancedDeepWorkDays = config.calendar.deepWorkDays;
+
+    if (this.calendarSourceManager) {
+      try {
+        // Get events from the past 4 weeks for better weekly pattern analysis
+        const now = new Date();
+        const startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 28);
+        const endDate = new Date(now);
+        endDate.setDate(endDate.getDate() + 7); // Include next week for upcoming focusTime
+
+        const events = await this.calendarSourceManager.getEvents(
+          startDate.toISOString(),
+          endDate.toISOString()
+        );
+
+        // Analyze focusTime events
+        const { focusTimeBlocks } = this.analyzeFocusTimeEvents(events);
+
+        // Enhance deep work detection with focusTime analysis
+        const detectedDeepWorkDays = focusTimeBlocks
+          .filter((block) => block.duration >= 240) // >=4 hours
+          .map((block) => block.day);
+
+        enhancedDeepWorkDays = this.enhanceDeepWorkDetection(
+          config.calendar.deepWorkDays,
+          focusTimeBlocks
+        );
+
+        // Check if any new days were detected from focusTime
+        const enhanced = detectedDeepWorkDays.some(
+          (day) => !config.calendar.deepWorkDays.includes(day)
+        );
+
+        focusTimeStats = {
+          focusTimeBlocks,
+          detectedDeepWorkDays,
+          enhanced,
+        };
+      } catch (error) {
+        // If calendar loading fails, continue without focusTime analysis
+        console.error('Failed to load calendar events for focusTime analysis:', error);
+      }
+    }
+
+    // Build weekly pattern with enhanced deep work days
+    const enhancedCalendarConfig = {
+      ...config.calendar,
+      deepWorkDays: enhancedDeepWorkDays,
+    };
+    const weeklyPattern = this.buildWeeklyPattern(enhancedCalendarConfig);
 
     // Transform deep work blocks
     const deepWorkBlocks = this.transformDeepWorkBlocks(config.calendar.deepWorkBlocks);
 
-    // Generate recommendations
-    const recommendations = this.generateRecommendations(config.calendar);
+    // Generate recommendations (with enhanced config for focusTime-aware recommendations)
+    const recommendations = this.generateRecommendations(enhancedCalendarConfig, focusTimeStats);
 
-    // Build specific day info if requested
+    // Build specific day info if requested (using enhanced deep work days)
     let specificDay: WorkingCadenceResult['specificDay'];
     if (request?.dayOfWeek || request?.date) {
       const dayOfWeek = request.dayOfWeek || this.getDayOfWeek(request.date!);
       specificDay = this.buildSpecificDayInfo(
         dayOfWeek,
         request.date,
-        config.calendar,
-        deepWorkBlocks
+        enhancedCalendarConfig,
+        deepWorkBlocks,
+        focusTimeStats
       );
     }
 
-    // Generate summary
+    // Generate summary (with focusTime info if available)
     const summary = this.generateSummary(
       workingHours,
       weeklyPattern,
-      config.reminders.weeklyReview
+      config.reminders.weeklyReview,
+      focusTimeStats
     );
 
     return {
@@ -172,6 +247,7 @@ export class WorkingCadenceService {
       specificDay,
       recommendations,
       summary,
+      focusTimeStats,
     };
   }
 
@@ -202,16 +278,33 @@ export class WorkingCadenceService {
 
   /**
    * Generate scheduling recommendations based on calendar config
+   * @param config Calendar configuration
+   * @param focusTimeStats Optional focus time statistics for enhanced recommendations
    */
-  generateRecommendations(config: CalendarConfig): SchedulingRecommendation[] {
+  generateRecommendations(
+    config: CalendarConfig,
+    focusTimeStats?: WorkingCadenceResult['focusTimeStats']
+  ): SchedulingRecommendation[] {
     const recommendations: SchedulingRecommendation[] = [];
 
     if (config.deepWorkDays.length > 0) {
+      let reason = 'これらの日はDeep Work日として設定されており、集中作業に適しています';
+
+      // Enhance reason if days were detected from focusTime events
+      if (focusTimeStats?.enhanced && focusTimeStats.detectedDeepWorkDays.length > 0) {
+        const detectedDays = focusTimeStats.detectedDeepWorkDays.filter(
+          (day) => !config.deepWorkDays.includes(day)
+        );
+        if (detectedDays.length > 0) {
+          reason += ` (${this.formatDays(detectedDays)}はFocus Timeイベントから検出)`;
+        }
+      }
+
       recommendations.push({
         type: 'deep-work',
         recommendation: `複雑なタスクは${this.formatDays(config.deepWorkDays)}にスケジュールしてください`,
         bestDays: config.deepWorkDays,
-        reason: 'これらの日はDeep Work日として設定されており、集中作業に適しています',
+        reason,
       });
     }
 
@@ -231,6 +324,19 @@ export class WorkingCadenceService {
         recommendation: `短時間タスクは${this.formatDays(config.meetingHeavyDays)}のミーティング合間に処理できます`,
         bestDays: config.meetingHeavyDays,
         reason: 'ミーティング日の合間は短いタスクに適しています',
+      });
+    }
+
+    // Focus time recommendation if focusTime events exist
+    if (focusTimeStats && focusTimeStats.focusTimeBlocks.length > 0) {
+      const focusTimeDays = focusTimeStats.focusTimeBlocks.map((block) => block.day);
+      const uniqueFocusTimeDays = [...new Set(focusTimeDays)];
+
+      recommendations.push({
+        type: 'deep-work',
+        recommendation: `${this.formatDays(uniqueFocusTimeDays)}には既存のFocus Timeブロックがあります。この時間を活用してください`,
+        bestDays: uniqueFocusTimeDays,
+        reason: 'カレンダーにFocus Timeイベントが登録されています。集中作業に最適な時間です',
       });
     }
 
@@ -301,7 +407,8 @@ export class WorkingCadenceService {
     dayOfWeek: string,
     date: string | undefined,
     calendarConfig: CalendarConfig,
-    allDeepWorkBlocks: DeepWorkBlockInfo[]
+    allDeepWorkBlocks: DeepWorkBlockInfo[],
+    focusTimeStats?: WorkingCadenceResult['focusTimeStats']
   ): WorkingCadenceResult['specificDay'] {
     const dayType = this.getDayType(dayOfWeek, calendarConfig);
     const dayBlocks = allDeepWorkBlocks.filter((block) => block.day === dayOfWeek);
@@ -313,12 +420,34 @@ export class WorkingCadenceService {
         const times = dayBlocks.map((b) => `${b.startTime}-${b.endTime}`).join(', ');
         recommendations.push(`Deep Workブロック: ${times}`);
       }
+
+      // Add focusTime info if detected from calendar events
+      if (focusTimeStats?.detectedDeepWorkDays.includes(dayOfWeek)) {
+        const focusTimeBlock = focusTimeStats.focusTimeBlocks.find((b) => b.day === dayOfWeek);
+        if (focusTimeBlock) {
+          const hours = Math.floor(focusTimeBlock.duration / 60);
+          const minutes = Math.round(focusTimeBlock.duration % 60);
+          const durationStr = minutes > 0 ? `${hours}時間${minutes}分` : `${hours}時間`;
+          recommendations.push(`Focus Timeイベント: 合計${durationStr}のFocus Timeが登録されています`);
+        }
+      }
     } else if (dayType === 'meeting-heavy') {
       recommendations.push(
         'この日はミーティングが多い日です。ミーティングの合間に短いタスクを処理してください。'
       );
     } else {
       recommendations.push('この日は特別な設定がありません。自由にスケジュールを組めます。');
+
+      // Check if there are focusTime blocks on this day
+      if (focusTimeStats) {
+        const focusTimeBlock = focusTimeStats.focusTimeBlocks.find((b) => b.day === dayOfWeek);
+        if (focusTimeBlock) {
+          const hours = Math.floor(focusTimeBlock.duration / 60);
+          const minutes = Math.round(focusTimeBlock.duration % 60);
+          const durationStr = minutes > 0 ? `${hours}時間${minutes}分` : `${hours}時間`;
+          recommendations.push(`Focus Timeイベント: 合計${durationStr}のFocus Timeが登録されています`);
+        }
+      }
     }
 
     return {
@@ -333,14 +462,22 @@ export class WorkingCadenceService {
   private generateSummary(
     workingHours: { start: string; end: string; totalMinutes: number },
     weeklyPattern: { deepWorkDays: string[]; meetingHeavyDays: string[] },
-    weeklyReview?: { enabled: boolean; day: string; time: string }
+    weeklyReview?: { enabled: boolean; day: string; time: string },
+    focusTimeStats?: WorkingCadenceResult['focusTimeStats']
   ): string {
     const lines: string[] = [];
 
     lines.push(`勤務時間: ${workingHours.start}-${workingHours.end} (${Math.floor(workingHours.totalMinutes / 60)}時間)`);
 
     if (weeklyPattern.deepWorkDays.length > 0) {
-      lines.push(`Deep Work日: ${this.formatDays(weeklyPattern.deepWorkDays)}`);
+      let deepWorkLine = `Deep Work日: ${this.formatDays(weeklyPattern.deepWorkDays)}`;
+
+      // Add indicator if days were enhanced by focusTime analysis
+      if (focusTimeStats?.enhanced) {
+        deepWorkLine += ' (Focus Time分析により強化)';
+      }
+
+      lines.push(deepWorkLine);
     }
 
     if (weeklyPattern.meetingHeavyDays.length > 0) {
@@ -349,6 +486,18 @@ export class WorkingCadenceService {
 
     if (weeklyReview?.enabled) {
       lines.push(`週次レビュー: ${DAY_MAP[weeklyReview.day] || weeklyReview.day}曜 ${weeklyReview.time}`);
+    }
+
+    // Add focusTime summary if available
+    if (focusTimeStats && focusTimeStats.focusTimeBlocks.length > 0) {
+      const totalFocusMinutes = focusTimeStats.focusTimeBlocks.reduce(
+        (sum, block) => sum + block.duration,
+        0
+      );
+      const hours = Math.floor(totalFocusMinutes / 60);
+      const minutes = Math.round(totalFocusMinutes % 60);
+      const durationStr = minutes > 0 ? `${hours}時間${minutes}分` : `${hours}時間`;
+      lines.push(`Focus Time: 週合計${durationStr}`);
     }
 
     return lines.join('\n');
@@ -379,5 +528,56 @@ export class WorkingCadenceService {
       recommendations: [],
       summary: '',
     };
+  }
+
+  /**
+   * Analyze focus time events from calendar
+   * Filters events with eventType='focusTime' and calculates total focus time per day
+   * @param events Calendar events to analyze
+   * @returns Object containing focus time blocks with day and duration
+   */
+  private analyzeFocusTimeEvents(
+    events: CalendarEvent[]
+  ): { focusTimeBlocks: Array<{ day: string; duration: number }> } {
+    // Filter events with eventType='focusTime'
+    const focusTimeEvents = events.filter((e) => e.eventType === 'focusTime');
+
+    // Calculate total focus time per day
+    const focusTimeByDay = new Map<string, number>();
+
+    for (const event of focusTimeEvents) {
+      const day = new Date(event.start).toLocaleDateString('en-US', { weekday: 'long' });
+      const duration =
+        (new Date(event.end).getTime() - new Date(event.start).getTime()) / (1000 * 60); // minutes
+      focusTimeByDay.set(day, (focusTimeByDay.get(day) || 0) + duration);
+    }
+
+    // Return focus time statistics
+    const focusTimeBlocks = Array.from(focusTimeByDay.entries()).map(([day, duration]) => ({
+      day,
+      duration,
+    }));
+    return { focusTimeBlocks };
+  }
+
+  /**
+   * Enhance deep work detection by combining config settings with focus time analysis
+   * Days with >=4h (240 minutes) of focusTime events are considered deep work days
+   * @param configDeepWorkDays Deep work days from configuration
+   * @param focusTimeBlocks Focus time blocks from calendar analysis
+   * @returns Combined list of deep work days (unique values)
+   */
+  private enhanceDeepWorkDetection(
+    configDeepWorkDays: string[],
+    focusTimeBlocks: Array<{ day: string; duration: number }>
+  ): string[] {
+    // Days with >=4h (240 minutes) of focusTime events are considered deep work days
+    const focusTimeDays = focusTimeBlocks
+      .filter((block) => block.duration >= 240)
+      .map((block) => block.day);
+
+    // Combine config.deepWorkDays with focusTime analysis (remove duplicates)
+    const allDeepWorkDays = new Set([...configDeepWorkDays, ...focusTimeDays]);
+    return Array.from(allDeepWorkDays);
   }
 }

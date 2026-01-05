@@ -12,11 +12,18 @@ import type { CalendarEvent, AvailableSlot } from './calendar-service.js';
 import { GoogleCalendarService } from './google-calendar-service.js';
 import type { CreateEventRequest } from './google-calendar-service.js';
 import type { UserConfig } from '../types/config.js';
-import type { SyncResult, SyncStatus } from '../types/google-calendar-types.js';
+import type { SyncResult, SyncStatus, GoogleCalendarEventType, CalendarEvent as GoogleCalendarEventExtended } from '../types/google-calendar-types.js';
+import type { TimeSlot, WorkingLocationInfo } from '../types/task.js';
+
+/**
+ * Preferred working location type for slot filtering
+ * Requirement: 3.7 (Working Location Aware Scheduling)
+ */
+export type PreferredWorkingLocation = 'homeOffice' | 'officeLocation' | 'any';
 
 /**
  * Request interface for finding available slots
- * Requirement: 7
+ * Requirement: 7, 3.7 (Working Location Aware Scheduling)
  */
 export interface FindSlotsRequest {
   startDate: string; // ISO 8601
@@ -27,6 +34,21 @@ export interface FindSlotsRequest {
     start: string; // HH:MM
     end: string; // HH:MM
   };
+  /**
+   * Preferred working location for slot prioritization
+   * 'homeOffice' - prioritize slots on home office days
+   * 'officeLocation' - prioritize slots on office days
+   * 'any' - no preference (return all slots)
+   * Requirement: 3.7
+   */
+  preferredWorkingLocation?: PreferredWorkingLocation;
+  /**
+   * Whether to respect event type blocking behavior
+   * When true (default), outOfOffice and focusTime events block time slots
+   * When false, only default events (meetings) block time slots
+   * Requirement: 7.5
+   */
+  respectBlockingEventTypes?: boolean;
 }
 
 /**
@@ -349,6 +371,149 @@ export class CalendarSourceManager {
   }
 
   /**
+   * Filter events that block available time slots
+   * Requirement: 7.5 (Event type blocking semantics)
+   * Task 22: Implementation
+   *
+   * Determines which events should be considered as blocking time when
+   * calculating available slots. Different event types have different
+   * blocking semantics:
+   *
+   * Blocking event types (block time):
+   * - default: Regular meetings and appointments
+   * - outOfOffice: Vacation, leave, absence periods
+   * - focusTime: Deep work time blocks
+   *
+   * Non-blocking event types (do NOT block time):
+   * - workingLocation: Metadata only (where you're working from)
+   * - birthday: All-day reminders (informational)
+   * - fromGmail: Auto-generated informational events
+   *
+   * EventKit events (eventType=undefined) are treated as 'default' (blocking)
+   * for backward compatibility.
+   *
+   * @param events - Array of events to filter
+   * @param respectBlockingEventTypes - If true, respect event type semantics;
+   *                                    if false, treat all non-birthday/fromGmail as blocking
+   *                                    (backward compatible behavior)
+   * @returns Array of events that block available time slots
+   */
+  private filterBlockingEvents(
+    events: CalendarEvent[],
+    respectBlockingEventTypes: boolean = true
+  ): CalendarEvent[] {
+    if (!respectBlockingEventTypes) {
+      // Backward compatible: treat all non-birthday, non-fromGmail as blocking
+      return events.filter((e) => {
+        const eventType = (e as CalendarEvent & { eventType?: GoogleCalendarEventType }).eventType;
+        return eventType !== 'birthday' && eventType !== 'fromGmail';
+      });
+    }
+
+    // Respect event type blocking semantics:
+    // - default: blocks time (meetings, appointments)
+    // - outOfOffice: blocks time (vacation, absence)
+    // - focusTime: blocks time (deep work)
+    // - workingLocation: does NOT block time (metadata only)
+    // - birthday: does NOT block time (all-day reminder)
+    // - fromGmail: does NOT block time (informational)
+
+    const blockingTypes: GoogleCalendarEventType[] = ['default', 'outOfOffice', 'focusTime'];
+    return events.filter((e) => {
+      const eventType = (e as CalendarEvent & { eventType?: GoogleCalendarEventType }).eventType || 'default';
+      return blockingTypes.includes(eventType);
+    });
+  }
+
+  /**
+   * Annotate time slots with working location information
+   * Requirement: 3.7 (Working location context)
+   * Task 23: Implementation
+   *
+   * Matches time slots to working location events by date and extracts
+   * location type and label from typeSpecificProperties. Uses timezone-aware
+   * date comparison (normalizing to YYYY-MM-DD format via toISOString).
+   *
+   * Working location events are all-day events that indicate where the user
+   * is working from on that day (homeOffice, officeLocation, or customLocation).
+   *
+   * @param slots - Array of time slots to annotate
+   * @param workingLocationEvents - Array of working location calendar events
+   * @returns Array of time slots with workingLocation field populated
+   */
+  private annotateWithWorkingLocation(
+    slots: TimeSlot[],
+    workingLocationEvents: CalendarEvent[]
+  ): TimeSlot[] {
+    return slots.map((slot) => {
+      // Timezone-aware date comparison: normalize to YYYY-MM-DD
+      const slotDateNormalized = new Date(slot.start).toISOString().split('T')[0];
+
+      // Find workingLocation event that matches this date
+      const locationEvent = workingLocationEvents.find((e) => {
+        const eventDateNormalized = new Date(e.start).toISOString().split('T')[0];
+        return eventDateNormalized === slotDateNormalized;
+      });
+
+      if (locationEvent) {
+        // Extract working location info from typeSpecificProperties
+        const extendedEvent = locationEvent as unknown as GoogleCalendarEventExtended;
+        if (extendedEvent.typeSpecificProperties?.eventType === 'workingLocation') {
+          const props = extendedEvent.typeSpecificProperties.properties;
+          const workingLocation: WorkingLocationInfo = {
+            type: props.type,
+            label: props.customLocation?.label || props.officeLocation?.label,
+          };
+          return {
+            ...slot,
+            workingLocation,
+          };
+        }
+      }
+
+      // Default to unknown if no working location event found for this date
+      return {
+        ...slot,
+        workingLocation: { type: 'unknown' },
+      };
+    });
+  }
+
+  /**
+   * Filter and prioritize time slots by working location preference
+   * Requirement: 3.7 (Working location preference)
+   * Task 24: Implementation
+   *
+   * Sorts time slots to prioritize those matching the preferred working location.
+   * Matching slots appear first, followed by non-matching slots.
+   *
+   * If preferredLocation is 'any' or undefined, all slots are returned unchanged.
+   *
+   * @param slots - Array of time slots with workingLocation field
+   * @param preferredLocation - Preferred location type ('homeOffice', 'officeLocation', or 'any')
+   * @returns Array of time slots sorted by location preference (matching first)
+   */
+  private filterByLocationPreference(
+    slots: TimeSlot[],
+    preferredLocation?: 'homeOffice' | 'officeLocation' | 'any'
+  ): TimeSlot[] {
+    // No filtering if preferredLocation is 'any' or undefined
+    if (!preferredLocation || preferredLocation === 'any') {
+      return slots;
+    }
+
+    // Prioritize slots matching preferred location
+    const matchingSlots = slots.filter(
+      (s) => s.workingLocation?.type === preferredLocation
+    );
+    const otherSlots = slots.filter(
+      (s) => s.workingLocation?.type !== preferredLocation
+    );
+
+    return [...matchingSlots, ...otherSlots];
+  }
+
+  /**
    * Create event in preferred calendar source
    * Requirement: 3, 10, 11 (Multi-source event creation with routing and fallback)
    *
@@ -543,24 +708,37 @@ export class CalendarSourceManager {
   /**
    * Find available time slots considering all enabled sources
    * Requirement: 7 (Multi-source slot detection)
+   * Requirement: 3.7 (Working Location Aware Scheduling)
    * Task 20a: Basic filtering implementation
    * Task 20b: Suitability calculation integration
+   * Task 25: Working location filtering integration
    *
    * Fetches events from all enabled sources, merges and deduplicates,
    * then calculates available slots based on working hours and preferences.
-   * Applies suitability scoring and sorts by suitability.
+   * Applies working location filtering and suitability scoring.
    *
    * @param request - Slot search request
-   * @returns Array of available time slots sorted by suitability
+   * @returns Array of available time slots sorted by suitability and location preference
    */
   async findAvailableSlots(
     request: FindSlotsRequest
   ): Promise<AvailableSlot[]> {
-    // Get all events from enabled sources (already merged/deduplicated by getEvents)
+    // Step 1: Get all events from enabled sources (already merged/deduplicated by getEvents)
     const events = await this.getEvents(request.startDate, request.endDate);
 
-    // Sort events by start time
-    const sortedEvents = events.sort(
+    // Step 2: Filter blocking events based on respectBlockingEventTypes parameter
+    // Default to true for backward compatibility with event type blocking semantics
+    const respectBlockingEventTypes = request.respectBlockingEventTypes ?? true;
+    const blockingEvents = this.filterBlockingEvents(events, respectBlockingEventTypes);
+
+    // Step 3: Filter workingLocation events separately for annotation
+    const workingLocationEvents = events.filter((e) => {
+      const eventType = (e as CalendarEvent & { eventType?: GoogleCalendarEventType }).eventType;
+      return eventType === 'workingLocation';
+    });
+
+    // Sort blocking events by start time
+    const sortedBlockingEvents = blockingEvents.sort(
       (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
     );
 
@@ -571,7 +749,7 @@ export class CalendarSourceManager {
     const minDuration = request.minDurationMinutes || 25;
     const maxDuration = request.maxDurationMinutes || 480; // 8 hours
 
-    // Generate slots for each day in the date range
+    // Step 4: Generate slots for each day in the date range based on blocking events
     const slots: AvailableSlot[] = [];
     const startDate = new Date(request.startDate);
     const endDate = new Date(request.endDate);
@@ -584,7 +762,7 @@ export class CalendarSourceManager {
     ) {
       const daySlots = this.findDaySlots(
         currentDate,
-        sortedEvents,
+        sortedBlockingEvents,
         workingHours,
         minDuration,
         maxDuration
@@ -595,9 +773,22 @@ export class CalendarSourceManager {
     // Apply suitability scoring to all slots
     const slotsWithSuitability = this.calculateSuitabilityForSlots(slots);
 
+    // Step 5: Annotate slots with working location context
+    const annotatedSlots = this.annotateWithWorkingLocation(
+      slotsWithSuitability,
+      workingLocationEvents
+    ) as AvailableSlot[];
+
+    // Step 6: Filter and prioritize by working location preference
+    const locationFilteredSlots = this.filterByLocationPreference(
+      annotatedSlots,
+      request.preferredWorkingLocation
+    ) as AvailableSlot[];
+
     // Sort by suitability (excellent > good > acceptable)
     // Then by start time as secondary sort
-    const sortedSlots = slotsWithSuitability.sort((a, b) => {
+    // Note: location preference has already been applied by filterByLocationPreference
+    const sortedSlots = locationFilteredSlots.sort((a, b) => {
       const suitabilityOrder = {
         excellent: 0,
         good: 1,
