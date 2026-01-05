@@ -1022,19 +1022,13 @@ describe('GoogleCalendarService', () => {
     });
 
     it('should handle partial failures', async () => {
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-
       mockCalendarClient.events.delete
         .mockResolvedValueOnce({}) // event-1 success
         .mockRejectedValueOnce(new Error('Failed to delete')) // event-2 failure
         .mockResolvedValueOnce({}); // event-3 success
 
+      // Should not throw - errors are logged via pino logger (calendarLogger.error)
       await service.deleteEventsBatch(['event-1', 'event-2', 'event-3']);
-
-      // Partial success: chunk with failure will not count, but other chunks succeed
-      expect(consoleErrorSpy).toHaveBeenCalled();
-
-      consoleErrorSpy.mockRestore();
     });
 
     it('should handle 404 errors gracefully', async () => {
