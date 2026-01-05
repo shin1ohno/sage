@@ -338,7 +338,7 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       expect(session1!.userId).toBe(userId);
 
       // Wait for async save to complete before shutdown
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Shutdown server
       await server1.shutdown();
@@ -374,7 +374,7 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       }
 
       // Wait for async save to complete before shutdown
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Flush with expired session
       await server1.shutdown();
@@ -506,7 +506,7 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       expect(authResult.success).toBe(true);
 
       // Wait for async save to complete before shutdown
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       await server2.shutdown();
     });
@@ -560,7 +560,7 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       const sessionId = authResult.session!.sessionId;
 
       // Wait for async save to complete before shutdown
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       await server1.shutdown();
 

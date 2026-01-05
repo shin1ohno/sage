@@ -49,7 +49,7 @@ describe('PersistentSessionStore', () => {
       const session2 = store.createSession('user-2');
 
       // Wait for async saves to complete (avoid concurrent writes)
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       // Act: Flush to save immediately
       await store.flush();
@@ -529,7 +529,7 @@ describe('PersistentSessionStore', () => {
       const session3 = store.createSession('user-test');
 
       // Wait for async saves
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       // Act: Flush and reload
       await store.flush();
@@ -640,7 +640,7 @@ describe('PersistentSessionStore', () => {
       store.createSession('user-test');
 
       // Wait for async save
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       // Act: Multiple flush calls
       await store.flush();
