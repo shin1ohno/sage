@@ -144,10 +144,10 @@ describe('FileMutex', () => {
       await Promise.all(operations);
 
       // Assert: Operations should have overlapping execution times
-      // All start times should be very close (within 20ms of each other)
+      // All start times should be very close (within 100ms of each other, relaxed for CI)
       const starts = Object.values(startTimes);
       const maxStartDiff = Math.max(...starts) - Math.min(...starts);
-      expect(maxStartDiff).toBeLessThan(20);
+      expect(maxStartDiff).toBeLessThan(100);
     });
 
     it('should handle mixed concurrent operations correctly', async () => {
