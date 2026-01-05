@@ -35,6 +35,7 @@ describe('Main Entry Point', () => {
           help: false,
           version: false,
           generateToken: false,
+          debug: false,
         };
 
         const result = await startServer(options);
@@ -51,6 +52,7 @@ describe('Main Entry Point', () => {
           help: false,
           version: false,
           generateToken: false,
+          debug: false,
         };
 
         const result = await startServer(options);
@@ -76,6 +78,7 @@ describe('Main Entry Point', () => {
           help: true,
           version: false,
           generateToken: false,
+          debug: false,
         };
 
         const result = await startServer(options);
@@ -93,6 +96,7 @@ describe('Main Entry Point', () => {
           help: false,
           version: true,
           generateToken: false,
+          debug: false,
         };
 
         const result = await startServer(options);
@@ -113,6 +117,7 @@ describe('Main Entry Point', () => {
           help: false,
           version: false,
           generateToken: false,
+          debug: false,
         };
 
         const result = await startServer(options);
@@ -132,6 +137,7 @@ describe('Main Entry Point', () => {
           version: false,
           authSecret: 'test-secret-key-that-is-at-least-32-characters-long',
           generateToken: false,
+          debug: false,
         };
 
         const result = await startServer(options);

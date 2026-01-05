@@ -502,6 +502,9 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       const authResult = await server2.authenticateUser(testUser.username, 'testpass123');
       expect(authResult.success).toBe(true);
 
+      // Wait for async save to complete before shutdown
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       await server2.shutdown();
     });
 

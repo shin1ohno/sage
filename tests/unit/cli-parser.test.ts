@@ -297,6 +297,7 @@ describe('CLIOptions interface', () => {
       version: false,
       authSecret: 'secret',
       generateToken: false,
+      debug: false,
     };
 
     expect(options.remote).toBeDefined();
@@ -318,6 +319,7 @@ describe('CLIOptions interface', () => {
       help: false,
       version: false,
       generateToken: false,
+      debug: false,
     };
 
     expect(options.port).toBeUndefined();
