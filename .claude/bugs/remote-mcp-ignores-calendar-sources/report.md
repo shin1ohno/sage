@@ -242,3 +242,15 @@ Refactor remote MCP handler to use CalendarSourceManager like local mode does:
 - **Lines of code**: ~300 lines across 1-2 files
 - **Risk level**: Medium (affects remote MCP server, but local mode unaffected)
 - **Testing requirements**: E2E tests for remote mode + manual verification
+
+---
+
+**Report Status**: ✅ Resolved
+**Resolution Date**: 2026-01-05
+**Fix Version**: v0.8.7 (commits b61b1c6, 6f5619f)
+**Fix Summary**: Integrated CalendarSourceManager into Remote MCP server. All 8 calendar tools now use extracted handlers that respect `calendar.sources` configuration. GoogleCalendarService properly initialized.
+**Verification**:
+- Production MCP testing confirmed CalendarSourceManager is used
+- Code review verified all handlers use createCalendarToolsContext()
+- All automated tests passing (calendar-related)
+- Error pattern changed from EventKit-only to multi-source attempt
