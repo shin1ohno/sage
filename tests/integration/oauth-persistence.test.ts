@@ -337,6 +337,9 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       expect(session1).not.toBeNull();
       expect(session1!.userId).toBe(userId);
 
+      // Wait for async save to complete before shutdown
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       // Shutdown server
       await server1.shutdown();
 
@@ -555,6 +558,9 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       // Create user session
       const authResult = await server1.authenticateUser(testUser.username, 'testpass123');
       const sessionId = authResult.session!.sessionId;
+
+      // Wait for async save to complete before shutdown
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       await server1.shutdown();
 
