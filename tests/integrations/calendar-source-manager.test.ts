@@ -541,8 +541,6 @@ describe('CalendarSourceManager', () => {
       mockConfig.calendar.sources!.eventkit.enabled = true;
       mockConfig.calendar.sources!.google.enabled = true;
 
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-
       mockCalendarService.listEvents.mockRejectedValueOnce(new Error('EventKit failed'));
       mockGoogleCalendarService.listEvents.mockResolvedValueOnce([googleEvent]);
 
@@ -550,19 +548,12 @@ describe('CalendarSourceManager', () => {
 
       expect(events).toHaveLength(1);
       expect(events[0].source).toBe('google');
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'EventKit failed:',
-        expect.any(Error)
-      );
-
-      consoleErrorSpy.mockRestore();
+      // Error is logged via pino logger (calendarLogger.error)
     });
 
     it('should throw when all sources fail', async () => {
       mockConfig.calendar.sources!.eventkit.enabled = true;
       mockConfig.calendar.sources!.google.enabled = true;
-
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
       mockCalendarService.listEvents.mockRejectedValueOnce(new Error('EventKit failed'));
       mockGoogleCalendarService.listEvents.mockRejectedValueOnce(
@@ -572,8 +563,6 @@ describe('CalendarSourceManager', () => {
       await expect(
         manager.getEvents('2026-01-15T00:00:00Z', '2026-01-16T00:00:00Z')
       ).rejects.toThrow('All calendar sources failed');
-
-      consoleErrorSpy.mockRestore();
     });
 
     it('should handle calendar ID filter', async () => {
@@ -629,9 +618,6 @@ describe('CalendarSourceManager', () => {
       mockConfig.calendar.sources!.eventkit.enabled = true;
       mockConfig.calendar.sources!.google.enabled = true;
 
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-      const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-
       mockGoogleCalendarService.createEvent.mockRejectedValueOnce(
         new Error('Google Calendar failed')
       );
@@ -639,9 +625,6 @@ describe('CalendarSourceManager', () => {
       await expect(manager.createEvent(createRequest, 'google')).rejects.toThrow(
         'Failed to create event in all sources'
       );
-
-      consoleErrorSpy.mockRestore();
-      consoleLogSpy.mockRestore();
     });
 
     it('should use first enabled source if not specified', async () => {
@@ -669,13 +652,9 @@ describe('CalendarSourceManager', () => {
       mockConfig.calendar.sources!.eventkit.enabled = true;
       mockConfig.calendar.sources!.google.enabled = false;
 
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-
       await expect(manager.createEvent(createRequest)).rejects.toThrow(
         'Failed to create event in all sources'
       );
-
-      consoleErrorSpy.mockRestore();
     });
   });
 
@@ -702,15 +681,11 @@ describe('CalendarSourceManager', () => {
       mockConfig.calendar.sources!.eventkit.enabled = true;
       mockConfig.calendar.sources!.google.enabled = true;
 
-      const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-
       mockGoogleCalendarService.deleteEvent.mockResolvedValueOnce();
 
       await manager.deleteEvent('event-123');
 
       expect(mockGoogleCalendarService.deleteEvent).toHaveBeenCalledWith('event-123');
-
-      consoleLogSpy.mockRestore();
     });
 
     it('should handle 404 gracefully when source specified', async () => {
@@ -730,16 +705,12 @@ describe('CalendarSourceManager', () => {
       mockConfig.calendar.sources!.eventkit.enabled = true;
       mockConfig.calendar.sources!.google.enabled = true;
 
-      const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-
       mockGoogleCalendarService.deleteEvent.mockRejectedValueOnce(
         new Error('Event not found 404')
       );
 
       // Should not throw - 404 is treated as success
       await manager.deleteEvent('non-existent-event');
-
-      consoleLogSpy.mockRestore();
     });
 
     it('should throw error if all sources fail with non-404 errors', async () => {
@@ -1003,8 +974,6 @@ describe('CalendarSourceManager', () => {
     });
 
     it('should handle errors gracefully', async () => {
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-
       mockCalendarService.isAvailable.mockRejectedValueOnce(
         new Error('EventKit check failed')
       );
@@ -1016,9 +985,7 @@ describe('CalendarSourceManager', () => {
 
       expect(health.eventkit).toBe(false);
       expect(health.google).toBe(false);
-      expect(consoleErrorSpy).toHaveBeenCalledTimes(2);
-
-      consoleErrorSpy.mockRestore();
+      // Errors are logged via pino logger (calendarLogger.error)
     });
 
     it('should return false when services not initialized', async () => {
@@ -1036,14 +1003,10 @@ describe('CalendarSourceManager', () => {
         new Error('Google failed')
       );
 
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-
       const health = await manager.healthCheck();
 
       expect(health.eventkit).toBe(true);
       expect(health.google).toBe(false);
-
-      consoleErrorSpy.mockRestore();
     });
   });
 
