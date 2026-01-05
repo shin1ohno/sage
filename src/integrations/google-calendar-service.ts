@@ -20,8 +20,8 @@ import { retryWithBackoff } from '../utils/retry.js';
  * Request interface for listing events
  */
 export interface ListEventsRequest {
-  startDate: string; // ISO 8601
-  endDate: string; // ISO 8601
+  startDate: string; // ISO 8601 date (YYYY-MM-DD) or RFC3339 (YYYY-MM-DDTHH:MM:SSZ)
+  endDate: string; // ISO 8601 date (YYYY-MM-DD) or RFC3339 (YYYY-MM-DDTHH:MM:SSZ)
   calendarId?: string; // Calendar ID (optional, defaults to 'primary')
 }
 
@@ -138,6 +138,26 @@ export class GoogleCalendarService {
   }
 
   /**
+   * Normalize date string to RFC3339 format required by Google Calendar API
+   *
+   * Converts simple ISO date format (YYYY-MM-DD) to RFC3339 format with UTC timezone.
+   * If input is already in RFC3339 format, returns unchanged.
+   *
+   * @param dateString - Date string in YYYY-MM-DD or RFC3339 format
+   * @returns Date string in RFC3339 format (YYYY-MM-DDT00:00:00Z)
+   */
+  private normalizeToRFC3339(dateString: string): string {
+    // Check if already in RFC3339 format (contains 'T' and timezone)
+    if (dateString.includes('T')) {
+      return dateString;
+    }
+
+    // Convert YYYY-MM-DD to YYYY-MM-DDT00:00:00Z
+    // Using 00:00:00 UTC ensures we capture all events on the date
+    return `${dateString}T00:00:00Z`;
+  }
+
+  /**
    * List calendar events with pagination support
    * Requirement: 2, 10 (Google Calendar event retrieval, retry with backoff)
    *
@@ -168,8 +188,8 @@ export class GoogleCalendarService {
             return (
               await this.calendarClient!.events.list({
                 calendarId: calendarId,
-                timeMin: request.startDate,
-                timeMax: request.endDate,
+                timeMin: this.normalizeToRFC3339(request.startDate),
+                timeMax: this.normalizeToRFC3339(request.endDate),
                 maxResults: 250,
                 pageToken: pageToken,
                 singleEvents: true, // Expand recurring events into individual instances

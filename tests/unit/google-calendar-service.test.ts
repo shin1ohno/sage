@@ -345,6 +345,42 @@ describe('GoogleCalendarService', () => {
         })
       );
     });
+
+    it('should normalize simple date format (YYYY-MM-DD) to RFC3339', async () => {
+      mockCalendarClient.events.list.mockResolvedValueOnce({
+        data: { items: [] },
+      });
+
+      await service.listEvents({
+        startDate: '2026-01-15', // Simple format
+        endDate: '2026-01-16',
+      });
+
+      expect(mockCalendarClient.events.list).toHaveBeenCalledWith(
+        expect.objectContaining({
+          timeMin: '2026-01-15T00:00:00Z', // Normalized to RFC3339
+          timeMax: '2026-01-16T00:00:00Z',
+        })
+      );
+    });
+
+    it('should pass through RFC3339 format unchanged', async () => {
+      mockCalendarClient.events.list.mockResolvedValueOnce({
+        data: { items: [] },
+      });
+
+      await service.listEvents({
+        startDate: '2026-01-15T10:00:00+09:00', // Already RFC3339
+        endDate: '2026-01-16T10:00:00+09:00',
+      });
+
+      expect(mockCalendarClient.events.list).toHaveBeenCalledWith(
+        expect.objectContaining({
+          timeMin: '2026-01-15T10:00:00+09:00', // Unchanged
+          timeMax: '2026-01-16T10:00:00+09:00',
+        })
+      );
+    });
   });
 
   describe('createEvent', () => {
