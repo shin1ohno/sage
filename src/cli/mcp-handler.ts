@@ -17,6 +17,9 @@ import { CalendarEventResponseService, type EventResponseType } from '../integra
 import { CalendarEventCreatorService } from '../integrations/calendar-event-creator.js';
 import { CalendarEventDeleterService } from '../integrations/calendar-event-deleter.js';
 import { WorkingCadenceService } from '../services/working-cadence.js';
+import { CalendarSourceManager } from '../integrations/calendar-source-manager.js';
+import { GoogleCalendarService } from '../integrations/google-calendar-service.js';
+import { GoogleOAuthHandler } from '../oauth/google-oauth-handler.js';
 import type { UserConfig } from '../types/index.js';
 
 // Extracted tool handlers
@@ -47,6 +50,18 @@ import {
   handleSyncToNotion,
   handleUpdateConfig,
 } from '../tools/integrations/index.js';
+
+import {
+  type CalendarToolsContext,
+  handleListCalendarSources,
+  handleListCalendarEvents,
+  handleFindAvailableSlots,
+  handleCreateCalendarEvent,
+  handleRespondToCalendarEvent,
+  handleRespondToCalendarEventsBatch,
+  handleDeleteCalendarEvent,
+  handleDeleteCalendarEventsBatch,
+} from '../tools/calendar/handlers.js';
 
 // Protocol version
 const PROTOCOL_VERSION = '2024-11-05';
@@ -123,6 +138,8 @@ class MCPHandlerImpl implements MCPHandler {
   private calendarEventCreatorService: CalendarEventCreatorService | null = null;
   private calendarEventDeleterService: CalendarEventDeleterService | null = null;
   private workingCadenceService: WorkingCadenceService | null = null;
+  private calendarSourceManager: CalendarSourceManager | null = null;
+  private googleCalendarService: GoogleCalendarService | null = null;
   private initialized: boolean = false;
 
   private tools: Map<string, { definition: ToolDefinition; handler: ToolHandler }> = new Map();
@@ -162,6 +179,21 @@ class MCPHandlerImpl implements MCPHandler {
       notionDatabaseId: userConfig.integrations.notion.databaseId,
     });
     this.calendarService = new CalendarService();
+
+    // Initialize Google Calendar service with OAuth handler
+    const oauthConfig = {
+      clientId: process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+      redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/oauth/callback',
+    };
+    const oauthHandler = new GoogleOAuthHandler(oauthConfig);
+    this.googleCalendarService = new GoogleCalendarService(oauthHandler);
+
+    this.calendarSourceManager = new CalendarSourceManager({
+      calendarService: this.calendarService,
+      googleCalendarService: this.googleCalendarService,
+      config: userConfig,
+    });
     this.notionService = new NotionMCPService();
     this.todoListManager = new TodoListManager();
     this.taskSynchronizer = new TaskSynchronizer();
@@ -222,6 +254,23 @@ class MCPHandlerImpl implements MCPHandler {
         this.config = config;
       },
       getNotionService: () => this.notionService,
+      initializeServices: (config: UserConfig) => this.initializeServices(config),
+    };
+  }
+
+  /**
+   * Create CalendarToolsContext for calendar tool handlers
+   */
+  private createCalendarToolsContext(): CalendarToolsContext {
+    return {
+      getConfig: () => this.config,
+      getCalendarSourceManager: () => this.calendarSourceManager,
+      getCalendarEventResponseService: () => this.calendarEventResponseService,
+      getGoogleCalendarService: () => this.googleCalendarService,
+      getWorkingCadenceService: () => this.workingCadenceService,
+      setWorkingCadenceService: (service: WorkingCadenceService) => {
+        this.workingCadenceService = service;
+      },
       initializeServices: (config: UserConfig) => this.initializeServices(config),
     };
   }
@@ -559,7 +608,7 @@ class MCPHandlerImpl implements MCPHandler {
         })
     );
 
-    // find_available_slots
+    // find_available_slots - uses extracted handler
     this.registerTool(
       {
         name: 'find_available_slots',
@@ -587,159 +636,16 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['durationMinutes'],
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.calendarService) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const durationMinutes = args.durationMinutes as number;
-          const startDate = args.startDate as string | undefined;
-          const endDate = args.endDate as string | undefined;
-          const preferDeepWork = args.preferDeepWork as boolean | undefined;
-
-          const platformInfo = await this.calendarService!.detectPlatform();
-          const isAvailable = await this.calendarService!.isAvailable();
-
-          if (!isAvailable) {
-            const searchStart = startDate ?? new Date().toISOString().split('T')[0];
-            const searchEnd =
-              endDate ??
-              new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-            const manualPrompt = this.calendarService!.generateManualInputPrompt(
-              searchStart,
-              searchEnd
-            );
-
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: false,
-                      platform: platformInfo.platform,
-                      method: platformInfo.recommendedMethod,
-                      message:
-                        'カレンダー統合がこのプラットフォームで利用できません。手動で予定を入力してください。',
-                      manualPrompt,
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          const searchStart = startDate ?? new Date().toISOString().split('T')[0];
-          const searchEnd =
-            endDate ??
-            new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-          const events = await this.calendarService!.fetchEvents(searchStart, searchEnd);
-
-          const workingHours = {
-            start: this.config.calendar.workingHours.start,
-            end: this.config.calendar.workingHours.end,
-          };
-
-          const slots = this.calendarService!.findAvailableSlotsFromEvents(
-            events,
-            durationMinutes,
-            workingHours,
-            searchStart
-          );
-
-          const suitabilityConfig = {
-            deepWorkDays: this.config.calendar.deepWorkDays,
-            meetingHeavyDays: this.config.calendar.meetingHeavyDays,
-          };
-
-          const scoredSlots = slots.map((slot) =>
-            this.calendarService!.calculateSuitability(slot, suitabilityConfig)
-          );
-
-          const filteredSlots = preferDeepWork
-            ? scoredSlots.filter((s) => s.dayType === 'deep-work')
-            : scoredSlots;
-
-          const suitabilityOrder = { excellent: 0, good: 1, acceptable: 2 };
-          filteredSlots.sort(
-            (a, b) =>
-              suitabilityOrder[a.suitability] - suitabilityOrder[b.suitability]
-          );
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    platform: platformInfo.platform,
-                    method: platformInfo.recommendedMethod,
-                    searchRange: { start: searchStart, end: searchEnd },
-                    eventsFound: events.length,
-                    slots: filteredSlots.slice(0, 10).map((slot) => ({
-                      start: slot.start,
-                      end: slot.end,
-                      durationMinutes: slot.durationMinutes,
-                      suitability: slot.suitability,
-                      dayType: slot.dayType,
-                      reason: slot.reason,
-                    })),
-                    message:
-                      filteredSlots.length > 0
-                        ? `${filteredSlots.length}件の空き時間が見つかりました。`
-                        : '指定した条件に合う空き時間が見つかりませんでした。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `カレンダー検索に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleFindAvailableSlots(this.createCalendarToolsContext(), {
+          durationMinutes: args.durationMinutes as number,
+          startDate: args.startDate as string | undefined,
+          endDate: args.endDate as string | undefined,
+          preferDeepWork: args.preferDeepWork as boolean | undefined,
+        })
     );
 
-    // list_calendar_events
+    // list_calendar_events - uses extracted handler
     this.registerTool(
       {
         name: 'list_calendar_events',
@@ -756,121 +662,20 @@ class MCPHandlerImpl implements MCPHandler {
               type: 'string',
               description: 'End date in ISO 8601 format (e.g., 2025-01-20)',
             },
-            calendarName: {
+            calendarId: {
               type: 'string',
-              description: 'Optional: filter events by calendar name',
+              description: 'Optional: filter events by calendar ID',
             },
           },
           required: ['startDate', 'endDate'],
         },
       },
-      async (args) => {
-        if (!this.config) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: 'sageが設定されていません。check_setup_statusを実行してください。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-
-        if (!this.calendarService) {
-          this.initializeServices(this.config);
-        }
-
-        try {
-          const startDate = args.startDate as string;
-          const endDate = args.endDate as string;
-          const calendarName = args.calendarName as string | undefined;
-
-          const platformInfo = await this.calendarService!.detectPlatform();
-          const isAvailable = await this.calendarService!.isAvailable();
-
-          if (!isAvailable) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: false,
-                      platform: platformInfo.platform,
-                      method: platformInfo.recommendedMethod,
-                      message:
-                        'カレンダー統合がこのプラットフォームで利用できません。macOSで実行してください。',
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
-          }
-
-          const result = await this.calendarService!.listEvents({
-            startDate,
-            endDate,
-            calendarName,
-          });
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    platform: platformInfo.platform,
-                    method: platformInfo.recommendedMethod,
-                    events: result.events.map((event) => ({
-                      id: event.id,
-                      title: event.title,
-                      start: event.start,
-                      end: event.end,
-                      isAllDay: event.isAllDay,
-                      calendar: event.calendar,
-                      location: event.location,
-                    })),
-                    period: result.period,
-                    totalEvents: result.totalEvents,
-                    message:
-                      result.totalEvents > 0
-                        ? `${result.totalEvents}件のイベントが見つかりました。`
-                        : '指定した期間にイベントが見つかりませんでした。',
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    message: `カレンダーイベントの取得に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        }
-      }
+      async (args) =>
+        handleListCalendarEvents(this.createCalendarToolsContext(), {
+          startDate: args.startDate as string,
+          endDate: args.endDate as string,
+          calendarId: args.calendarId as string | undefined,
+        })
     );
 
     // sync_to_notion - uses extracted handler
@@ -1856,6 +1661,19 @@ class MCPHandlerImpl implements MCPHandler {
           };
         }
       }
+    );
+
+    // list_calendar_sources - uses extracted handler
+    this.registerTool(
+      {
+        name: 'list_calendar_sources',
+        description: 'List available and enabled calendar sources.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      async () => handleListCalendarSources(this.createCalendarToolsContext())
     );
   }
 
