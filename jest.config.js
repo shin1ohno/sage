@@ -1,5 +1,5 @@
 /** @type {import('jest').Config} */
-export default {
+const config = {
   preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
   extensionsToTreatAsEsm: ['.ts'],
@@ -41,3 +41,17 @@ export default {
   },
   verbose: true,
 };
+
+// In CI environment, skip tests that require external services
+if (process.env.CI === 'true') {
+  config.testPathIgnorePatterns = [
+    '/node_modules/',
+    // Skip Google Calendar integration tests (require OAuth authentication)
+    'tests/integration/google-calendar-integration.test.ts',
+    'tests/e2e/google-calendar-setup.test.ts',
+    'tests/e2e/multi-source-calendar.test.ts',
+    'tests/e2e/calendar-fallback.test.ts',
+  ];
+}
+
+export default config;
