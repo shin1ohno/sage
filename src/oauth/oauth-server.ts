@@ -7,6 +7,8 @@
 
 import { createHash } from 'crypto';
 import { join } from 'path';
+import { homedir } from 'os';
+import { existsSync, statSync } from 'fs';
 import {
   AuthorizationServerMetadata,
   ProtectedResourceMetadata,
@@ -28,6 +30,7 @@ import { createRefreshTokenStore, RefreshTokenStore } from './refresh-token-stor
 import { createClientStore, ClientStore, ClientRegistrationResult } from './client-store.js';
 import { createSessionStore, SessionStore } from './session-store.js';
 import { verifyCodeChallenge } from './pkce.js';
+import { oauthLogger } from '../utils/logger.js';
 import { EncryptionService } from './encryption-service.js';
 import { PersistentRefreshTokenStore } from './persistent-refresh-token-store.js';
 import { PersistentClientStore } from './persistent-client-store.js';
@@ -179,7 +182,7 @@ export class OAuthServer {
           : Promise.resolve(),
       ]);
 
-      console.log('[OAuth] Persistent storage initialized');
+      oauthLogger.info('Persistent storage initialized');
 
       // Log startup metrics
       this.logStartupMetrics();
@@ -191,13 +194,12 @@ export class OAuthServer {
    */
   private logStartupMetrics(): void {
     const metrics = this.getMetrics();
-    console.log('[OAuth] Startup Metrics:');
-    console.log(`  - Refresh Tokens: ${metrics.refreshTokens.count} (${metrics.refreshTokens.expiredCount} expired, ${metrics.refreshTokens.rotatedCount} rotated)`);
-    console.log(`  - OAuth Clients: ${metrics.clients.count}`);
-    console.log(`  - Sessions: ${metrics.sessions.count} (${metrics.sessions.expiredCount} expired)`);
-    if (metrics.storage) {
-      console.log(`  - Storage: ${metrics.storage.tokensSize} bytes (tokens), ${metrics.storage.clientsSize} bytes (clients), ${metrics.storage.sessionsSize} bytes (sessions)`);
-    }
+    oauthLogger.info({
+      refreshTokens: metrics.refreshTokens,
+      clients: metrics.clients,
+      sessions: metrics.sessions,
+      storage: metrics.storage,
+    }, 'Startup Metrics');
   }
 
   /**
@@ -675,7 +677,7 @@ export class OAuthServer {
           : Promise.resolve(),
       ]);
 
-      console.log('[OAuth] All data flushed to storage');
+      oauthLogger.info('All data flushed to storage');
     }
   }
 
@@ -707,9 +709,6 @@ export class OAuthServer {
     // Get storage file sizes if persistence is enabled
     let storage: { tokensSize: number; clientsSize: number; sessionsSize: number } | undefined;
     if (this.encryptionService) {
-      const { homedir } = require('os');
-      const { join } = require('path');
-
       try {
         const tokensPath = join(homedir(), '.sage', 'oauth_refresh_tokens.enc');
         const clientsPath = join(homedir(), '.sage', 'oauth_clients.enc');
@@ -762,10 +761,6 @@ export class OAuthServer {
 
     // Check storage accessibility
     if (this.encryptionService) {
-      const { existsSync } = require('fs');
-      const { homedir } = require('os');
-      const { join } = require('path');
-
       const storageDir = join(homedir(), '.sage');
       if (!existsSync(storageDir)) {
         issues.push('Storage directory does not exist');
@@ -789,10 +784,9 @@ export class OAuthServer {
   /**
    * Get file size safely
    */
-  private getFileSize(path: string): number {
+  private getFileSize(filePath: string): number {
     try {
-      const { statSync } = require('fs');
-      return statSync(path).size;
+      return statSync(filePath).size;
     } catch {
       return 0;
     }

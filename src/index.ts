@@ -21,9 +21,11 @@ import { TodoListManager } from "./integrations/todo-list-manager.js";
 import { TaskSynchronizer } from "./integrations/task-synchronizer.js";
 import { CalendarEventResponseService } from "./integrations/calendar-event-response.js";
 import { WorkingCadenceService } from "./services/working-cadence.js";
+import { GoogleOAuthHandler } from "./oauth/google-oauth-handler.js";
 import type { UserConfig } from "./types/index.js";
 import { VERSION, SERVER_NAME } from "./version.js";
 import { createErrorFromCatch } from "./utils/mcp-response.js";
+import { mcpLogger } from "./utils/logger.js";
 
 // Extracted tool handlers
 import {
@@ -96,7 +98,6 @@ function initializeServices(userConfig: UserConfig): void {
   // Note: GoogleCalendarService requires GoogleOAuthHandler which needs OAuth config
   // For now, we initialize with a stub handler. Full OAuth setup will be done in Task 33.
   try {
-    const { GoogleOAuthHandler } = require('./oauth/google-oauth-handler.js');
     const oauthConfig = {
       clientId: process.env.GOOGLE_CLIENT_ID || '',
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
@@ -106,7 +107,7 @@ function initializeServices(userConfig: UserConfig): void {
     googleCalendarService = new GoogleCalendarService(oauthHandler);
   } catch (error) {
     // If Google Calendar initialization fails, continue without it
-    console.error('Google Calendar service initialization failed:', error);
+    mcpLogger.error({ err: error }, 'Google Calendar service initialization failed');
     googleCalendarService = null;
   }
 
@@ -1090,7 +1091,7 @@ async function main(): Promise<void> {
   // Handle help and version
   if (options.help || options.version) {
     const result = await startServer(options);
-    console.log(result.message);
+    mcpLogger.info(result.message);
     process.exit(0);
   }
 
@@ -1098,10 +1099,10 @@ async function main(): Promise<void> {
   if (options.generateToken) {
     const result = await startServer(options);
     if (result.success) {
-      console.log(result.message);
+      mcpLogger.info(result.message);
       process.exit(0);
     } else {
-      console.error(`Token generation failed: ${result.error}`);
+      mcpLogger.error({ error: result.error }, 'Token generation failed');
       process.exit(1);
     }
   }
@@ -1111,17 +1112,18 @@ async function main(): Promise<void> {
     const result = await startServer(options);
 
     if (!result.success) {
-      console.error(`Failed to start HTTP server: ${result.error}`);
+      mcpLogger.error({ error: result.error }, 'Failed to start HTTP server');
       process.exit(1);
     }
 
-    console.error(
-      `${SERVER_NAME} v${VERSION} started in HTTP mode on ${result.host}:${result.port}`
+    mcpLogger.info(
+      { host: result.host, port: result.port, version: VERSION },
+      `${SERVER_NAME} started in HTTP mode`
     );
 
     // Keep the process running
     process.on("SIGINT", async () => {
-      console.error("\nShutting down...");
+      mcpLogger.info('Shutting down...');
       if (result.stop) {
         await result.stop();
       }
@@ -1135,10 +1137,10 @@ async function main(): Promise<void> {
   const server = await createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`${SERVER_NAME} v${VERSION} started in Stdio mode`);
+  mcpLogger.info({ version: VERSION }, `${SERVER_NAME} started in Stdio mode`);
 }
 
 main().catch((error) => {
-  console.error("Failed to start sage server:", error);
+  mcpLogger.error({ err: error }, 'Failed to start sage server');
   process.exit(1);
 });

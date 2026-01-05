@@ -9,10 +9,11 @@
 import { createCipheriv, createDecipheriv, randomBytes, scrypt } from 'crypto';
 import { promisify } from 'util';
 import { readFile, writeFile, mkdir, chmod, unlink, rename } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { existsSync } from 'fs';
 import { FileMutex, FileMutexMetrics } from './file-mutex.js';
+import { oauthLogger } from '../utils/logger.js';
 
 const scryptAsync = promisify(scrypt);
 
@@ -57,7 +58,7 @@ export class EncryptionService {
     // Priority 1: Use SAGE_ENCRYPTION_KEY environment variable
     if (process.env.SAGE_ENCRYPTION_KEY) {
       this.encryptionKey = process.env.SAGE_ENCRYPTION_KEY;
-      console.log('[OAuth] Using encryption key from SAGE_ENCRYPTION_KEY environment variable');
+      oauthLogger.info('Using encryption key from SAGE_ENCRYPTION_KEY environment variable');
       this.initialized = true;
       return;
     }
@@ -66,18 +67,18 @@ export class EncryptionService {
     if (existsSync(this.keyStoragePath)) {
       try {
         this.encryptionKey = (await readFile(this.keyStoragePath, 'utf-8')).trim();
-        console.log('[OAuth] Loaded encryption key from storage');
+        oauthLogger.info('Loaded encryption key from storage');
         this.initialized = true;
         return;
       } catch (error) {
-        console.error('[OAuth] Failed to load encryption key:', error);
+        oauthLogger.error({ err: error }, 'Failed to load encryption key');
         // Fall through to generation
       }
     }
 
     // Priority 3: Generate new key and store it
-    console.warn('[OAuth] No encryption key found. Generating new key...');
-    console.warn('[OAuth] Warning: Set SAGE_ENCRYPTION_KEY environment variable for production use');
+    oauthLogger.warn('No encryption key found. Generating new key...');
+    oauthLogger.warn('Warning: Set SAGE_ENCRYPTION_KEY environment variable for production use');
 
     this.encryptionKey = randomBytes(32).toString('hex');
 
@@ -93,10 +94,10 @@ export class EncryptionService {
       await chmod(this.keyStoragePath, 0o600);
     } catch (error) {
       // chmod may fail on Windows, log but continue
-      console.warn('[OAuth] Could not set file permissions (may not be supported on this OS)');
+      oauthLogger.warn('Could not set file permissions (may not be supported on this OS)');
     }
 
-    console.log(`[OAuth] Generated encryption key stored at: ${this.keyStoragePath}`);
+    oauthLogger.info({ path: this.keyStoragePath }, 'Generated encryption key stored');
     this.initialized = true;
   }
 
@@ -134,7 +135,7 @@ export class EncryptionService {
       // Combine: salt:iv:authTag:encrypted
       return `${salt.toString('hex')}:${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
     } catch (error) {
-      console.error('[OAuth] Encryption failed:', error);
+      oauthLogger.error({ err: error }, 'Encryption failed');
       throw new Error('Failed to encrypt data');
     }
   }
@@ -177,7 +178,7 @@ export class EncryptionService {
 
       return decrypted;
     } catch (error) {
-      console.error('[OAuth] Decryption failed:', error);
+      oauthLogger.error({ err: error }, 'Decryption failed');
       throw new Error('Failed to decrypt data');
     }
   }
@@ -196,7 +197,6 @@ export class EncryptionService {
       const encrypted = await this.encrypt(data);
 
       // Ensure directory exists with secure permissions
-      const { dirname } = require('path');
       const dir = dirname(filePath);
       await mkdir(dir, { recursive: true, mode: 0o700 });
 
@@ -212,13 +212,13 @@ export class EncryptionService {
           await chmod(tempPath, 0o600);
         } catch (error) {
           // chmod may fail on Windows, log but continue
-          console.warn('[OAuth] Could not set file permissions (may not be supported on this OS)');
+          oauthLogger.warn('Could not set file permissions (may not be supported on this OS)');
         }
 
         // Rename is atomic on most filesystems - prevents corruption
         await rename(tempPath, filePath);
       } catch (error) {
-        console.error(`[OAuth] Failed to write ${filePath}:`, error);
+        oauthLogger.error({ err: error, filePath }, 'Failed to write file');
 
         // Clean up temp file if it exists
         try {
@@ -250,7 +250,7 @@ export class EncryptionService {
         const encrypted = await readFile(filePath, 'utf-8');
         return await this.decrypt(encrypted);
       } catch (error) {
-        console.error(`[OAuth] Failed to decrypt file ${filePath}:`, error);
+        oauthLogger.error({ err: error, filePath }, 'Failed to decrypt file');
         return null;
       }
     });
