@@ -48,7 +48,6 @@ export class FileMutex {
   // Thresholds for warnings
   private static readonly QUEUE_DEPTH_WARNING_THRESHOLD = 10;
   private static readonly WAIT_TIME_WARNING_THRESHOLD_MS = 5000;
-  private static readonly WAIT_TIME_DEBUG_THRESHOLD_MS = 100;
 
   /**
    * Execute an operation with exclusive lock on the specified file
@@ -130,8 +129,6 @@ export class FileMutex {
     // Log warnings for long wait times
     if (waitTimeMs >= FileMutex.WAIT_TIME_WARNING_THRESHOLD_MS) {
       console.warn(`[OAuth] Long mutex wait on ${filePath}: ${waitTimeMs}ms`);
-    } else if (waitTimeMs >= FileMutex.WAIT_TIME_DEBUG_THRESHOLD_MS) {
-      console.log(`[OAuth] Mutex wait on ${filePath}: ${waitTimeMs}ms`);
     }
   }
 

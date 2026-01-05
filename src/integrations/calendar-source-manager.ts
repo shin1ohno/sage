@@ -568,7 +568,6 @@ export class CalendarSourceManager {
         if (source === 'google' && this.googleCalendarService) {
           // Try Google Calendar
           const event = await this.googleCalendarService.createEvent(request);
-          console.log(`Successfully created event in Google Calendar: ${event.id}`);
           return event;
         }
 
@@ -643,16 +642,8 @@ export class CalendarSourceManager {
     const promises: Promise<void | { source: string; error: Error }>[] = [];
 
     if (enabledSources.includes('eventkit') && this.calendarService) {
-      // Note: EventKit does not support deleteEvent yet
-      // Skip EventKit for now (no-op)
-      promises.push(
-        Promise.resolve().then(() => {
-          // EventKit deletion not supported
-          console.log(
-            'EventKit event deletion not supported, skipping...'
-          );
-        })
-      );
+      // Note: EventKit does not support deleteEvent yet - skip silently
+      promises.push(Promise.resolve());
     }
 
     if (enabledSources.includes('google') && this.googleCalendarService) {
