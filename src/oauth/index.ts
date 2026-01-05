@@ -26,3 +26,6 @@ export { OAuthServer, createOAuthServer, OAuthServerConfig } from './oauth-serve
 
 // OAuth Handler
 export { OAuthHandler, createOAuthHandler, OAuthHandlerConfig } from './oauth-handler.js';
+
+// File Mutex (for serializing file operations)
+export { FileMutex, FileMutexMetrics } from './file-mutex.js';

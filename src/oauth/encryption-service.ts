@@ -12,6 +12,7 @@ import { readFile, writeFile, mkdir, chmod, unlink, rename } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import { existsSync } from 'fs';
+import { FileMutex, FileMutexMetrics } from './file-mutex.js';
 
 const scryptAsync = promisify(scrypt);
 
@@ -33,6 +34,7 @@ export class EncryptionService {
   private encryptionKey: string;
   private keyStoragePath: string;
   private initialized: boolean = false;
+  private fileMutex: FileMutex = new FileMutex();
 
   constructor(config: EncryptionServiceConfig = {}) {
     this.keyStoragePath = config.keyStoragePath || join(homedir(), '.sage', 'oauth_encryption_key');
@@ -184,67 +186,74 @@ export class EncryptionService {
    * Encrypt and save data to file
    *
    * Uses atomic write pattern (temp file + rename) to prevent corruption.
+   * Serialized with mutex to prevent concurrent write race conditions.
    *
    * @param data - Plain text data to encrypt and save
    * @param filePath - Destination file path
    */
   async encryptToFile(data: string, filePath: string): Promise<void> {
-    const encrypted = await this.encrypt(data);
+    await this.fileMutex.withLock(filePath, async () => {
+      const encrypted = await this.encrypt(data);
 
-    // Ensure directory exists with secure permissions
-    const { dirname } = require('path');
-    const dir = dirname(filePath);
-    await mkdir(dir, { recursive: true, mode: 0o700 });
+      // Ensure directory exists with secure permissions
+      const { dirname } = require('path');
+      const dir = dirname(filePath);
+      await mkdir(dir, { recursive: true, mode: 0o700 });
 
-    // Atomic write using temp file + rename pattern
-    const tempPath = `${filePath}.tmp`;
+      // Atomic write using temp file + rename pattern
+      const tempPath = `${filePath}.tmp`;
 
-    try {
-      // Write to temp file with restricted permissions
-      await writeFile(tempPath, encrypted, { mode: 0o600 });
-
-      // Ensure permissions are set (some systems ignore mode in writeFile)
       try {
-        await chmod(tempPath, 0o600);
+        // Write to temp file with restricted permissions
+        await writeFile(tempPath, encrypted, { mode: 0o600 });
+
+        // Ensure permissions are set (some systems ignore mode in writeFile)
+        try {
+          await chmod(tempPath, 0o600);
+        } catch (error) {
+          // chmod may fail on Windows, log but continue
+          console.warn('[OAuth] Could not set file permissions (may not be supported on this OS)');
+        }
+
+        // Rename is atomic on most filesystems - prevents corruption
+        await rename(tempPath, filePath);
       } catch (error) {
-        // chmod may fail on Windows, log but continue
-        console.warn('[OAuth] Could not set file permissions (may not be supported on this OS)');
+        console.error(`[OAuth] Failed to write ${filePath}:`, error);
+
+        // Clean up temp file if it exists
+        try {
+          await unlink(tempPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+
+        throw error;
       }
-
-      // Rename is atomic on most filesystems - prevents corruption
-      await rename(tempPath, filePath);
-    } catch (error) {
-      console.error(`[OAuth] Failed to write ${filePath}:`, error);
-
-      // Clean up temp file if it exists
-      try {
-        await unlink(tempPath);
-      } catch {
-        // Ignore cleanup errors
-      }
-
-      throw error;
-    }
+    });
   }
 
   /**
    * Load and decrypt data from file
    *
+   * Serialized with mutex to prevent read-during-write issues.
+   *
    * @param filePath - Source file path
    * @returns Decrypted data or null if file doesn't exist
    */
   async decryptFromFile(filePath: string): Promise<string | null> {
-    try {
-      if (!existsSync(filePath)) {
+    return await this.fileMutex.withLock(filePath, async () => {
+      try {
+        if (!existsSync(filePath)) {
+          return null;
+        }
+
+        const encrypted = await readFile(filePath, 'utf-8');
+        return await this.decrypt(encrypted);
+      } catch (error) {
+        console.error(`[OAuth] Failed to decrypt file ${filePath}:`, error);
         return null;
       }
-
-      const encrypted = await readFile(filePath, 'utf-8');
-      return await this.decrypt(encrypted);
-    } catch (error) {
-      console.error(`[OAuth] Failed to decrypt file ${filePath}:`, error);
-      return null;
-    }
+    });
   }
 
   /**
@@ -268,6 +277,7 @@ export class EncryptionService {
     initialized: boolean;
     keySource: 'environment' | 'file' | 'generated';
     keyStoragePath: string;
+    mutex: FileMutexMetrics;
   } {
     let keySource: 'environment' | 'file' | 'generated' = 'generated';
     if (process.env.SAGE_ENCRYPTION_KEY) {
@@ -280,6 +290,30 @@ export class EncryptionService {
       initialized: this.initialized,
       keySource,
       keyStoragePath: this.keyStoragePath,
+      mutex: this.fileMutex.getMetrics(),
     };
+  }
+
+  /**
+   * Get mutex metrics for monitoring
+   */
+  getMutexMetrics(): FileMutexMetrics {
+    return this.fileMutex.getMetrics();
+  }
+
+  /**
+   * Wait for all pending file operations to complete
+   *
+   * Used for graceful shutdown to ensure all data is persisted.
+   */
+  async waitForPendingWrites(): Promise<void> {
+    await this.fileMutex.waitForPending();
+  }
+
+  /**
+   * Check if there are pending file operations
+   */
+  hasPendingWrites(): boolean {
+    return this.fileMutex.hasPendingOperations();
   }
 }

@@ -1,6 +1,126 @@
 # Session Progress - sage
 
-## Current Session: 2026-01-05/06 - OAuth Token Persistence Implementation ✅ COMPLETED
+## Current Session: 2026-01-06 - Session Store Mutex実装
+
+### 完了タスク
+
+#### Session Store Mutex (race condition fix)
+
+**問題**: OAuth永続ストアの同時ファイル書き込みでENOENTエラー発生
+- `PersistentSessionStore`: fire-and-forget方式
+- `PersistentRefreshTokenStore`: debounce方式
+- `PersistentClientStore`: 即時保存方式
+
+すべて`encryptToFile()`の同時実行でrace conditionが発生
+
+**解決策**: FileMutex実装
+- `src/oauth/file-mutex.ts` - ファイルごとのPromise queueによるmutex
+- `src/oauth/encryption-service.ts` - encryptToFile/decryptFromFileにmutex統合
+
+**新規ファイル**:
+- `src/oauth/file-mutex.ts` - FileMutexクラス
+- `tests/unit/oauth/file-mutex.test.ts` - 18件のユニットテスト
+
+**修正ファイル**:
+- `src/oauth/encryption-service.ts` - mutex統合、waitForPendingWrites追加
+- `src/oauth/index.ts` - FileMutexエクスポート
+- `tests/unit/encryption-service.test.ts` - mutex関連テスト追加
+- `tests/integration/oauth-persistence.test.ts` - 並行操作テスト追加
+
+**テスト結果**:
+- FileMutexテスト: 18/18 pass
+- EncryptionServiceテスト: 38/38 pass
+- 並行操作テスト: 4/4 pass
+
+**Spec**: `.claude/specs/session-store-mutex/` - 11/11タスク完了
+
+---
+
+## Previous Session: 2026-01-06 - テスト削減調査
+
+### 調査結果サマリー
+
+#### テスト全体統計
+- **総テストファイル数**: 70
+- **総テストケース数**: 1,556
+- **E2Eテスト**: 8ファイル (92テスト)
+- **Integrationテスト**: 6ファイル (168テスト)
+- **Unitテスト**: 56ファイル (~1,300テスト)
+
+---
+
+### 削除提案
+
+#### 1. 高優先度: 統合可能なテストファイル
+
+##### `tests/integration/multi-source-calendar.test.ts` → **削除候補**
+- **テスト数**: 25
+- **理由**: `tests/integrations/calendar-source-manager.test.ts` (76テスト) が同じ `CalendarSourceManager` クラスの完全なテストを含んでおり、以下の機能を重複してテスト:
+  - イベントマージング
+  - iCalUID による重複排除
+  - title+time による重複排除
+  - フォールバックシナリオ
+- **推奨アクション**: `multi-source-calendar.test.ts` の固有テストケースがあれば `calendar-source-manager.test.ts` に統合し、ファイルを削除
+
+##### `tests/unit/notion-mcp.test.ts` → **統合候補**
+- **テスト数**: 12
+- **理由**: `tests/unit/notion-mcp-integration.test.ts` (15テスト) が同じ `NotionMCPService` と `NotionMCPClient` をより包括的にテスト
+- **比較**:
+  - `notion-mcp.test.ts`: 基本的な機能テスト (isAvailable, createPage, generateFallbackTemplate, buildNotionProperties, shouldSyncToNotion)
+  - `notion-mcp-integration.test.ts`: 上記 + MCPクライアント統合、エラーハンドリング、リトライロジック
+- **推奨アクション**: 2つのファイルを1つに統合 (`notion-mcp.test.ts` のユニークなテストを移動して削除)
+
+---
+
+#### 2. 中優先度: レイヤー重複のあるテスト
+
+##### Google Calendar Types テスト
+- `tests/unit/google-calendar-types.test.ts` (28テスト) - 関数レベルのユニットテスト
+- `tests/integration/google-calendar-event-types.test.ts` (21テスト) - ワークフローレベルの統合テスト
+
+**分析**:
+- Unit: `detectEventType()`, `extractTypeSpecificProperties()`, `convertGoogleToCalendarEvent()` の純粋関数テスト
+- Integration: `CalendarSourceManager` と `WorkingCadenceService` を使用したE2Eワークフロー
+
+**推奨**: これらは異なるレイヤーをテストしているため、**両方保持を推奨**
+
+##### OAuth Token Store テスト
+- `tests/unit/oauth-refresh-token-store.test.ts` (8テスト) - インメモリ実装
+- `tests/unit/oauth/persistent-refresh-token-store.test.ts` (24テスト) - 永続化実装
+
+**分析**: 異なるクラスをテスト:
+- Unit: `createRefreshTokenStore` (インメモリ)
+- Persistent: `PersistentRefreshTokenStore` (ファイル永続化 + 暗号化)
+
+**推奨**: **両方保持** (異なる実装のテスト)
+
+---
+
+### 削減による影響予測
+
+| 対象ファイル | テスト数 | 削減後の総数 |
+|------------|---------|------------|
+| `multi-source-calendar.test.ts` | 25 | 1,531 |
+| `notion-mcp.test.ts` (統合) | ~8 | 1,523 |
+| **合計削減** | ~33 | **1,523** |
+
+削減率: 約 2.1%
+
+---
+
+### 結論
+
+テストの総数は1,556と多いですが、**真の重複は限定的（約2-3%）** です。
+
+テストは適切に階層化されており（Unit → Integration → E2E）、各レイヤーでの責務が明確です。多くの「重複」に見えるテストは、実際には異なる抽象度やシナリオをカバーしています。
+
+**削除推奨ファイル**:
+1. `tests/integration/multi-source-calendar.test.ts` - calendar-source-manager.test.tsに完全に包含
+2. `tests/unit/notion-mcp.test.ts` - notion-mcp-integration.test.tsに統合
+
+---
+
+## Previous Session: 2026-01-05/06 - OAuth Token Persistence Implementation ✅ COMPLETED
 
 ### 🎉 プロジェクト完了サマリー
 

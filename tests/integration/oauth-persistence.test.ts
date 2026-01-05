@@ -533,6 +533,146 @@ describe('OAuth Persistence - End-to-End Integration', () => {
     });
   });
 
+  describe('Test Scenario 5: Concurrent Operations (Mutex)', () => {
+    it('should handle concurrent session creation without ENOENT errors', async () => {
+      jest.setTimeout(30000); // Increase timeout for concurrent tests
+      // Arrange: Create server
+      const server = await createTestServer();
+
+      // Register client for authentication
+      const clientResult = await server.registerClient({
+        client_name: 'Concurrent Test Client',
+        redirect_uris: ['https://test.example.com/callback'],
+      });
+      expect(clientResult.success).toBe(true);
+
+      // Act: Create 10 sessions concurrently
+      const authPromises = Array.from({ length: 10 }, () =>
+        server.authenticateUser(testUser.username, 'testpass123')
+      );
+
+      const results = await Promise.all(authPromises);
+
+      // Assert: All authentications should succeed
+      const successCount = results.filter((r) => r.success).length;
+      expect(successCount).toBe(10);
+
+      // All sessions should be unique
+      const sessionIds = results.map((r) => r.session?.sessionId).filter(Boolean);
+      const uniqueIds = new Set(sessionIds);
+      expect(uniqueIds.size).toBe(10);
+
+      await server.shutdown();
+    });
+
+    it('should handle concurrent OAuth flows without race conditions', async () => {
+      jest.setTimeout(30000);
+      // Arrange: Create server and register client
+      const server = await createTestServer();
+
+      const clientResult = await server.registerClient({
+        client_name: 'Concurrent OAuth Client',
+        redirect_uris: ['https://test.example.com/callback'],
+      });
+      const clientId = clientResult.client!.client_id;
+
+      // Act: Perform 5 concurrent OAuth flows
+      const oauthPromises = Array.from({ length: 5 }, () =>
+        performOAuthFlow(server, clientId)
+      );
+
+      const results = await Promise.all(oauthPromises);
+
+      // Assert: All flows should succeed
+      expect(results.length).toBe(5);
+      results.forEach((result) => {
+        expect(result.accessToken).toBeDefined();
+        expect(result.refreshToken).toBeDefined();
+      });
+
+      // All refresh tokens should be unique
+      const refreshTokens = results.map((r) => r.refreshToken);
+      const uniqueTokens = new Set(refreshTokens);
+      expect(uniqueTokens.size).toBe(5);
+
+      await server.shutdown();
+    });
+
+    it('should handle concurrent client registrations', async () => {
+      jest.setTimeout(30000);
+      // Arrange: Create server
+      const server = await createTestServer();
+
+      // Act: Register 10 clients concurrently
+      const registerPromises = Array.from({ length: 10 }, (_, i) =>
+        server.registerClient({
+          client_name: `Concurrent Client ${i}`,
+          redirect_uris: ['https://test.example.com/callback'],
+        })
+      );
+
+      const results = await Promise.all(registerPromises);
+
+      // Assert: All registrations should succeed
+      const successCount = results.filter((r) => r.success).length;
+      expect(successCount).toBe(10);
+
+      // All client IDs should be unique
+      const clientIds = results.map((r) => r.client?.client_id).filter(Boolean);
+      const uniqueIds = new Set(clientIds);
+      expect(uniqueIds.size).toBe(10);
+
+      // Verify all clients persist after restart
+      await server.shutdown();
+      const server2 = await createTestServer();
+
+      for (const result of results) {
+        const client = await server2.getClient(result.client!.client_id);
+        expect(client).not.toBeNull();
+      }
+
+      await server2.shutdown();
+    });
+
+    it('should handle mixed concurrent operations', async () => {
+      jest.setTimeout(30000);
+      // Arrange: Create server with initial data
+      const server = await createTestServer();
+
+      const clientResult = await server.registerClient({
+        client_name: 'Mixed Operations Client',
+        redirect_uris: ['https://test.example.com/callback'],
+      });
+      const clientId = clientResult.client!.client_id;
+
+      // Act: Perform mixed operations concurrently
+      const operations = [
+        // Session operations
+        server.authenticateUser(testUser.username, 'testpass123'),
+        server.authenticateUser(testUser.username, 'testpass123'),
+        server.authenticateUser(testUser.username, 'testpass123'),
+        // Client operations
+        server.registerClient({
+          client_name: 'New Client 1',
+          redirect_uris: ['https://test.example.com/callback'],
+        }),
+        server.registerClient({
+          client_name: 'New Client 2',
+          redirect_uris: ['https://test.example.com/callback'],
+        }),
+        // OAuth flows
+        performOAuthFlow(server, clientId),
+        performOAuthFlow(server, clientId),
+      ];
+
+      // All operations should complete without error
+      const results = await Promise.all(operations);
+      expect(results.length).toBe(7);
+
+      await server.shutdown();
+    });
+  });
+
   describe('Edge Case: Multiple Operations with Restart', () => {
     it('should handle complex workflow across multiple restarts', async () => {
       // Arrange: Create server

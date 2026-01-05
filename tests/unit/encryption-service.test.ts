@@ -462,4 +462,118 @@ describe('EncryptionService', () => {
       expect(service.getKeyStoragePath()).toBe(mockKeyStoragePath);
     });
   });
+
+  describe('getHealthStatus() with mutex metrics', () => {
+    beforeEach(async () => {
+      process.env.SAGE_ENCRYPTION_KEY = mockEncryptionKey;
+      service = new EncryptionService({ keyStoragePath: mockKeyStoragePath });
+      await service.initialize();
+    });
+
+    afterEach(() => {
+      delete process.env.SAGE_ENCRYPTION_KEY;
+    });
+
+    it('should include mutex metrics in health status', () => {
+      const health = service.getHealthStatus();
+
+      expect(health.mutex).toBeDefined();
+      expect(health.mutex.activeFiles).toBeDefined();
+      expect(health.mutex.totalWaitTimeMs).toBeDefined();
+      expect(health.mutex.longestWaitMs).toBeDefined();
+      expect(health.mutex.queueDepthWarnings).toBeDefined();
+    });
+
+    it('should return mutex metrics directly', () => {
+      const metrics = service.getMutexMetrics();
+
+      expect(metrics).toBeDefined();
+      expect(metrics.activeFiles).toBe(0);
+      expect(metrics.totalWaitTimeMs).toBe(0);
+    });
+  });
+
+  describe('waitForPendingWrites()', () => {
+    beforeEach(async () => {
+      process.env.SAGE_ENCRYPTION_KEY = mockEncryptionKey;
+      service = new EncryptionService({ keyStoragePath: mockKeyStoragePath });
+      await service.initialize();
+    });
+
+    afterEach(() => {
+      delete process.env.SAGE_ENCRYPTION_KEY;
+    });
+
+    it('should return immediately when no pending writes', async () => {
+      expect(service.hasPendingWrites()).toBe(false);
+      await service.waitForPendingWrites(); // Should not hang
+      expect(service.hasPendingWrites()).toBe(false);
+    });
+  });
+
+  describe('Concurrent operations with mutex', () => {
+    beforeEach(async () => {
+      process.env.SAGE_ENCRYPTION_KEY = mockEncryptionKey;
+      service = new EncryptionService({ keyStoragePath: mockKeyStoragePath });
+      await service.initialize();
+    });
+
+    afterEach(() => {
+      delete process.env.SAGE_ENCRYPTION_KEY;
+    });
+
+    it('should serialize concurrent encryptToFile calls to same file', async () => {
+      const filePath = '/mock/.sage/test.enc';
+      const callOrder: number[] = [];
+      let callCount = 0;
+
+      // Track call order in writeFile mock
+      mockWriteFile.mockImplementation(async () => {
+        callCount++;
+        const myCall = callCount;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        callOrder.push(myCall);
+        return undefined;
+      });
+
+      // Start multiple concurrent writes to same file
+      const writes = [
+        service.encryptToFile('data1', filePath),
+        service.encryptToFile('data2', filePath),
+        service.encryptToFile('data3', filePath),
+      ];
+
+      await Promise.all(writes);
+
+      // All writes should complete without error (no ENOENT from concurrent temp file access)
+      expect(callOrder.length).toBe(3);
+      // Calls should be serialized (in order)
+      expect(callOrder).toEqual([1, 2, 3]);
+    });
+
+    it('should allow parallel encryptToFile calls to different files', async () => {
+      const startTimes: Record<string, number> = {};
+
+      mockWriteFile.mockImplementation(async (path) => {
+        const pathStr = path as string;
+        startTimes[pathStr] = Date.now();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return undefined;
+      });
+
+      // Start writes to different files concurrently
+      const writes = [
+        service.encryptToFile('data1', '/mock/.sage/file1.enc'),
+        service.encryptToFile('data2', '/mock/.sage/file2.enc'),
+        service.encryptToFile('data3', '/mock/.sage/file3.enc'),
+      ];
+
+      await Promise.all(writes);
+
+      // All writes should start at approximately the same time (parallel)
+      const times = Object.values(startTimes);
+      const maxDiff = Math.max(...times) - Math.min(...times);
+      expect(maxDiff).toBeLessThan(20); // Should be nearly simultaneous
+    });
+  });
 });
