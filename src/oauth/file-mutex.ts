@@ -7,6 +7,7 @@
  */
 
 import { resolve } from 'path';
+import { oauthLogger } from '../utils/logger.js';
 
 /**
  * Metrics for monitoring mutex performance
@@ -110,9 +111,7 @@ export class FileMutex {
   private checkQueueWarnings(filePath: string, state: MutexState): void {
     if (state.queue.length >= FileMutex.QUEUE_DEPTH_WARNING_THRESHOLD) {
       this.metrics.queueDepthWarnings++;
-      console.warn(
-        `[OAuth] High mutex contention on ${filePath}: ${state.queue.length} queued operations`
-      );
+      oauthLogger.warn({ filePath, queueLength: state.queue.length }, 'High mutex contention');
     }
   }
 
@@ -128,7 +127,7 @@ export class FileMutex {
 
     // Log warnings for long wait times
     if (waitTimeMs >= FileMutex.WAIT_TIME_WARNING_THRESHOLD_MS) {
-      console.warn(`[OAuth] Long mutex wait on ${filePath}: ${waitTimeMs}ms`);
+      oauthLogger.warn({ filePath, waitTimeMs }, 'Long mutex wait');
     }
   }
 

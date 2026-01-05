@@ -8,6 +8,7 @@
  */
 
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
+import { logger } from '../utils/logger.js';
 
 // Declare window for browser environment detection
 declare const window: any;
@@ -196,7 +197,7 @@ export class AppleRemindersService {
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`AppleScript retry attempt ${attempt}: ${error.message}`);
+            logger.error({ err: error, attempt }, 'AppleScript retry attempt');
           },
         }
       );
@@ -365,7 +366,7 @@ end tell`;
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`AppleScript fetch retry attempt ${attempt}: ${error.message}`);
+            logger.error({ err: error, attempt }, 'AppleScript fetch retry attempt');
           },
         }
       );
@@ -373,7 +374,7 @@ end tell`;
       // Parse the AppleScript result
       return this.parseRemindersResult(result);
     } catch (error) {
-      console.error('Failed to fetch reminders:', error);
+      logger.error({ err: error }, 'Failed to fetch reminders');
       return [];
     }
   }
@@ -502,7 +503,7 @@ end tell`;
 
       return reminders;
     } catch (error) {
-      console.error('Failed to parse reminders result:', error);
+      logger.error({ err: error }, 'Failed to parse reminders result');
       return [];
     }
   }
@@ -560,7 +561,7 @@ end tell`;
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`AppleScript update retry attempt ${attempt}: ${error.message}`);
+            logger.error({ err: error, attempt }, 'AppleScript update retry attempt');
           },
         }
       );

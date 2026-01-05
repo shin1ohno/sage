@@ -17,6 +17,7 @@ import {
 } from './refresh-token-store.js';
 import { RefreshToken } from './types.js';
 import { EncryptionService } from './encryption-service.js';
+import { oauthLogger } from '../utils/logger.js';
 
 /**
  * Storage format for refresh tokens
@@ -56,7 +57,7 @@ export class PersistentRefreshTokenStore implements RefreshTokenStore {
   async loadFromStorage(): Promise<void> {
     const data = await this.encryptionService.decryptFromFile(this.storagePath);
     if (!data) {
-      console.log('[OAuth] No existing refresh tokens found, starting fresh');
+      oauthLogger.info('No existing refresh tokens found, starting fresh');
       return;
     }
 
@@ -77,11 +78,9 @@ export class PersistentRefreshTokenStore implements RefreshTokenStore {
         }
       }
 
-      console.log(
-        `[OAuth] Loaded ${loadedCount} refresh tokens (${expiredCount} expired tokens cleaned up)`
-      );
+      oauthLogger.info({ loadedCount, expiredCount }, 'Loaded refresh tokens');
     } catch (error) {
-      console.error('[OAuth] Failed to parse refresh token storage, starting fresh:', error);
+      oauthLogger.error({ err: error }, 'Failed to parse refresh token storage, starting fresh');
     }
   }
 
@@ -114,7 +113,7 @@ export class PersistentRefreshTokenStore implements RefreshTokenStore {
       try {
         await this.saveToStorage();
       } catch (error) {
-        console.error('[OAuth] Failed to save refresh tokens:', error);
+        oauthLogger.error({ err: error }, 'Failed to save refresh tokens');
       }
     }, this.saveDebounceMs);
   }

@@ -13,6 +13,7 @@
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
 import type { CalendarPlatformInfo } from '../types/calendar.js';
 import { CALENDAR_RETRY_OPTIONS } from '../types/calendar.js';
+import { calendarLogger } from '../utils/logger.js';
 
 /**
  * Platform information for calendar event creation
@@ -499,7 +500,7 @@ end if`;
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`EventKit create event retry attempt ${attempt}: ${error.message}`);
+            calendarLogger.error({ err: error, attempt }, 'EventKit create event retry attempt');
           },
         }
       );

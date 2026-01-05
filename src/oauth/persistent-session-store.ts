@@ -12,6 +12,7 @@ import { randomBytes } from 'crypto';
 import { UserSession } from './types.js';
 import { EncryptionService } from './encryption-service.js';
 import { SessionStore } from './session-store.js';
+import { oauthLogger } from '../utils/logger.js';
 
 /**
  * Session Storage Format
@@ -48,7 +49,7 @@ export class PersistentSessionStore implements SessionStore {
   async loadFromStorage(): Promise<void> {
     const data = await this.encryptionService.decryptFromFile(this.storagePath);
     if (!data) {
-      console.log('[OAuth] No existing sessions found, starting fresh');
+      oauthLogger.info('No existing sessions found, starting fresh');
       return;
     }
 
@@ -69,11 +70,9 @@ export class PersistentSessionStore implements SessionStore {
         }
       }
 
-      console.log(
-        `[OAuth] Loaded ${loadedCount} sessions (${expiredCount} expired sessions cleaned up)`
-      );
+      oauthLogger.info({ loadedCount, expiredCount }, 'Loaded sessions');
     } catch (error) {
-      console.error('[OAuth] Failed to parse session storage, starting fresh:', error);
+      oauthLogger.error({ err: error }, 'Failed to parse session storage, starting fresh');
     }
   }
 
@@ -123,7 +122,7 @@ export class PersistentSessionStore implements SessionStore {
 
     // Save asynchronously (don't wait)
     this.saveToStorage().catch((err) =>
-      console.error('[OAuth] Failed to save session:', err)
+      oauthLogger.error({ err }, 'Failed to save session')
     );
 
     return session;
@@ -142,7 +141,7 @@ export class PersistentSessionStore implements SessionStore {
     if (Date.now() > session.expiresAt) {
       this.sessions.delete(sessionId);
       this.saveToStorage().catch((err) =>
-        console.error('[OAuth] Failed to save after session expiry:', err)
+        oauthLogger.error({ err }, 'Failed to save after session expiry')
       );
       return null;
     }
@@ -158,7 +157,7 @@ export class PersistentSessionStore implements SessionStore {
   deleteSession(sessionId: string): void {
     this.sessions.delete(sessionId);
     this.saveToStorage().catch((err) =>
-      console.error('[OAuth] Failed to save after session deletion:', err)
+      oauthLogger.error({ err }, 'Failed to save after session deletion')
     );
   }
 

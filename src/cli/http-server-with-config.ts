@@ -17,6 +17,7 @@ import {
 import { createSecretAuthenticator, SecretAuthenticator } from './secret-auth.js';
 import { createMCPHandler, MCPHandler, MCPRequest } from './mcp-handler.js';
 import { OAuthServer, OAuthHandler } from '../oauth/index.js';
+import { cliLogger } from '../utils/logger.js';
 
 /**
  * Options for creating the server
@@ -184,8 +185,8 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
       await this.oauthServer.initialize();
 
-      console.log('[OAuth] Persistence enabled - tokens will survive server restarts');
-      console.log('[OAuth] Storage location: ~/.sage/');
+      cliLogger.info('OAuth persistence enabled - tokens will survive server restarts');
+      cliLogger.info({ storageLocation: '~/.sage/' }, 'OAuth storage location');
       this.oauthHandler = new OAuthHandler(this.oauthServer, {
         issuer,
         accessTokenExpiry: oauthConfig.accessTokenExpiry || '1h',
@@ -196,7 +197,7 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
       // Register shutdown handlers for OAuth persistence
       const shutdownHandler = async () => {
-        console.log('Shutting down, flushing OAuth data...');
+        cliLogger.info('Shutting down, flushing OAuth data...');
         await this.oauthServer!.shutdown();
         process.exit(0);
       };
@@ -229,7 +230,7 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
     // Flush OAuth data if enabled
     if (this.oauthServer) {
-      console.log('Shutting down, flushing OAuth data...');
+      cliLogger.info('Shutting down, flushing OAuth data...');
       await this.oauthServer.shutdown();
     }
 
@@ -272,9 +273,9 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   /**
    * Log debug message if debug mode is enabled
    */
-  private debugLog(message: string, ...args: any[]): void {
+  private debugLog(message: string, data?: Record<string, unknown>): void {
     if (this.debug) {
-      console.log(`[DEBUG] ${message}`, ...args);
+      cliLogger.debug(data ?? {}, message);
     }
   }
 
@@ -285,7 +286,7 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     // Extract path without query parameters for routing
     const path = url.split('?')[0];
 
-    this.debugLog(`${method} ${path}`, { origin, headers: req.headers });
+    this.debugLog(`${method} ${path}`, { origin, headers: req.headers as Record<string, unknown> });
 
     // Add CORS headers
     const corsHeaders = this.getCORSHeaders(origin);
@@ -541,14 +542,14 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
           return { valid: true, token };
         }
       }
-      this.debugLog('Token verification failed:', result.error);
+      this.debugLog('Token verification failed', { error: result.error });
       return { valid: false, error: result.error };
     }
 
     // Fall back to JWT verification only
     if (this.authenticator) {
       const result = await this.authenticator.verifyToken(token);
-      this.debugLog('JWT token verification:', result.valid ? 'success' : 'failed');
+      this.debugLog('JWT token verification', { valid: result.valid });
       return { valid: result.valid, error: result.error, token: result.valid ? token : undefined };
     }
 

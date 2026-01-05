@@ -7,6 +7,7 @@
 import { Priority } from '../types/task.js';
 import { AppleRemindersService } from './apple-reminders.js';
 import { NotionMCPService, NotionMCPClient, NotionQueryRequest } from './notion-mcp.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Task source types
@@ -488,7 +489,7 @@ export class TodoListManager {
         tags: [],
       }));
     } catch (error) {
-      console.error('Failed to fetch from Apple Reminders:', error);
+      logger.error({ err: error }, 'Failed to fetch from Apple Reminders');
       return [];
     }
   }
@@ -555,7 +556,7 @@ export class TodoListManager {
         stakeholders: (page.properties?.Stakeholders?.multi_select || []).map((s: any) => s.name),
       }));
     } catch (error) {
-      console.error('Failed to fetch from Notion:', error);
+      logger.error({ err: error }, 'Failed to fetch from Notion');
       return [];
     }
   }

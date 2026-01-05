@@ -8,6 +8,7 @@
 
 import { google, calendar_v3 } from 'googleapis';
 import { GoogleOAuthHandler } from '../oauth/google-oauth-handler.js';
+import { calendarLogger } from '../utils/logger.js';
 import type {
   CalendarEvent,
   CalendarInfo,
@@ -984,8 +985,9 @@ export class GoogleCalendarService {
       } catch (error) {
         // Log error but continue with remaining chunks
         // This ensures partial success if some chunks fail
-        console.error(
-          `Failed to delete chunk of events: ${error instanceof Error ? error.message : 'Unknown error'}`
+        calendarLogger.error(
+          { err: error },
+          'Failed to delete chunk of events'
         );
       }
     }

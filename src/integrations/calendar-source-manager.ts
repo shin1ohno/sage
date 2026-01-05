@@ -14,6 +14,7 @@ import type { CreateEventRequest } from './google-calendar-service.js';
 import type { UserConfig } from '../types/config.js';
 import type { SyncResult, SyncStatus, GoogleCalendarEventType, CalendarEvent as GoogleCalendarEventExtended } from '../types/google-calendar-types.js';
 import type { TimeSlot, WorkingLocationInfo } from '../types/task.js';
+import { calendarLogger } from '../utils/logger.js';
 
 /**
  * Preferred working location type for slot filtering
@@ -282,7 +283,7 @@ export class CalendarSourceManager {
         });
         allEvents.push(...eventkitResponse.events);
       } catch (error) {
-        console.error('EventKit failed:', error);
+        calendarLogger.error({ err: error }, 'EventKit failed');
         errors.push(error instanceof Error ? error : new Error(String(error)));
       }
     }
@@ -297,7 +298,7 @@ export class CalendarSourceManager {
         });
         allEvents.push(...googleEvents);
       } catch (error) {
-        console.error('Google Calendar failed:', error);
+        calendarLogger.error({ err: error }, 'Google Calendar failed');
         errors.push(error instanceof Error ? error : new Error(String(error)));
       }
     }
@@ -576,7 +577,7 @@ export class CalendarSourceManager {
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         errors.push({ source, error: err });
-        console.error(`Failed to create event in ${source}:`, err.message);
+        calendarLogger.error({ err, source }, `Failed to create event in ${source}`);
       }
     }
 
@@ -1119,7 +1120,7 @@ export class CalendarSourceManager {
         try {
           return await this.calendarService.isAvailable();
         } catch (error) {
-          console.error('EventKit health check failed:', error);
+          calendarLogger.error({ err: error }, 'EventKit health check failed');
           return false;
         }
       })(),
@@ -1132,7 +1133,7 @@ export class CalendarSourceManager {
         try {
           return await this.googleCalendarService.isAvailable();
         } catch (error) {
-          console.error('Google Calendar health check failed:', error);
+          calendarLogger.error({ err: error }, 'Google Calendar health check failed');
           return false;
         }
       })(),

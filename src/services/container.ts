@@ -6,6 +6,7 @@
  */
 
 import type { UserConfig } from '../types/index.js';
+import { servicesLogger } from '../utils/logger.js';
 
 /**
  * Service initialization status
@@ -46,7 +47,7 @@ export function createLazyService<T>(
         instance = initializer();
         initialized = true;
       } catch (error) {
-        console.error('Failed to initialize service:', error);
+        servicesLogger.error({ err: error }, 'Failed to initialize service');
         return null;
       }
     }
@@ -80,7 +81,7 @@ export function createConfiguredService<T>(
         instance = initializer(config);
         initializedWithConfig = config;
       } catch (error) {
-        console.error('Failed to initialize configured service:', error);
+        servicesLogger.error({ err: error }, 'Failed to initialize configured service');
         return null;
       }
     }

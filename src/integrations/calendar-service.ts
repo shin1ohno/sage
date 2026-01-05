@@ -10,6 +10,7 @@
  */
 
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
+import { calendarLogger } from '../utils/logger.js';
 
 // Declare window for browser environment detection
 declare const window: any;
@@ -244,9 +245,7 @@ export class CalendarService {
   private async fetchNativeEvents(_startDate: string, _endDate: string): Promise<CalendarEvent[]> {
     // 🔮 将来対応予定: ネイティブ統合
     // 現時点では、iOS/iPadOSでの実行時は空の配列を返す
-    console.warn(
-      'ネイティブCalendar統合は将来対応予定です。現在はmacOS AppleScriptのみサポートしています。'
-    );
+    calendarLogger.warn('ネイティブCalendar統合は将来対応予定です。現在はmacOS AppleScriptのみサポートしています。');
     return [];
   }
 
@@ -273,14 +272,14 @@ export class CalendarService {
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`EventKit Calendar retry attempt ${attempt}: ${error.message}`);
+            calendarLogger.error({ err: error, attempt }, 'EventKit Calendar retry attempt');
           },
         }
       );
 
       return this.parseEventKitResult(result);
     } catch (error) {
-      console.error('EventKit カレンダーエラー:', error);
+      calendarLogger.error({ err: error }, 'EventKit カレンダーエラー');
       return [];
     }
   }
@@ -634,14 +633,14 @@ return eventList`;
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`EventKit Calendar retry attempt ${attempt}: ${error.message}`);
+            calendarLogger.error({ err: error, attempt }, 'EventKit Calendar retry attempt');
           },
         }
       );
 
       return this.parseEventKitResultWithDetails(result);
     } catch (error) {
-      console.error('EventKit カレンダーエラー:', error);
+      calendarLogger.error({ err: error }, 'EventKit カレンダーエラー');
       throw new Error(`カレンダーイベントの取得に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }

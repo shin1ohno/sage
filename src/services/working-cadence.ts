@@ -12,6 +12,7 @@ import { ConfigLoader } from '../config/loader.js';
 import type { CalendarConfig, DeepWorkBlock, UserConfig } from '../types/config.js';
 import type { CalendarEvent } from '../types/google-calendar-types.js';
 import type { CalendarSourceManager } from '../integrations/calendar-source-manager.js';
+import { servicesLogger } from '../utils/logger.js';
 
 // Request/Response types
 export interface GetWorkingCadenceRequest {
@@ -196,7 +197,7 @@ export class WorkingCadenceService {
         };
       } catch (error) {
         // If calendar loading fails, continue without focusTime analysis
-        console.error('Failed to load calendar events for focusTime analysis:', error);
+        servicesLogger.error({ err: error }, 'Failed to load calendar events for focusTime analysis');
       }
     }
 

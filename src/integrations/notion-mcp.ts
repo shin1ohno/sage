@@ -8,6 +8,7 @@
  */
 
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
+import { logger } from '../utils/logger.js';
 
 // Declare window for browser environment detection
 declare const window: any;
@@ -284,7 +285,7 @@ export class NotionMCPClient {
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`Notion MCP createPage retry attempt ${attempt}: ${error.message}`);
+            logger.error({ err: error, attempt }, 'Notion MCP createPage retry attempt');
           },
         }
       );
@@ -325,7 +326,7 @@ export class NotionMCPClient {
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`Notion MCP queryDatabase retry attempt ${attempt}: ${error.message}`);
+            logger.error({ err: error, attempt }, 'Notion MCP queryDatabase retry attempt');
           },
         }
       );
@@ -366,7 +367,7 @@ export class NotionMCPClient {
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`Notion MCP updatePage retry attempt ${attempt}: ${error.message}`);
+            logger.error({ err: error, attempt }, 'Notion MCP updatePage retry attempt');
           },
         }
       );
@@ -762,7 +763,7 @@ export class NotionMCPService {
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`Notion MCP retry attempt ${attempt}: ${error.message}`);
+            logger.error({ err: error, attempt }, 'Notion MCP retry attempt');
           },
           shouldRetry: (error) => {
             if (error.message.includes('実装中')) {

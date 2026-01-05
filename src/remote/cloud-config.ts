@@ -5,6 +5,7 @@
  */
 
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
+import { logger } from '../utils/logger.js';
 
 /**
  * Cloud config manager options
@@ -326,7 +327,7 @@ export class CloudConfigManager {
       this.lastSyncTime = Date.now();
       return this.localConfig;
     } catch (error) {
-      console.error('Failed to sync from cloud:', error);
+      logger.error({ err: error }, 'Failed to sync from cloud');
       return null;
     }
   }

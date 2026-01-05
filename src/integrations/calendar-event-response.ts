@@ -18,6 +18,7 @@ import {
   type EventParticipantStatus,
   type EventResponseType,
 } from '../types/calendar.js';
+import { calendarLogger } from '../utils/logger.js';
 
 // Re-export types for backwards compatibility
 export type { CalendarType, EventParticipantStatus, EventResponseType };
@@ -398,14 +399,14 @@ export class CalendarEventResponseService {
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`EventKit fetch retry attempt ${attempt}: ${error.message}`);
+            calendarLogger.error({ err: error, attempt }, 'EventKit fetch retry attempt');
           },
         }
       );
 
       return this.parseEventDetailsResult(result, eventId);
     } catch (error) {
-      console.error('EventKit fetch error:', error);
+      calendarLogger.error({ err: error }, 'EventKit fetch error');
       // Return minimal details that will fail validation
       return {
         id: eventId,
@@ -543,7 +544,7 @@ return eventTitle & "|" & (isOrganizer as string) & "|" & (hasAttendees as strin
         {
           ...RETRY_OPTIONS,
           onRetry: (error, attempt) => {
-            console.error(`EventKit respond retry attempt ${attempt}: ${error.message}`);
+            calendarLogger.error({ err: error, attempt }, 'EventKit respond retry attempt');
           },
         }
       );

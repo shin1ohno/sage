@@ -21,6 +21,7 @@ import {
   isLocalhostCallback,
 } from './types.js';
 import { EncryptionService } from './encryption-service.js';
+import { oauthLogger } from '../utils/logger.js';
 
 /**
  * Client Storage Format
@@ -101,7 +102,7 @@ export class PersistentClientStore implements ClientStore {
   async loadFromStorage(): Promise<void> {
     const data = await this.encryptionService.decryptFromFile(this.storagePath);
     if (!data) {
-      console.log('[OAuth] No existing clients found, starting fresh');
+      oauthLogger.info('No existing clients found, starting fresh');
       return;
     }
 
@@ -113,9 +114,9 @@ export class PersistentClientStore implements ClientStore {
         this.clients.set(client.client_id, client);
       }
 
-      console.log(`[OAuth] Loaded ${storage.clients.length} OAuth clients`);
+      oauthLogger.info({ count: storage.clients.length }, 'Loaded OAuth clients');
     } catch (error) {
-      console.error('[OAuth] Failed to parse client storage, starting fresh:', error);
+      oauthLogger.error({ err: error }, 'Failed to parse client storage, starting fresh');
     }
   }
 
