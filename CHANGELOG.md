@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-01-06
+
 ### Added
 - **OAuth Token Persistence** - Remote MCP server now persists OAuth tokens across server restarts
   - Automatic encryption and persistence of refresh tokens, client registrations, and user sessions
