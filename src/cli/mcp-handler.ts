@@ -79,6 +79,11 @@ import {
   handleDeleteCalendarEventsBatch,
 } from '../tools/calendar/handlers.js';
 
+import {
+  type OAuthToolsContext,
+  handleAuthenticateGoogle,
+} from '../tools/oauth/index.js';
+
 // Protocol version
 const PROTOCOL_VERSION = '2024-11-05';
 
@@ -444,6 +449,33 @@ class MCPHandlerImpl implements MCPHandler {
         this.workingCadenceService = service;
       },
       initializeServices: (config: UserConfig) => this.initializeServices(config),
+    };
+  }
+
+  /**
+   * Create OAuthToolsContext for OAuth tool handlers
+   */
+  private createOAuthToolsContext(): OAuthToolsContext {
+    const createHandler = () => {
+      const oauthConfig = {
+        clientId: process.env.GOOGLE_CLIENT_ID || '',
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+        redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/oauth/callback',
+      };
+      if (!oauthConfig.clientId || !oauthConfig.clientSecret) {
+        return null;
+      }
+      return new GoogleOAuthHandler(oauthConfig);
+    };
+
+    return {
+      getGoogleOAuthHandler: () => {
+        if (!this.config) return null;
+        const googleConfig = this.config.calendar?.sources?.google;
+        if (!googleConfig?.enabled) return null;
+        return createHandler();
+      },
+      createGoogleOAuthHandler: createHandler,
     };
   }
 
@@ -1337,6 +1369,45 @@ class MCPHandlerImpl implements MCPHandler {
         },
       },
       async () => handleListCalendarSources(this.createCalendarToolsContext())
+    );
+
+    // authenticate_google - Complete Google OAuth flow automatically
+    this.registerTool(
+      {
+        name: 'authenticate_google',
+        description:
+          'Authenticate with Google Calendar using OAuth. Opens browser for authentication and automatically captures the callback. Returns success status with token information.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            force: {
+              type: 'boolean',
+              description: 'Force re-authentication even if tokens already exist',
+            },
+            timeout: {
+              type: 'number',
+              description: 'Timeout in seconds for waiting for authentication (default: 300)',
+            },
+          },
+        },
+      },
+      async (args) => {
+        const result = await handleAuthenticateGoogle(
+          {
+            force: (args.force as boolean) ?? false,
+            timeout: (args.timeout as number) ?? 300,
+          },
+          this.createOAuthToolsContext()
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
     );
   }
 
