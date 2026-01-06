@@ -510,13 +510,18 @@ export async function handleRespondToCalendarEvent(
  * respond_to_calendar_events_batch handler
  *
  * Respond to multiple calendar events at once.
+ * Uses CalendarSourceManager.respondToEvent() for each event to support
+ * both Google Calendar and EventKit events.
+ *
  * Requirement: 17.3, 17.4, 17.12
+ * Bug fix: calendar-event-response-skip - Use CalendarSourceManager instead of
+ *          CalendarEventResponseService to support Google Calendar events.
  */
 export async function handleRespondToCalendarEventsBatch(
   ctx: CalendarToolsContext,
   args: RespondToCalendarEventsBatchInput
 ) {
-  const { eventIds, response, comment } = args;
+  const { eventIds, response } = args;
   const config = ctx.getConfig();
 
   if (!config) {
@@ -527,38 +532,88 @@ export async function handleRespondToCalendarEventsBatch(
     });
   }
 
-  let calendarEventResponseService = ctx.getCalendarEventResponseService();
-  if (!calendarEventResponseService) {
+  let calendarSourceManager = ctx.getCalendarSourceManager();
+  if (!calendarSourceManager) {
     ctx.initializeServices(config);
-    calendarEventResponseService = ctx.getCalendarEventResponseService();
+    calendarSourceManager = ctx.getCalendarSourceManager();
   }
 
   try {
-    const isAvailable =
-      await calendarEventResponseService!.isEventKitAvailable();
+    const enabledSources = calendarSourceManager!.getEnabledSources();
 
-    if (!isAvailable) {
+    if (enabledSources.length === 0) {
       return createToolResponse({
         success: false,
-        message: 'カレンダーイベント返信機能はmacOSでのみ利用可能です。',
+        message:
+          '有効なカレンダーソースがありません。設定でEventKitまたはGoogle Calendarを有効にしてください。',
       });
     }
 
-    const result = await calendarEventResponseService!.respondToEventsBatch({
-      eventIds,
-      response,
-      comment,
-    });
+    // Process each event using CalendarSourceManager.respondToEvent()
+    const results = {
+      succeeded: [] as Array<{ id: string; title: string; reason: string }>,
+      skipped: [] as Array<{ id: string; title: string; reason: string }>,
+      failed: [] as Array<{ id: string; title: string; error: string }>,
+    };
+
+    for (const eventId of eventIds) {
+      try {
+        const result = await calendarSourceManager!.respondToEvent(
+          eventId,
+          response,
+          undefined, // source: auto-detect
+          undefined  // calendarId: auto-detect
+        );
+
+        if (result.success) {
+          results.succeeded.push({
+            id: eventId,
+            title: eventId,
+            reason: result.message,
+          });
+        } else {
+          results.failed.push({
+            id: eventId,
+            title: eventId,
+            error: result.message,
+          });
+        }
+      } catch (error) {
+        results.failed.push({
+          id: eventId,
+          title: eventId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    const total = eventIds.length;
+    const succeeded = results.succeeded.length;
+    const skipped = results.skipped.length;
+    const failed = results.failed.length;
+
+    // Generate summary message
+    const responseText =
+      response === 'accept' ? '承諾' :
+      response === 'decline' ? '辞退' : '仮承諾';
+
+    let message = `${total}件中${succeeded}件のイベントを${responseText}しました。`;
+    if (skipped > 0) {
+      message += `${skipped}件はスキップされました。`;
+    }
+    if (failed > 0) {
+      message += `${failed}件は失敗しました。`;
+    }
 
     return createToolResponse({
-      success: result.success,
-      summary: result.summary,
+      success: failed === 0,
+      summary: { total, succeeded, skipped, failed },
       details: {
-        succeeded: result.details.succeeded,
-        skipped: result.details.skipped,
-        failed: result.details.failed,
+        succeeded: results.succeeded,
+        skipped: results.skipped,
+        failed: results.failed,
       },
-      message: result.message,
+      message,
     });
   } catch (error) {
     return createErrorFromCatch(
