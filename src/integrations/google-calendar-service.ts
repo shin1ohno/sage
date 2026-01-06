@@ -548,6 +548,9 @@ export class GoogleCalendarService {
       const eventTypePayload = this.buildEventTypePayload(request);
       Object.assign(eventBody, eventTypePayload);
 
+      // Debug log the request body
+      calendarLogger.info({ eventBody, eventType: request.eventType }, 'Creating Google Calendar event');
+
       // Create event with retry logic
       const response: calendar_v3.Schema$Event = await retryWithBackoff(
         async () => {
