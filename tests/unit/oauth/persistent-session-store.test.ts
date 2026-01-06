@@ -121,8 +121,8 @@ describe('PersistentSessionStore', () => {
       const expiredSession = shortExpiryStore.createSession('user-expired');
       await shortExpiryStore.flush();
 
-      // Wait for session to expire (1.5 seconds)
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for session to expire (1.2 seconds: 1s expiry + 200ms buffer)
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
       // Act: Load from storage (should filter expired sessions)
       const newStore = new PersistentSessionStore(encryptionService, tempStoragePath);
@@ -147,8 +147,8 @@ describe('PersistentSessionStore', () => {
         shortExpiryStore.createSession('user-expired');
         await shortExpiryStore.flush();
 
-        // Wait for expiry
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        // Wait for expiry (1.2 seconds: 1s expiry + 200ms buffer)
+        await new Promise((resolve) => setTimeout(resolve, 1200));
 
         // Create new store that will load expired session and add valid one
         const normalStore = new PersistentSessionStore(encryptionService, tempPath2);
@@ -411,8 +411,8 @@ describe('PersistentSessionStore', () => {
       const beforeExpiry = shortExpiryStore.getSession(session.sessionId);
       expect(beforeExpiry).not.toBeNull();
 
-      // Wait for expiry
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for expiry (1.2 seconds: 1s expiry + 200ms buffer)
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
       // Act: Get session after expiry
       const afterExpiry = shortExpiryStore.getSession(session.sessionId);
@@ -428,8 +428,8 @@ describe('PersistentSessionStore', () => {
 
       const session = shortExpiryStore.createSession('user-test');
 
-      // Wait for expiry
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for expiry (1.2 seconds: 1s expiry + 200ms buffer)
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
       // Act: Get session after expiry (should remove from memory)
       const firstGet = shortExpiryStore.getSession(session.sessionId);
@@ -457,8 +457,8 @@ describe('PersistentSessionStore', () => {
       (shortExpiryStore as any).saveToStorage = originalSaveToStorage;
       await shortExpiryStore.flush();
 
-      // Wait for expiry
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for expiry (1.2 seconds: 1s expiry + 200ms buffer)
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
       // Act: Get session after expiry (triggers removal)
       shortExpiryStore.getSession(session.sessionId);

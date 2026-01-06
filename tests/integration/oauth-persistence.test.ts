@@ -209,8 +209,8 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       // Flush data
       await server1.shutdown();
 
-      // Wait for token to expire
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for token to expire (1.2 seconds: 1s expiry + 200ms buffer)
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
       // Act: Restart server (should filter expired token)
       const server2 = await createTestServer();

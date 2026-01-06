@@ -142,8 +142,8 @@ describe('PersistentRefreshTokenStore', () => {
       // Save tokens
       await shortStore.flush();
 
-      // Wait for one token to expire (1.5 seconds)
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for token to expire (1.2 seconds: 1s expiry + 200ms buffer)
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
       // Act: Load from storage (should filter expired tokens)
       const newStore = new PersistentRefreshTokenStore(
@@ -401,8 +401,8 @@ describe('PersistentRefreshTokenStore', () => {
         scope: 'mcp:read',
       });
 
-      // Wait for expiry
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for expiry (1.2 seconds: 1s expiry + 200ms buffer)
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
       // Generate valid token
       const token2 = await shortStore.generateToken({
@@ -544,8 +544,8 @@ describe('PersistentRefreshTokenStore', () => {
         scope: 'mcp:read',
       });
 
-      // Wait for expiry
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for expiry (1.2 seconds: 1s expiry + 200ms buffer)
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
       // Act: Validate expired token
       const validation = await shortStore.validateToken(token, 'client-test');

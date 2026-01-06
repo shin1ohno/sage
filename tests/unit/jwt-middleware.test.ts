@@ -130,8 +130,8 @@ describe('JWT Middleware', () => {
       const tokenResult = await shortLivedMiddleware.generateToken(validSecret);
       expect(tokenResult.success).toBe(true);
 
-      // Wait for token to expire (2 seconds to be safe)
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Wait for token to expire (1.5 seconds: 1s expiry + 500ms buffer for JWT second-granularity)
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       const req = createMockRequest({
         authorization: `Bearer ${tokenResult.token}`,

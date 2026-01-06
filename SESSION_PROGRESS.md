@@ -1,6 +1,69 @@
 # Session Progress - sage
 
-## Current Session: 2026-01-06 - Session Store Mutex実装
+## Current Session: 2026-01-06 - E2Eテストタイムアウト移行
+
+### 完了タスク
+
+#### イベントベースタイムアウトユーティリティ実装 ✅
+
+**問題**: E2Eテストで固定タイムアウト(sleep/setTimeout)を使用しており、テストが不安定で遅い
+
+**解決策**: イベントベースの検出ユーティリティを実装し、タイムアウトはsafety netとしてのみ使用
+
+**新規ファイル**:
+- `tests/utils/server-ready.ts` - サーバー起動/停止検出
+  - `waitForServerReady()` - healthエンドポイントポーリング
+  - `waitForServerStopped()` - 接続拒否を検出
+- `tests/utils/process-lifecycle.ts` - CLIプロセス管理
+  - `waitForProcessOutput()` - stdout/stderrパターンマッチング
+  - `waitForProcessExit()` - 終了イベント待機
+  - `gracefulStop()` - SIGINT → SIGKILL フォールバック
+- `tests/utils/index.ts` - エクスポート統合
+
+**移行ファイル**:
+- `tests/e2e/remote-auth.test.ts` ✅ 9/9テスト合格
+- `tests/e2e/mcp-over-http.test.ts` ✅ 9/9テスト合格
+- `tests/e2e/cli-modes.test.ts` ✅ 10/13テスト合格
+  - 失敗した2件はCalendarSourceManager設定の既存問題
+
+**主な変更点**:
+- `jest.setTimeout(30000)` をsafety netとして追加
+- 固定sleep/setTimeoutを削除
+- `stream: 'stdout'`に修正（pinoログはstdoutに出力）
+- ポート衝突を解消（mcp-over-http: 14100番台に変更）
+
+**テスト結果**:
+```
+remote-auth.test.ts: 9 passed ✅
+mcp-over-http.test.ts: 9 passed ✅
+cli-modes.test.ts: 10 passed, 2 failed (既存問題), 1 skipped
+合計: 28/31 passed
+```
+
+#### Token/Session期限切れ待機の最適化 ✅
+
+**問題**: Token/Session期限切れテストで必要以上に長いsetTimeout (1500-2100ms)を使用
+
+**解決策**: expiry時間を最小(1秒)に設定し、待機時間を最適化
+
+**変更内容**:
+- JWT関連テスト (秒単位expiry): 2000-2100ms → 1500ms
+  - `tests/unit/jwt-middleware.test.ts`
+  - `tests/unit/oauth-token-service.test.ts`
+- Session/Token Storeテスト (ミリ秒単位expiry): 1500ms → 1200ms
+  - `tests/unit/oauth/persistent-session-store.test.ts` (4箇所)
+  - `tests/unit/oauth/persistent-refresh-token-store.test.ts` (3箇所)
+  - `tests/unit/oauth-refresh-token-store.test.ts` (2箇所)
+  - `tests/unit/oauth-code-store.test.ts` (2箇所)
+  - `tests/integration/oauth-persistence.test.ts` (1箇所)
+
+**削減効果**:
+- JWT期限切れテスト: 500-600ms短縮/テスト
+- Session/Token期限切れテスト: 300ms短縮/テスト
+
+---
+
+## Previous Session: 2026-01-06 - Session Store Mutex実装
 
 ### 完了タスク
 

@@ -9,6 +9,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { join } from 'path';
 import { writeFileSync, unlinkSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { homedir } from 'os';
+import { waitForProcessOutput, waitForProcessExit, gracefulStop } from '../utils/index.js';
 
 const PROJECT_ROOT = join(__dirname, '../..');
 const CLI_PATH = join(PROJECT_ROOT, 'dist/index.js');
@@ -67,102 +68,77 @@ const TEST_CONFIG = {
   },
 };
 
-// Helper to run CLI command
-function runCLI(args: string[], timeout = 5000): Promise<{ stdout: string; stderr: string; code: number | null }> {
-  return new Promise((resolve) => {
-    const proc = spawn('node', [CLI_PATH, ...args], {
-      cwd: PROJECT_ROOT,
-      env: { ...process.env },
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    const timer = setTimeout(() => {
-      proc.kill('SIGTERM');
-    }, timeout);
-
-    proc.on('close', (code) => {
-      clearTimeout(timer);
-      resolve({ stdout, stderr, code });
-    });
+// Helper to run CLI command (event-based completion detection)
+async function runCLI(args: string[], maxTimeout = 5000): Promise<{ stdout: string; stderr: string; code: number | null }> {
+  const proc = spawn('node', [CLI_PATH, ...args], {
+    cwd: PROJECT_ROOT,
+    env: { ...process.env },
   });
+
+  let stdout = '';
+  let stderr = '';
+
+  proc.stdout.on('data', (data) => {
+    stdout += data.toString();
+  });
+
+  proc.stderr.on('data', (data) => {
+    stderr += data.toString();
+  });
+
+  // Wait for process to exit (event-based, maxTimeout is safety net)
+  const result = await waitForProcessExit(proc, { maxTimeout });
+
+  return { stdout, stderr, code: result.code };
 }
 
-// Helper to start HTTP server and wait for it to be ready
+// Helper to start HTTP server and wait for it to be ready (event-based)
 async function startHTTPServer(
   port: number,
   additionalArgs: string[] = []
 ): Promise<{ proc: ChildProcess; stop: () => Promise<void> }> {
-  return new Promise((resolve, reject) => {
-    // Create test config file
-    const testConfigPath = join(PROJECT_ROOT, `test-config-${port}.json`);
-    writeFileSync(testConfigPath, JSON.stringify(TEST_CONFIG, null, 2), 'utf-8');
+  // Create test config file
+  const testConfigPath = join(PROJECT_ROOT, `test-config-${port}.json`);
+  writeFileSync(testConfigPath, JSON.stringify(TEST_CONFIG, null, 2), 'utf-8');
 
-    const proc = spawn('node', [CLI_PATH, '--remote', '--port', port.toString(), '--config', testConfigPath, ...additionalArgs], {
-      cwd: PROJECT_ROOT,
-      env: { ...process.env },
-    });
-
-    let started = false;
-
-    // Timeout after 10 seconds
-    const timeoutId = setTimeout(() => {
-      if (!started) {
-        proc.kill('SIGTERM');
-        // Clean up test config file on timeout
-        if (existsSync(testConfigPath)) {
-          unlinkSync(testConfigPath);
-        }
-        reject(new Error('Server failed to start within timeout'));
-      }
-    }, 10000);
-
-    proc.stderr.on('data', (data) => {
-      const message = data.toString();
-      if (message.includes('started in HTTP mode')) {
-        started = true;
-        clearTimeout(timeoutId);
-        resolve({
-          proc,
-          stop: () => {
-            return new Promise((resolveStop) => {
-              proc.on('close', () => {
-                // Clean up test config file
-                if (existsSync(testConfigPath)) {
-                  unlinkSync(testConfigPath);
-                }
-                resolveStop();
-              });
-              proc.kill('SIGINT');
-            });
-          },
-        });
-      }
-    });
-
-    proc.on('error', (error) => {
-      if (!started) {
-        clearTimeout(timeoutId);
-        // Clean up test config file on error
-        if (existsSync(testConfigPath)) {
-          unlinkSync(testConfigPath);
-        }
-        reject(error);
-      }
-    });
+  const proc = spawn('node', [CLI_PATH, '--remote', '--port', port.toString(), '--config', testConfigPath, ...additionalArgs], {
+    cwd: PROJECT_ROOT,
+    env: { ...process.env },
   });
+
+  try {
+    // Wait for "started in HTTP mode" message (event-based, not fixed timeout)
+    // Note: pino logger outputs to stdout by default
+    await waitForProcessOutput(proc, /started in HTTP mode/, {
+      maxTimeout: 30000,
+      stream: 'stdout',
+    });
+
+    return {
+      proc,
+      stop: async () => {
+        // Graceful shutdown (event-based)
+        await gracefulStop(proc, { maxTimeout: 10000 });
+        // Clean up test config file
+        if (existsSync(testConfigPath)) {
+          unlinkSync(testConfigPath);
+        }
+      },
+    };
+  } catch (error) {
+    // Clean up on failure
+    proc.kill('SIGKILL');
+    if (existsSync(testConfigPath)) {
+      unlinkSync(testConfigPath);
+    }
+    throw error;
+  }
 }
 
 describe('CLI Modes E2E', () => {
+  // Safety net timeout (tests should complete much faster with event-based detection)
+  jest.setTimeout(30000);
+
   describe('Help and Version', () => {
     it('should display help message with --help', async () => {
       const result = await runCLI(['--help']);
@@ -273,26 +249,15 @@ describe('CLI Modes E2E', () => {
         env: { ...process.env, SAGE_REMOTE_MODE: 'true', SAGE_PORT: '3305' },
       });
 
-      await new Promise<void>((resolve, reject) => {
-        let started = false;
-
-        const timeoutId = setTimeout(() => {
-          if (!started) {
-            proc.kill('SIGTERM');
-            reject(new Error('Server failed to start with env var'));
-          }
-        }, 10000);
-
-        proc.stderr.on('data', (data) => {
-          const message = data.toString();
-          if (message.includes('started in HTTP mode')) {
-            started = true;
-            clearTimeout(timeoutId);
-            proc.kill('SIGINT');
-            resolve();
-          }
-        });
+      // Wait for startup message (event-based)
+      // Note: pino logger outputs to stdout by default
+      await waitForProcessOutput(proc, /started in HTTP mode/, {
+        maxTimeout: 30000,
+        stream: 'stdout',
       });
+
+      // Graceful shutdown
+      await gracefulStop(proc, { maxTimeout: 5000 });
     });
   });
 

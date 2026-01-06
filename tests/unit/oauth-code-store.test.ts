@@ -158,8 +158,8 @@ describe('OAuth Authorization Code Store', () => {
         userId: 'user_123',
       });
 
-      // Wait for code to expire
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for code to expire (1.2 seconds: 1s expiry + 200ms buffer)
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
       const result = await shortLivedStore.validateCode(code, 'test_client');
 
@@ -212,8 +212,8 @@ describe('OAuth Authorization Code Store', () => {
         userId: 'user_456',
       });
 
-      // Wait for codes to expire
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for codes to expire (1.2 seconds: 1s expiry + 200ms buffer)
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
       // Cleanup
       const cleanedCount = await shortLivedStore.cleanup();

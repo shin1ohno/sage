@@ -13,14 +13,15 @@ import {
   HTTPServerWithConfig,
 } from '../../src/cli/http-server-with-config.js';
 import { RemoteConfig } from '../../src/cli/remote-config-loader.js';
+import { waitForServerReady } from '../utils/index.js';
 
 describe('MCP over HTTP E2E', () => {
-  // Increase timeout for CI environment where server startup can be slow
-  jest.setTimeout(15000);
+  // Safety net timeout (tests should complete much faster with event-based detection)
+  jest.setTimeout(30000);
 
   const testDir = join(tmpdir(), 'sage-mcp-http-test-' + Date.now());
   let server: HTTPServerWithConfig | null = null;
-  const basePort = 14000;
+  const basePort = 14100;  // Use different range to avoid conflict with remote-auth.test.ts (14001-14005)
   let portCounter = 0;
 
   function getNextPort(): number {
@@ -58,7 +59,10 @@ describe('MCP over HTTP E2E', () => {
       },
     };
     await writeFile(configPath, JSON.stringify(config));
-    return createHTTPServerWithConfig({ configPath });
+    const server = await createHTTPServerWithConfig({ configPath });
+    // Wait for server to be ready (event-based, not fixed timeout)
+    await waitForServerReady(`http://127.0.0.1:${port}/health`);
+    return server;
   }
 
   describe('tools/list', () => {

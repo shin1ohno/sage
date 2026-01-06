@@ -14,12 +14,13 @@ import { tmpdir } from 'os';
 import { mkdir, writeFile, rm } from 'fs/promises';
 import { createHTTPServerWithConfig, HTTPServerWithConfig } from '../../src/cli/http-server-with-config.js';
 import { RemoteConfig } from '../../src/cli/remote-config-loader.js';
+import { waitForServerReady } from '../utils/index.js';
 
 describe('Remote MCP Authentication E2E', () => {
   const testDir = join(tmpdir(), 'sage-remote-auth-e2e-' + Date.now());
   let server: HTTPServerWithConfig | null = null;
 
-  // Increase timeout for E2E tests with server startup
+  // Safety net timeout (tests should complete much faster with event-based detection)
   jest.setTimeout(30000);
 
   beforeAll(async () => {
@@ -65,10 +66,12 @@ describe('Remote MCP Authentication E2E', () => {
       await writeFile(configPath, JSON.stringify(config));
 
       server = await createHTTPServerWithConfig({ configPath });
+      // Wait for server to be ready (event-based, not fixed timeout)
+      await waitForServerReady(`http://127.0.0.1:${port}/health`);
     });
 
     it('should complete full authentication workflow', async () => {
-      // Step 1: Verify server is running
+      // Step 1: Verify server is running (already verified by waitForServerReady)
       expect(server!.isRunning()).toBe(true);
       expect(server!.isAuthEnabled()).toBe(true);
 

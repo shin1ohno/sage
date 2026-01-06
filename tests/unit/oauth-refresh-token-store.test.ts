@@ -197,8 +197,8 @@ describe('OAuth Refresh Token Store', () => {
         scope: 'mcp:read',
       });
 
-      // Wait for token to expire
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for token to expire (1.2 seconds: 1s expiry + 200ms buffer)
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
       const result = await shortLivedStore.validateToken(token, 'test_client');
 
@@ -222,8 +222,8 @@ describe('OAuth Refresh Token Store', () => {
 
       await shortLivedStore.rotateToken(token1, 'test_client');
 
-      // Wait for tokens to expire
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for tokens to expire (1.2 seconds: 1s expiry + 200ms buffer)
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
       // Cleanup
       const cleanedCount = await shortLivedStore.cleanup();
