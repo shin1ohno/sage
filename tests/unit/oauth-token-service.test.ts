@@ -231,8 +231,9 @@ describe('OAuth Token Service', () => {
         audience: 'https://sage.example.com',
       });
 
-      // Wait for token to expire (1.5 seconds: 1s expiry + 500ms buffer for JWT second-granularity)
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for token to expire (2 seconds: 1s expiry + 1s buffer for JWT second-granularity)
+      // JWT exp is in seconds (Unix timestamp), so we need at least 2s to guarantee expiry
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       const result = await shortLivedService.verifyAccessToken(token.access_token);
 

@@ -13,10 +13,27 @@ import {
   HTTPServerWithConfig,
 } from '../../src/cli/http-server-with-config.js';
 import { RemoteConfig } from '../../src/cli/remote-config-loader.js';
+import { waitForServerReady } from '../utils/server-ready.js';
+
+// Increase timeout for server startup/shutdown in CI environments
+jest.setTimeout(30000);
 
 describe('HTTP Server with Remote Config Integration', () => {
   const testDir = join(tmpdir(), 'sage-http-auth-test-' + Date.now());
   let server: HTTPServerWithConfig | null = null;
+
+  /**
+   * Helper to create server and wait for it to be ready
+   */
+  async function createAndWaitForServer(
+    options: Parameters<typeof createHTTPServerWithConfig>[0]
+  ): Promise<HTTPServerWithConfig> {
+    const srv = await createHTTPServerWithConfig(options);
+    const port = srv.getPort();
+    const host = srv.getHost();
+    await waitForServerReady(`http://${host}:${port}/health`);
+    return srv;
+  }
 
   beforeAll(async () => {
     await mkdir(testDir, { recursive: true });
@@ -57,7 +74,7 @@ describe('HTTP Server with Remote Config Integration', () => {
       };
       await writeFile(configPath, JSON.stringify(config));
 
-      server = await createHTTPServerWithConfig({ configPath });
+      server = await createAndWaitForServer({ configPath });
 
       expect(server.isRunning()).toBe(true);
       expect(server.getPort()).toBe(13100);
@@ -68,7 +85,7 @@ describe('HTTP Server with Remote Config Integration', () => {
     it('should use default port when config file not found', async () => {
       const nonExistentPath = join(testDir, 'nonexistent.json');
 
-      server = await createHTTPServerWithConfig({
+      server = await createAndWaitForServer({
         configPath: nonExistentPath,
         port: 13101,
       });
@@ -91,7 +108,7 @@ describe('HTTP Server with Remote Config Integration', () => {
       await writeFile(configPath, JSON.stringify(config));
 
       // CLI options should override config file
-      server = await createHTTPServerWithConfig({
+      server = await createAndWaitForServer({
         configPath,
         port: 13103,
         host: '0.0.0.0',
@@ -124,7 +141,7 @@ describe('HTTP Server with Remote Config Integration', () => {
       };
       await writeFile(configPath, JSON.stringify(config));
 
-      server = await createHTTPServerWithConfig({ configPath });
+      server = await createAndWaitForServer({ configPath });
     });
 
     it('should return JWT token when secret is valid', async () => {
@@ -187,7 +204,7 @@ describe('HTTP Server with Remote Config Integration', () => {
       };
       await writeFile(configPath, JSON.stringify(config));
 
-      server = await createHTTPServerWithConfig({ configPath });
+      server = await createAndWaitForServer({ configPath });
 
       // Get a valid token
       const tokenResponse = await fetch(`http://127.0.0.1:13105/auth/token`, {
@@ -268,7 +285,7 @@ describe('HTTP Server with Remote Config Integration', () => {
       };
       await writeFile(configPath, JSON.stringify(config));
 
-      server = await createHTTPServerWithConfig({ configPath });
+      server = await createAndWaitForServer({ configPath });
 
       const response = await fetch(`http://127.0.0.1:13106/mcp`, {
         method: 'POST',
@@ -297,7 +314,7 @@ describe('HTTP Server with Remote Config Integration', () => {
       };
       await writeFile(configPath, JSON.stringify(config));
 
-      server = await createHTTPServerWithConfig({ configPath });
+      server = await createAndWaitForServer({ configPath });
 
       const response = await fetch(`http://127.0.0.1:13107/auth/token`, {
         method: 'POST',
@@ -328,7 +345,7 @@ describe('HTTP Server with Remote Config Integration', () => {
       };
       await writeFile(configPath, JSON.stringify(config));
 
-      server = await createHTTPServerWithConfig({ configPath });
+      server = await createAndWaitForServer({ configPath });
 
       const response = await fetch(`http://127.0.0.1:13108/health`, {
         method: 'GET',
@@ -356,7 +373,7 @@ describe('HTTP Server with Remote Config Integration', () => {
       };
       await writeFile(configPath, JSON.stringify(config));
 
-      server = await createHTTPServerWithConfig({ configPath });
+      server = await createAndWaitForServer({ configPath });
 
       const response = await fetch(`http://127.0.0.1:13109/health`, {
         method: 'GET',
@@ -388,7 +405,7 @@ describe('HTTP Server with Remote Config Integration', () => {
       };
       await writeFile(configPath, JSON.stringify(config));
 
-      server = await createHTTPServerWithConfig({ configPath });
+      server = await createAndWaitForServer({ configPath });
 
       const response = await fetch(`http://127.0.0.1:13110/health`, {
         method: 'GET',
