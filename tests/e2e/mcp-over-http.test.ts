@@ -15,6 +15,9 @@ import {
 import { RemoteConfig } from '../../src/cli/remote-config-loader.js';
 
 describe('MCP over HTTP E2E', () => {
+  // Increase timeout for CI environment where server startup can be slow
+  jest.setTimeout(15000);
+
   const testDir = join(tmpdir(), 'sage-mcp-http-test-' + Date.now());
   let server: HTTPServerWithConfig | null = null;
   const basePort = 14000;

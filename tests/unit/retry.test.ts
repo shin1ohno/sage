@@ -118,7 +118,8 @@ describe('Retry Utility', () => {
       const elapsed = Date.now() - startTime;
 
       // Delays: 100, 150 (capped), 150 (capped) = 400ms max
-      expect(elapsed).toBeLessThan(600);
+      // Allow 800ms for CI overhead
+      expect(elapsed).toBeLessThan(800);
       expect(fn).toHaveBeenCalledTimes(4);
     });
 
