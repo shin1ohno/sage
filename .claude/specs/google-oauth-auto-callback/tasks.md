@@ -21,7 +21,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
 
 ### Phase A: Core Components
 
-- [ ] 1. Create OAuthCallbackServer class with basic server lifecycle
+- [x] 1. Create OAuthCallbackServer class with basic server lifecycle
   - File: `src/oauth/oauth-callback-server.ts`
   - Implement constructor with OAuthCallbackServerOptions interface
   - Implement `start()` method to bind to port and return callbackUrl
@@ -32,7 +32,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
   - _Leverage: Node.js http module pattern_
   - _Requirements: FR-2.1, FR-2.2, FR-2.8_
 
-- [ ] 2. Add callback handling to OAuthCallbackServer
+- [x] 2. Add callback handling to OAuthCallbackServer
   - File: `src/oauth/oauth-callback-server.ts` (continue from task 1)
   - Implement GET /oauth/callback route handler
   - Parse `code` and `error` query parameters using URL API
@@ -42,7 +42,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
   - _Leverage: URL API for query parsing_
   - _Requirements: FR-2.3, FR-2.4, FR-2.6_
 
-- [ ] 3. Add timeout and HTML response to OAuthCallbackServer
+- [x] 3. Add timeout and HTML response to OAuthCallbackServer
   - File: `src/oauth/oauth-callback-server.ts` (continue from task 2)
   - Add timeout mechanism (default: 5 minutes) to `waitForCallback()`
   - Create success HTML response template
@@ -51,7 +51,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
   - Purpose: Complete user-facing callback experience
   - _Requirements: FR-2.5, FR-2.7, NFR-11_
 
-- [ ] 4. Add port fallback logic to OAuthCallbackServer
+- [x] 4. Add port fallback logic to OAuthCallbackServer
   - File: `src/oauth/oauth-callback-server.ts` (continue from task 3)
   - Modify `start()` to try ports 3000-3010 sequentially on EADDRINUSE
   - Add error handling for all ports exhausted
@@ -59,7 +59,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
   - Purpose: Handle port conflicts gracefully
   - _Requirements: FR-2.1, FR-5.5, NFR-4, NFR-9_
 
-- [ ] 5. Create BrowserOpener utility
+- [x] 5. Create BrowserOpener utility
   - File: `src/utils/browser-opener.ts`
   - Detect platform (darwin/linux/win32) using `process.platform`
   - Implement `openBrowser(url: string)` function
@@ -72,7 +72,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
 
 ### Phase B: Tool Handler
 
-- [ ] 6. Create OAuthToolsContext and tool exports
+- [x] 6. Create OAuthToolsContext and tool exports
   - File: `src/tools/oauth/index.ts`
   - Define OAuthToolsContext interface with getGoogleOAuthHandler method
   - Export context type and handler functions
@@ -80,7 +80,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
   - _Leverage: Pattern from src/tools/setup/index.ts_
   - _Requirements: FR-1_
 
-- [ ] 7. Create authenticate_google tool handler - check existing tokens
+- [x] 7. Create authenticate_google tool handler - check existing tokens
   - File: `src/tools/oauth/authenticate-google.ts`
   - Define AuthenticateGoogleArgs schema with Zod (force, timeout)
   - Define AuthenticateGoogleResult interface
@@ -90,7 +90,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
   - _Leverage: GoogleOAuthHandler.getTokens()_
   - _Requirements: FR-4.5, FR-1.1_
 
-- [ ] 8. Add OAuth flow orchestration to authenticate_google handler
+- [x] 8. Add OAuth flow orchestration to authenticate_google handler
   - File: `src/tools/oauth/authenticate-google.ts` (continue from task 7)
   - Check environment variables (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
   - Create OAuthCallbackServer and start it
@@ -100,7 +100,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
   - _Leverage: OAuthCallbackServer, BrowserOpener, GoogleOAuthHandler_
   - _Requirements: FR-1.1, FR-1.2, FR-1.3, FR-1.4, FR-5.1, FR-5.2_
 
-- [ ] 9. Complete authenticate_google handler - token exchange and storage
+- [x] 9. Complete authenticate_google handler - token exchange and storage
   - File: `src/tools/oauth/authenticate-google.ts` (continue from task 8)
   - Wait for callback via OAuthCallbackServer.waitForCallback()
   - Exchange code for tokens via GoogleOAuthHandler.exchangeCodeForTokens()
@@ -113,7 +113,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
 
 ### Phase C: Integration
 
-- [ ] 10. Register authenticate_google tool in index.ts
+- [x] 10. Register authenticate_google tool in index.ts
   - File: `src/index.ts`
   - Import OAuthToolsContext and handleAuthenticateGoogle from tools/oauth
   - Add createOAuthToolsContext function
@@ -122,7 +122,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
   - _Leverage: Pattern from existing tool registrations in index.ts_
   - _Requirements: FR-1_
 
-- [ ] 11. Export OAuthCallbackServer from oauth module
+- [x] 11. Export OAuthCallbackServer from oauth module
   - File: `src/oauth/index.ts`
   - Add export for OAuthCallbackServer class
   - Add export for related types (OAuthCallbackServerOptions, CallbackResult)
@@ -131,7 +131,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
 
 ### Phase D: Unit Tests
 
-- [ ] 12. Create OAuthCallbackServer unit tests - lifecycle
+- [x] 12. Create OAuthCallbackServer unit tests - lifecycle
   - File: `tests/unit/oauth/oauth-callback-server.test.ts`
   - Test server start/shutdown lifecycle
   - Test isRunning() state changes
@@ -141,7 +141,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
   - _Leverage: Jest, existing test patterns_
   - _Requirements: FR-2.1, FR-2.2, FR-2.8, NFR-4_
 
-- [ ] 13. Create OAuthCallbackServer unit tests - callback handling
+- [x] 13. Create OAuthCallbackServer unit tests - callback handling
   - File: `tests/unit/oauth/oauth-callback-server.test.ts` (continue from task 12)
   - Test successful callback with code parameter
   - Test error callback with error parameter
@@ -150,7 +150,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
   - Purpose: Verify callback handling correctness
   - _Requirements: FR-2.3, FR-2.4, FR-2.5, FR-2.6_
 
-- [ ] 14. Create OAuthCallbackServer unit tests - timeout and port fallback
+- [x] 14. Create OAuthCallbackServer unit tests - timeout and port fallback
   - File: `tests/unit/oauth/oauth-callback-server.test.ts` (continue from task 13)
   - Test timeout triggers after specified duration
   - Test port fallback when primary port is in use
@@ -158,7 +158,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
   - Purpose: Verify edge case handling
   - _Requirements: FR-2.7, NFR-9_
 
-- [ ] 15. Create BrowserOpener unit tests
+- [x] 15. Create BrowserOpener unit tests
   - File: `tests/unit/utils/browser-opener.test.ts`
   - Mock child_process.exec
   - Test correct command selection per platform
@@ -168,7 +168,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
   - _Leverage: Jest mocking_
   - _Requirements: FR-3.1, FR-3.2, FR-3.3, FR-3.4, FR-3.5_
 
-- [ ] 16. Create authenticate_google handler unit tests
+- [x] 16. Create authenticate_google handler unit tests
   - File: `tests/unit/tools/oauth/authenticate-google.test.ts`
   - Mock GoogleOAuthHandler, OAuthCallbackServer, BrowserOpener
   - Test early return when tokens exist
@@ -182,7 +182,7 @@ Google OAuth自動コールバック機能を3つの新規コンポーネント�
 
 ### Phase E: Integration Tests
 
-- [ ] 17. Create Google OAuth flow integration test
+- [x] 17. Create Google OAuth flow integration test
   - File: `tests/integration/google-oauth-flow.test.ts`
   - Create real OAuthCallbackServer instance
   - Simulate HTTP callback request with test code
