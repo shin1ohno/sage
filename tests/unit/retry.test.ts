@@ -8,6 +8,7 @@ import {
   retryWithBackoff,
   isRetryableError,
   RetryError,
+  withRetry,
 } from '../../src/utils/retry.js';
 
 describe('Retry Utility', () => {
@@ -188,6 +189,143 @@ describe('Retry Utility', () => {
       const retryError = new RetryError('test', new Error('original'), 1);
       expect(retryError).toBeInstanceOf(Error);
       expect(retryError).toBeInstanceOf(RetryError);
+    });
+  });
+
+  describe('retry - additional branch coverage', () => {
+    it('should convert non-Error exceptions to Error', async () => {
+      const fn = jest.fn().mockRejectedValue('string error');
+
+      await expect(retry(fn, { maxAttempts: 1, delay: 10 })).rejects.toThrow(RetryError);
+    });
+  });
+
+  describe('retryWithBackoff - additional branch coverage', () => {
+    it('should call onRetry callback with delay info', async () => {
+      const fn = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('temp'))
+        .mockResolvedValue('success');
+      const onRetry = jest.fn();
+
+      await retryWithBackoff(fn, {
+        maxAttempts: 2,
+        initialDelay: 50,
+        maxDelay: 1000,
+        onRetry,
+      });
+
+      expect(onRetry).toHaveBeenCalledTimes(1);
+      expect(onRetry).toHaveBeenCalledWith(expect.any(Error), 1, expect.any(Number));
+    });
+
+    it('should not retry non-retryable errors when shouldRetry is provided', async () => {
+      const fn = jest.fn().mockRejectedValue(new Error('fatal'));
+      const shouldRetry = jest.fn().mockReturnValue(false);
+
+      await expect(
+        retryWithBackoff(fn, { maxAttempts: 3, initialDelay: 10, shouldRetry })
+      ).rejects.toThrow('fatal');
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it('should convert non-Error exceptions to Error', async () => {
+      const fn = jest.fn().mockRejectedValue({ code: 'UNKNOWN' });
+
+      await expect(
+        retryWithBackoff(fn, { maxAttempts: 1, initialDelay: 10 })
+      ).rejects.toThrow(RetryError);
+    });
+  });
+
+  describe('withRetry', () => {
+    it('should wrap function with retry logic', async () => {
+      let attempts = 0;
+      const originalFn = async (..._args: unknown[]): Promise<unknown> => {
+        attempts++;
+        if (attempts < 2) {
+          throw new Error('ECONNRESET');
+        }
+        return 'success';
+      };
+
+      const wrappedFn = withRetry(originalFn, {
+        maxAttempts: 3,
+        initialDelay: 10,
+      });
+
+      const result = await wrappedFn();
+      expect(result).toBe('success');
+      expect(attempts).toBe(2);
+    });
+
+    it('should use isRetryableError by default when shouldRetry not provided', async () => {
+      const originalFn = async (..._args: unknown[]): Promise<unknown> => {
+        throw new Error('permission denied');
+      };
+
+      const wrappedFn = withRetry(originalFn, {
+        maxAttempts: 3,
+        initialDelay: 10,
+      });
+
+      // Permission denied is non-retryable, so should fail after 1 attempt
+      await expect(wrappedFn()).rejects.toThrow('permission denied');
+    });
+
+    it('should use custom shouldRetry when provided', async () => {
+      let attempts = 0;
+      const originalFn = async (..._args: unknown[]): Promise<unknown> => {
+        attempts++;
+        throw new Error('custom error');
+      };
+
+      const wrappedFn = withRetry(originalFn, {
+        maxAttempts: 3,
+        initialDelay: 10,
+        shouldRetry: () => true,
+      });
+
+      await expect(wrappedFn()).rejects.toThrow(RetryError);
+      expect(attempts).toBe(3);
+    });
+  });
+
+  describe('isRetryableError - additional patterns', () => {
+    it('should identify ENETUNREACH as retryable', () => {
+      expect(isRetryableError(new Error('ENETUNREACH'))).toBe(true);
+    });
+
+    it('should identify EHOSTUNREACH as retryable', () => {
+      expect(isRetryableError(new Error('EHOSTUNREACH'))).toBe(true);
+    });
+
+    it('should identify too many requests as retryable', () => {
+      expect(isRetryableError(new Error('too many requests'))).toBe(true);
+    });
+
+    it('should identify service busy as retryable', () => {
+      expect(isRetryableError(new Error('service busy'))).toBe(true);
+    });
+
+    it('should identify try again as retryable', () => {
+      expect(isRetryableError(new Error('please try again'))).toBe(true);
+    });
+
+    it('should identify forbidden as non-retryable', () => {
+      expect(isRetryableError(new Error('forbidden'))).toBe(false);
+    });
+
+    it('should identify bad request as non-retryable', () => {
+      expect(isRetryableError(new Error('bad request'))).toBe(false);
+    });
+
+    it('should identify already exists as non-retryable', () => {
+      expect(isRetryableError(new Error('resource already exists'))).toBe(false);
+    });
+
+    it('should identify does not exist as non-retryable', () => {
+      expect(isRetryableError(new Error('file does not exist'))).toBe(false);
     });
   });
 });

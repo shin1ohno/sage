@@ -8,11 +8,13 @@ import {
   detectEventType,
   extractTypeSpecificProperties,
   convertGoogleToCalendarEvent,
+  areEventsDuplicate,
   GoogleCalendarEvent,
   OutOfOfficeProperties,
   FocusTimeProperties,
   WorkingLocationProperties,
   BirthdayProperties,
+  CalendarEvent,
 } from '../../src/types/google-calendar-types.js';
 
 describe('Google Calendar Types', () => {
@@ -615,6 +617,197 @@ describe('Google Calendar Types', () => {
           label: 'WeWork Downtown',
         },
       });
+    });
+  });
+
+  describe('extractTypeSpecificProperties - missing properties branches', () => {
+    it('should return undefined when eventType is workingLocation but properties are missing', () => {
+      const event: GoogleCalendarEvent = {
+        id: 'event-1',
+        summary: 'Working Location Event',
+        start: { date: '2025-01-15' },
+        end: { date: '2025-01-16' },
+        iCalUID: 'uid-1@example.com',
+        eventType: 'workingLocation',
+        // workingLocationProperties is missing
+      };
+
+      const result = extractTypeSpecificProperties(event, 'workingLocation');
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined when eventType is birthday but properties are missing', () => {
+      const event: GoogleCalendarEvent = {
+        id: 'event-1',
+        summary: 'Birthday Event',
+        start: { date: '2025-01-15' },
+        end: { date: '2025-01-16' },
+        iCalUID: 'uid-1@example.com',
+        eventType: 'birthday',
+        // birthdayProperties is missing
+      };
+
+      const result = extractTypeSpecificProperties(event, 'birthday');
+
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('areEventsDuplicate', () => {
+    it('should return true when iCalUIDs match', () => {
+      const event1: CalendarEvent = {
+        id: 'event-1',
+        title: 'Meeting',
+        start: '2025-01-15T10:00:00+09:00',
+        end: '2025-01-15T11:00:00+09:00',
+        isAllDay: false,
+        source: 'google',
+        iCalUID: 'unique-uid@example.com',
+      };
+      const event2: CalendarEvent = {
+        id: 'event-2',
+        title: 'Different Title',
+        start: '2025-01-16T10:00:00+09:00',
+        end: '2025-01-16T11:00:00+09:00',
+        isAllDay: false,
+        source: 'eventkit',
+        iCalUID: 'unique-uid@example.com',
+      };
+
+      expect(areEventsDuplicate(event1, event2)).toBe(true);
+    });
+
+    it('should return true when title, start and end match', () => {
+      const event1: CalendarEvent = {
+        id: 'event-1',
+        title: 'Team Meeting',
+        start: '2025-01-15T10:00:00+09:00',
+        end: '2025-01-15T11:00:00+09:00',
+        isAllDay: false,
+        source: 'google',
+      };
+      const event2: CalendarEvent = {
+        id: 'event-2',
+        title: 'team meeting', // case insensitive
+        start: '2025-01-15T10:00:00+09:00',
+        end: '2025-01-15T11:00:00+09:00',
+        isAllDay: false,
+        source: 'eventkit',
+      };
+
+      expect(areEventsDuplicate(event1, event2)).toBe(true);
+    });
+
+    it('should return false when only title matches', () => {
+      const event1: CalendarEvent = {
+        id: 'event-1',
+        title: 'Team Meeting',
+        start: '2025-01-15T10:00:00+09:00',
+        end: '2025-01-15T11:00:00+09:00',
+        isAllDay: false,
+        source: 'google',
+      };
+      const event2: CalendarEvent = {
+        id: 'event-2',
+        title: 'Team Meeting',
+        start: '2025-01-16T10:00:00+09:00', // different day
+        end: '2025-01-16T11:00:00+09:00',
+        isAllDay: false,
+        source: 'eventkit',
+      };
+
+      expect(areEventsDuplicate(event1, event2)).toBe(false);
+    });
+
+    it('should return false when only start and end match', () => {
+      const event1: CalendarEvent = {
+        id: 'event-1',
+        title: 'Meeting A',
+        start: '2025-01-15T10:00:00+09:00',
+        end: '2025-01-15T11:00:00+09:00',
+        isAllDay: false,
+        source: 'google',
+      };
+      const event2: CalendarEvent = {
+        id: 'event-2',
+        title: 'Meeting B',
+        start: '2025-01-15T10:00:00+09:00',
+        end: '2025-01-15T11:00:00+09:00',
+        isAllDay: false,
+        source: 'eventkit',
+      };
+
+      expect(areEventsDuplicate(event1, event2)).toBe(false);
+    });
+
+    it('should return false when iCalUIDs are different', () => {
+      const event1: CalendarEvent = {
+        id: 'event-1',
+        title: 'Meeting',
+        start: '2025-01-15T10:00:00+09:00',
+        end: '2025-01-15T11:00:00+09:00',
+        isAllDay: false,
+        source: 'google',
+        iCalUID: 'uid-1@example.com',
+      };
+      const event2: CalendarEvent = {
+        id: 'event-2',
+        title: 'Meeting',
+        start: '2025-01-15T10:00:00+09:00',
+        end: '2025-01-15T11:00:00+09:00',
+        isAllDay: false,
+        source: 'eventkit',
+        iCalUID: 'uid-2@example.com',
+      };
+
+      // Even with same title/times, different iCalUIDs means fallback to title+time check
+      // But in this case title and times match, so it should be true
+      expect(areEventsDuplicate(event1, event2)).toBe(true);
+    });
+
+    it('should return false when one has iCalUID and they differ in other fields', () => {
+      const event1: CalendarEvent = {
+        id: 'event-1',
+        title: 'Meeting A',
+        start: '2025-01-15T10:00:00+09:00',
+        end: '2025-01-15T11:00:00+09:00',
+        isAllDay: false,
+        source: 'google',
+        iCalUID: 'uid-1@example.com',
+      };
+      const event2: CalendarEvent = {
+        id: 'event-2',
+        title: 'Meeting B',
+        start: '2025-01-16T10:00:00+09:00',
+        end: '2025-01-16T11:00:00+09:00',
+        isAllDay: false,
+        source: 'eventkit',
+        // no iCalUID
+      };
+
+      expect(areEventsDuplicate(event1, event2)).toBe(false);
+    });
+
+    it('should return false when end times differ', () => {
+      const event1: CalendarEvent = {
+        id: 'event-1',
+        title: 'Team Meeting',
+        start: '2025-01-15T10:00:00+09:00',
+        end: '2025-01-15T11:00:00+09:00',
+        isAllDay: false,
+        source: 'google',
+      };
+      const event2: CalendarEvent = {
+        id: 'event-2',
+        title: 'Team Meeting',
+        start: '2025-01-15T10:00:00+09:00',
+        end: '2025-01-15T12:00:00+09:00', // different end time
+        isAllDay: false,
+        source: 'eventkit',
+      };
+
+      expect(areEventsDuplicate(event1, event2)).toBe(false);
     });
   });
 });

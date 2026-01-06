@@ -29,6 +29,25 @@ describe('SageCore', () => {
     },
   };
 
+  // Mock adapter for remote_mcp platform type
+  const createRemoteMcpAdapter = () => ({
+    initialize: jest.fn().mockResolvedValue(undefined),
+    getPlatformInfo: jest.fn().mockReturnValue({
+      type: 'remote_mcp',
+      version: '1.0.0',
+      os: 'darwin',
+    }),
+    getAvailableFeatures: jest.fn().mockReturnValue({
+      taskAnalysis: true,
+      persistentConfig: true,
+      notionIntegration: true,
+      appleReminders: true,
+      calendarIntegration: true,
+      fileSystemAccess: false,
+    }),
+    isCapabilityAvailable: jest.fn().mockReturnValue(true),
+  });
+
   describe('with MCPAdapter', () => {
     let core: SageCore;
 
@@ -167,6 +186,88 @@ describe('SageCore', () => {
 
       expect(result.splitInfo?.wasSplit).toBe(false);
       expect(result.analyzedTasks).toHaveLength(1);
+    });
+  });
+
+  describe('with remote_mcp adapter', () => {
+    let core: SageCore;
+
+    beforeEach(async () => {
+      const adapter = createRemoteMcpAdapter();
+      core = new SageCore(adapter as any);
+      await core.initialize(testConfig);
+    });
+
+    it('should initialize with remote_mcp adapter', () => {
+      expect(core.getPlatformInfo().type).toBe('remote_mcp');
+    });
+
+    it('should provide remote_mcp specific recommendations', () => {
+      const recommendations = core.getIntegrationRecommendations();
+
+      expect(recommendations).toContainEqual(
+        expect.objectContaining({
+          integration: 'notion',
+          available: true,
+          method: 'remote',
+        })
+      );
+      expect(recommendations).toContainEqual(
+        expect.objectContaining({
+          integration: 'reminders',
+          available: true,
+          method: 'remote',
+        })
+      );
+      expect(recommendations).toContainEqual(
+        expect.objectContaining({
+          integration: 'calendar',
+          available: true,
+          method: 'remote',
+        })
+      );
+    });
+  });
+
+  describe('initialization', () => {
+    it('should initialize with default config when no config provided', async () => {
+      const adapter = new MCPAdapter();
+      const core = new SageCore(adapter);
+      await core.initialize();
+
+      expect(core.isInitialized()).toBe(true);
+      const config = core.getConfig();
+      expect(config).toBeDefined();
+    });
+
+    it('should not be initialized before calling initialize()', () => {
+      const adapter = new MCPAdapter();
+      const core = new SageCore(adapter);
+
+      expect(core.isInitialized()).toBe(false);
+    });
+
+    it('should throw when getConfig called before initialize', () => {
+      const adapter = new MCPAdapter();
+      const core = new SageCore(adapter);
+
+      expect(() => core.getConfig()).toThrow('SageCore not initialized');
+    });
+
+    it('should throw when updateConfig called before initialize', async () => {
+      const adapter = new MCPAdapter();
+      const core = new SageCore(adapter);
+
+      await expect(core.updateConfig({ user: { name: 'Test', timezone: 'UTC' } })).rejects.toThrow(
+        'SageCore not initialized'
+      );
+    });
+
+    it('should throw when analyzeFromText called before initialize', async () => {
+      const adapter = new MCPAdapter();
+      const core = new SageCore(adapter);
+
+      await expect(core.analyzeFromText('test')).rejects.toThrow('SageCore not initialized');
     });
   });
 
