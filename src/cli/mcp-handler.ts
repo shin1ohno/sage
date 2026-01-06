@@ -20,6 +20,24 @@ import { GoogleCalendarService } from '../integrations/google-calendar-service.j
 import { GoogleOAuthHandler } from '../oauth/google-oauth-handler.js';
 import type { UserConfig } from '../types/index.js';
 
+// Hot-reload imports
+import { ServiceRegistry } from '../services/service-registry.js';
+import {
+  CalendarSourceManagerAdapter,
+  createCalendarSourceManager,
+  ReminderManagerAdapter,
+  createReminderManager,
+  WorkingCadenceAdapter,
+  createWorkingCadenceService,
+  NotionServiceAdapter,
+  createNotionMCPService,
+  TodoListManagerAdapter,
+  createTodoListManager,
+} from '../services/reloadable/index.js';
+import { ConfigWatcher } from '../config/config-watcher.js';
+import { ConfigReloadService } from '../config/config-reload-service.js';
+import { getHotReloadConfig } from '../config/hot-reload-config.js';
+
 // Extracted tool handlers
 import {
   type SetupContext,
@@ -138,6 +156,15 @@ class MCPHandlerImpl implements MCPHandler {
   private googleCalendarService: GoogleCalendarService | null = null;
   private initialized: boolean = false;
 
+  // Hot-reload infrastructure
+  private serviceRegistry: ServiceRegistry | null = null;
+  private configReloadService: ConfigReloadService | null = null;
+  private calendarSourceManagerAdapter: CalendarSourceManagerAdapter | null = null;
+  private reminderManagerAdapter: ReminderManagerAdapter | null = null;
+  private workingCadenceAdapter: WorkingCadenceAdapter | null = null;
+  private notionServiceAdapter: NotionServiceAdapter | null = null;
+  private todoListManagerAdapter: TodoListManagerAdapter | null = null;
+
   private tools: Map<string, { definition: ToolDefinition; handler: ToolHandler }> = new Map();
 
   constructor() {
@@ -156,12 +183,127 @@ class MCPHandlerImpl implements MCPHandler {
       this.config = await ConfigLoader.load();
       if (this.config) {
         this.initializeServices(this.config);
+        await this.initializeHotReload(this.config);
       }
     } catch {
       this.config = null;
     }
 
     this.initialized = true;
+  }
+
+  /**
+   * Initialize hot-reload infrastructure
+   * Creates ServiceRegistry, adapters, and ConfigReloadService
+   */
+  private async initializeHotReload(config: UserConfig): Promise<void> {
+    const hotReloadConfig = getHotReloadConfig();
+
+    // Skip hot-reload setup if disabled
+    if (hotReloadConfig.disabled) {
+      return;
+    }
+
+    // Create ServiceRegistry
+    this.serviceRegistry = new ServiceRegistry();
+
+    // Create and register CalendarSourceManager adapter
+    this.calendarSourceManagerAdapter = new CalendarSourceManagerAdapter(createCalendarSourceManager);
+    await this.calendarSourceManagerAdapter.reinitialize(config);
+    this.serviceRegistry.register(this.calendarSourceManagerAdapter);
+
+    // Create and register ReminderManager adapter
+    this.reminderManagerAdapter = new ReminderManagerAdapter(createReminderManager);
+    await this.reminderManagerAdapter.reinitialize(config);
+    this.serviceRegistry.register(this.reminderManagerAdapter);
+
+    // Create and register WorkingCadenceService adapter
+    this.workingCadenceAdapter = new WorkingCadenceAdapter(createWorkingCadenceService);
+    // Set CalendarSourceManager dependency
+    const calendarManagerInstance = this.calendarSourceManagerAdapter.getInstance();
+    if (calendarManagerInstance) {
+      this.workingCadenceAdapter.setCalendarSourceManager(calendarManagerInstance);
+    }
+    await this.workingCadenceAdapter.reinitialize(config);
+    this.serviceRegistry.register(this.workingCadenceAdapter);
+
+    // Create and register NotionMCPService adapter
+    this.notionServiceAdapter = new NotionServiceAdapter(createNotionMCPService);
+    await this.notionServiceAdapter.reinitialize(config);
+    this.serviceRegistry.register(this.notionServiceAdapter);
+
+    // Create and register TodoListManager adapter
+    this.todoListManagerAdapter = new TodoListManagerAdapter(createTodoListManager);
+    await this.todoListManagerAdapter.reinitialize(config);
+    this.serviceRegistry.register(this.todoListManagerAdapter);
+
+    // Create ConfigWatcher and ConfigReloadService
+    const configWatcher = new ConfigWatcher({
+      debounceMs: hotReloadConfig.debounceMs,
+    });
+
+    this.configReloadService = new ConfigReloadService(
+      configWatcher,
+      this.serviceRegistry,
+      {
+        enableAutoReload: true,
+        onReload: (result) => {
+          // Update local service references after reload
+          if (result.success) {
+            this.updateServiceReferencesFromAdapters();
+          }
+        },
+      }
+    );
+
+    // Start watching for config changes
+    await configWatcher.start();
+    await this.configReloadService.start();
+  }
+
+  /**
+   * Update local service references from adapter instances
+   * Called after hot-reload to sync the service references
+   */
+  private updateServiceReferencesFromAdapters(): void {
+    if (this.calendarSourceManagerAdapter) {
+      const instance = this.calendarSourceManagerAdapter.getInstance();
+      if (instance) {
+        this.calendarSourceManager = instance;
+      }
+    }
+    if (this.reminderManagerAdapter) {
+      const instance = this.reminderManagerAdapter.getInstance();
+      if (instance) {
+        this.reminderManager = instance;
+      }
+    }
+    if (this.workingCadenceAdapter) {
+      const instance = this.workingCadenceAdapter.getInstance();
+      if (instance) {
+        this.workingCadenceService = instance;
+      }
+    }
+    if (this.notionServiceAdapter) {
+      const instance = this.notionServiceAdapter.getInstance();
+      if (instance) {
+        this.notionService = instance;
+      }
+    }
+    if (this.todoListManagerAdapter) {
+      const instance = this.todoListManagerAdapter.getInstance();
+      if (instance) {
+        this.todoListManager = instance;
+      }
+    }
+
+    // Update config from ConfigReloadService
+    if (this.configReloadService) {
+      const newConfig = this.configReloadService.getCurrentConfig();
+      if (newConfig) {
+        this.config = newConfig;
+      }
+    }
   }
 
   /**
@@ -220,7 +362,13 @@ class MCPHandlerImpl implements MCPHandler {
   private createTaskToolsContext(): TaskToolsContext {
     return {
       getConfig: () => this.config,
-      getTodoListManager: () => this.todoListManager,
+      getTodoListManager: () => {
+        // Prefer reloadable adapter instance if available
+        if (this.todoListManagerAdapter) {
+          return this.todoListManagerAdapter.getInstance();
+        }
+        return this.todoListManager;
+      },
       getTaskSynchronizer: () => this.taskSynchronizer,
       initializeServices: (config: UserConfig) => this.initializeServices(config),
     };
@@ -232,8 +380,20 @@ class MCPHandlerImpl implements MCPHandler {
   private createReminderTodoContext(): ReminderTodoContext {
     return {
       getConfig: () => this.config,
-      getReminderManager: () => this.reminderManager,
-      getTodoListManager: () => this.todoListManager,
+      getReminderManager: () => {
+        // Prefer reloadable adapter instance if available
+        if (this.reminderManagerAdapter) {
+          return this.reminderManagerAdapter.getInstance();
+        }
+        return this.reminderManager;
+      },
+      getTodoListManager: () => {
+        // Prefer reloadable adapter instance if available
+        if (this.todoListManagerAdapter) {
+          return this.todoListManagerAdapter.getInstance();
+        }
+        return this.todoListManager;
+      },
       initializeServices: (config: UserConfig) => this.initializeServices(config),
     };
   }
@@ -247,7 +407,13 @@ class MCPHandlerImpl implements MCPHandler {
       setConfig: (config: UserConfig) => {
         this.config = config;
       },
-      getNotionService: () => this.notionService,
+      getNotionService: () => {
+        // Prefer reloadable adapter instance if available
+        if (this.notionServiceAdapter) {
+          return this.notionServiceAdapter.getInstance();
+        }
+        return this.notionService;
+      },
       initializeServices: (config: UserConfig) => this.initializeServices(config),
     };
   }
@@ -258,10 +424,22 @@ class MCPHandlerImpl implements MCPHandler {
   private createCalendarToolsContext(): CalendarToolsContext {
     return {
       getConfig: () => this.config,
-      getCalendarSourceManager: () => this.calendarSourceManager,
+      getCalendarSourceManager: () => {
+        // Prefer reloadable adapter instance if available
+        if (this.calendarSourceManagerAdapter) {
+          return this.calendarSourceManagerAdapter.getInstance();
+        }
+        return this.calendarSourceManager;
+      },
       getCalendarEventResponseService: () => this.calendarEventResponseService,
       getGoogleCalendarService: () => this.googleCalendarService,
-      getWorkingCadenceService: () => this.workingCadenceService,
+      getWorkingCadenceService: () => {
+        // Prefer reloadable adapter instance if available
+        if (this.workingCadenceAdapter) {
+          return this.workingCadenceAdapter.getInstance();
+        }
+        return this.workingCadenceService;
+      },
       setWorkingCadenceService: (service: WorkingCadenceService) => {
         this.workingCadenceService = service;
       },

@@ -11,6 +11,8 @@
 import { ConfigLoader } from '../../config/loader.js';
 import { SetupWizard } from '../../setup/wizard.js';
 import type { UserConfig } from '../../types/index.js';
+import type { ReloadResult } from '../../types/hot-reload.js';
+import type { ConfigReloadService } from '../../config/config-reload-service.js';
 import { createToolResponse, createErrorFromCatch } from '../registry.js';
 
 /**
@@ -27,6 +29,7 @@ export interface SetupContext {
   getWizardSession: () => WizardSession | null;
   setWizardSession: (session: WizardSession | null) => void;
   initializeServices: (config: UserConfig) => void;
+  getConfigReloadService?: () => ConfigReloadService | null;
 }
 
 /**
@@ -60,6 +63,24 @@ export async function handleCheckSetupStatus(ctx: SetupContext) {
     });
   }
 
+  // Build hot reload status if service is available
+  let hotReload: {
+    enabled: boolean;
+    watching: boolean;
+    lastReload: ReloadResult | null;
+  } | undefined;
+
+  if (ctx.getConfigReloadService) {
+    const configReloadService = ctx.getConfigReloadService();
+    if (configReloadService) {
+      hotReload = {
+        enabled: configReloadService.isAutoReloadEnabled(),
+        watching: configReloadService.isAutoReloadEnabled(), // Watching when auto-reload is enabled
+        lastReload: configReloadService.getLastReloadResult(),
+      };
+    }
+  }
+
   return createToolResponse({
     setupComplete: true,
     configExists: true,
@@ -71,7 +92,9 @@ export async function handleCheckSetupStatus(ctx: SetupContext) {
       'find_available_slots',
       'sync_to_notion',
       'update_config',
+      'reload_config',
     ],
+    ...(hotReload && { hotReload }),
   });
 }
 

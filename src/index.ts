@@ -27,6 +27,14 @@ import { VERSION, SERVER_NAME } from "./version.js";
 import { createErrorFromCatch } from "./utils/mcp-response.js";
 import { mcpLogger } from "./utils/logger.js";
 
+// Hot-reload imports
+import { ServiceRegistry } from "./services/service-registry.js";
+import { createAllReloadableAdapters } from "./services/reloadable/index.js";
+import { ConfigWatcher } from "./config/config-watcher.js";
+import { ConfigReloadService } from "./config/config-reload-service.js";
+import { getHotReloadConfig } from "./config/hot-reload-config.js";
+import { setupSignalHandlers } from "./cli/signal-handler.js";
+
 // Extracted tool handlers
 import {
   type SetupContext,
@@ -74,6 +82,11 @@ import {
   handleAuthenticateGoogle,
 } from "./tools/oauth/index.js";
 
+import {
+  type ReloadContext,
+  handleReloadConfig,
+} from "./tools/config/index.js";
+
 // Global state
 let config: UserConfig | null = null;
 let wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
@@ -86,6 +99,10 @@ let todoListManager: TodoListManager | null = null;
 let taskSynchronizer: TaskSynchronizer | null = null;
 let calendarEventResponseService: CalendarEventResponseService | null = null;
 let workingCadenceService: WorkingCadenceService | null = null;
+
+// Hot-reload state
+let serviceRegistry: ServiceRegistry | null = null;
+let configReloadService: ConfigReloadService | null = null;
 
 /**
  * Initialize services with config
@@ -143,6 +160,7 @@ function createSetupContext(): SetupContext {
       wizardSession = session;
     },
     initializeServices,
+    getConfigReloadService: () => configReloadService,
   };
 }
 
@@ -186,6 +204,7 @@ function createIntegrationToolsContext(): IntegrationToolsContext {
     },
     getNotionService: () => notionService,
     initializeServices,
+    getConfigReloadService: () => configReloadService,
   };
 }
 
@@ -213,6 +232,12 @@ function createOAuthToolsContext(): OAuthToolsContext {
       }
       return new GoogleOAuthHandler(oauthConfig);
     },
+  };
+}
+
+function createReloadContext(): ReloadContext {
+  return {
+    getConfigReloadService: () => configReloadService,
   };
 }
 
@@ -1139,6 +1164,26 @@ async function createServer(): Promise<McpServer> {
       handleGetWorkingCadence(createCalendarToolsContext(), { dayOfWeek, date }),
   );
 
+  // ============================================
+  // Hot Reload Tools
+  // ============================================
+
+  /**
+   * reload_config - Manually trigger configuration reload
+   * Requirements: Hot Reload Feature
+   */
+  server.tool(
+    "reload_config",
+    "Manually trigger a configuration reload without server restart. Returns the reload result including changed sections and re-initialized services.",
+    {
+      force: z
+        .boolean()
+        .optional()
+        .describe("Force reload even if no changes detected (currently unused, reserved for future use)"),
+    },
+    async ({ force }) => handleReloadConfig(createReloadContext(), { force }),
+  );
+
   return server;
 }
 
@@ -1203,6 +1248,40 @@ async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   mcpLogger.info({ version: VERSION }, `${SERVER_NAME} started in Stdio mode`);
+
+  // Task 28: Create ServiceRegistry and register adapters
+  if (config) {
+    serviceRegistry = new ServiceRegistry();
+    const adapters = createAllReloadableAdapters(config);
+    for (const adapter of adapters) {
+      serviceRegistry.register(adapter);
+    }
+    mcpLogger.info({ adapterCount: adapters.length }, 'Service adapters registered');
+  }
+
+  // Task 29: Create and start ConfigReloadService
+  const hotReloadConfig = getHotReloadConfig();
+  if (!hotReloadConfig.disabled && serviceRegistry) {
+    const configWatcher = new ConfigWatcher({
+      debounceMs: hotReloadConfig.debounceMs,
+    });
+    configReloadService = new ConfigReloadService(
+      configWatcher,
+      serviceRegistry,
+      { enableAutoReload: true }
+    );
+
+    // Start the config watcher and reload service
+    await configWatcher.start();
+    await configReloadService.start();
+    mcpLogger.info('Hot reload service started');
+
+    // Setup signal handlers for SIGHUP, SIGTERM, SIGINT
+    setupSignalHandlers(configReloadService);
+    mcpLogger.info('Signal handlers registered');
+  } else if (hotReloadConfig.disabled) {
+    mcpLogger.info('Hot reload is disabled via SAGE_DISABLE_HOT_RELOAD');
+  }
 }
 
 main().catch((error) => {

@@ -10,6 +10,7 @@
 
 import type { UserConfig, Priority } from '../../types/index.js';
 import type { NotionMCPService } from '../../integrations/notion-mcp.js';
+import type { ConfigReloadService } from '../../config/config-reload-service.js';
 import { ConfigLoader } from '../../config/loader.js';
 import {
   validateConfigUpdate,
@@ -25,6 +26,7 @@ export interface IntegrationToolsContext {
   setConfig: (config: UserConfig) => void;
   getNotionService: () => NotionMCPService | null;
   initializeServices: (config: UserConfig) => void;
+  getConfigReloadService?: () => ConfigReloadService | null;
 }
 
 // ============================================================

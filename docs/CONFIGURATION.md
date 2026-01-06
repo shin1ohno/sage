@@ -810,6 +810,99 @@ sage で今週の集中作業時間を一覧表示してください（eventType
 
 ---
 
+## Hot Reload（ホットリロード）
+
+sage は設定ファイルの変更を自動的に検出し、サーバーを再起動せずに新しい設定を適用できます。
+
+### 機能概要
+
+- **自動検出**: `~/.sage/config.json` の変更を監視し、自動的にリロード
+- **デバウンス処理**: 連続した変更は500msのデバウンス後に1回のリロードとして処理
+- **検証**: 新しい設定は適用前にZodスキーマで検証
+- **フォールバック**: 無効な設定の場合、前の有効な設定を維持
+- **サービス再初期化**: 変更されたセクションに依存するサービスのみを再初期化
+
+### 手動リロード
+
+#### SIGHUP シグナル
+
+```bash
+# プロセスIDを見つけてSIGHUPを送信
+kill -HUP $(pgrep -f "sage")
+```
+
+#### reload_config MCP ツール
+
+```
+sage で設定をリロードしてください
+```
+
+または Claude Desktop/Code から:
+
+```
+reload_config ツールを実行してください
+```
+
+### 環境変数
+
+| 変数名 | デフォルト | 説明 |
+|--------|-----------|------|
+| `SAGE_DISABLE_HOT_RELOAD` | `false` | `true` に設定するとホットリロードを無効化 |
+| `SAGE_HOT_RELOAD_DEBOUNCE` | `500` | デバウンス遅延（ミリ秒） |
+
+**例:**
+
+```bash
+# ホットリロードを無効化
+export SAGE_DISABLE_HOT_RELOAD=true
+
+# デバウンス遅延を1秒に変更
+export SAGE_HOT_RELOAD_DEBOUNCE=1000
+```
+
+### ステータス確認
+
+```
+sage でセットアップステータスを確認してください
+```
+
+レスポンスに `hotReload` セクションが含まれます:
+
+```json
+{
+  "hotReload": {
+    "enabled": true,
+    "watching": true,
+    "lastReload": {
+      "success": true,
+      "changedSections": ["calendar", "integrations"],
+      "reinitializedServices": ["CalendarSourceManager", "ReminderManager"],
+      "timestamp": "2025-01-06T10:30:00.000Z",
+      "durationMs": 150
+    }
+  }
+}
+```
+
+### 変更セクションとサービスの対応
+
+| 設定セクション | 再初期化されるサービス |
+|---------------|----------------------|
+| `calendar` | CalendarSourceManager, WorkingCadenceService |
+| `integrations` | CalendarSourceManager, ReminderManager, NotionMCPService, TodoListManager |
+| `reminders` | ReminderManager |
+| `priorityRules` | PriorityEngine |
+
+### 制限事項
+
+以下の変更にはサーバーの再起動が必要です:
+
+- OAuth認証設定（クライアントID、シークレット）
+- リモートサーバーのポート番号
+- トランスポート方式（stdio ↔ HTTP）
+
+---
+
 ## 設定のバックアップ
 
 ```bash
