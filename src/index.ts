@@ -496,7 +496,7 @@ async function createServer(): Promise<McpServer> {
   // create_calendar_event - uses extracted handler
   server.tool(
     "create_calendar_event",
-    "Create a new calendar event in the appropriate calendar source with optional location, notes, and alarms.",
+    "Create a new calendar event with support for Google Calendar event types (OOO, Focus Time, Working Location, etc.).",
     {
       title: z.string().describe("Event title"),
       startDate: z
@@ -519,8 +519,36 @@ async function createServer(): Promise<McpServer> {
         .enum(['eventkit', 'google'])
         .optional()
         .describe("Preferred calendar source to create the event in. If not specified, uses the first enabled source."),
+      eventType: z
+        .enum(['default', 'outOfOffice', 'focusTime', 'workingLocation', 'birthday'])
+        .optional()
+        .describe("Event type: 'default' (normal), 'outOfOffice' (vacation/OOO with auto-decline), 'focusTime' (deep work), 'workingLocation', 'birthday'. Default: 'default'. Note: Non-default types require Google Calendar."),
+      autoDeclineMode: z
+        .enum(['declineNone', 'declineAllConflictingInvitations', 'declineOnlyNewConflictingInvitations'])
+        .optional()
+        .describe("For outOfOffice/focusTime: auto-decline behavior for conflicting invitations"),
+      declineMessage: z
+        .string()
+        .optional()
+        .describe("For outOfOffice/focusTime: custom message sent when auto-declining invitations"),
+      chatStatus: z
+        .enum(['available', 'doNotDisturb'])
+        .optional()
+        .describe("For focusTime: Google Chat status during focus time"),
+      workingLocationType: z
+        .enum(['homeOffice', 'officeLocation', 'customLocation'])
+        .optional()
+        .describe("For workingLocation: type of work location"),
+      workingLocationLabel: z
+        .string()
+        .optional()
+        .describe("For workingLocation: optional label for the location (e.g., office name)"),
+      birthdayType: z
+        .enum(['birthday', 'anniversary', 'other'])
+        .optional()
+        .describe("For birthday: type of birthday event"),
     },
-    async ({ title, startDate, endDate, location, notes, calendarName, alarms, preferredSource }) =>
+    async ({ title, startDate, endDate, location, notes, calendarName, alarms, preferredSource, eventType, autoDeclineMode, declineMessage, chatStatus, workingLocationType, workingLocationLabel, birthdayType }) =>
       handleCreateCalendarEvent(createCalendarToolsContext(), {
         title,
         startDate,
@@ -530,6 +558,13 @@ async function createServer(): Promise<McpServer> {
         calendarName,
         alarms,
         preferredSource,
+        eventType,
+        autoDeclineMode,
+        declineMessage,
+        chatStatus,
+        workingLocationType,
+        workingLocationLabel,
+        birthdayType,
       }),
   );
 
