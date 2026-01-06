@@ -29,3 +29,13 @@ export { OAuthHandler, createOAuthHandler, OAuthHandlerConfig } from './oauth-ha
 
 // File Mutex (for serializing file operations)
 export { FileMutex, FileMutexMetrics } from './file-mutex.js';
+
+// OAuth Callback Server (for Google OAuth flow)
+export {
+  OAuthCallbackServer,
+  OAuthCallbackServerOptions,
+  CallbackResult,
+} from './oauth-callback-server.js';
+
+// Google OAuth Handler
+export { GoogleOAuthHandler, GoogleOAuthConfig, GoogleOAuthTokens } from './google-oauth-handler.js';

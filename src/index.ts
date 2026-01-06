@@ -69,6 +69,11 @@ import {
   handleUpdateConfig,
 } from "./tools/integrations/index.js";
 
+import {
+  type OAuthToolsContext,
+  handleAuthenticateGoogle,
+} from "./tools/oauth/index.js";
+
 // Global state
 let config: UserConfig | null = null;
 let wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
@@ -181,6 +186,33 @@ function createIntegrationToolsContext(): IntegrationToolsContext {
     },
     getNotionService: () => notionService,
     initializeServices,
+  };
+}
+
+function createOAuthToolsContext(): OAuthToolsContext {
+  return {
+    getGoogleOAuthHandler: () => {
+      const oauthConfig = {
+        clientId: process.env.GOOGLE_CLIENT_ID || '',
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+        redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/oauth/callback',
+      };
+      if (!oauthConfig.clientId || !oauthConfig.clientSecret) {
+        return null;
+      }
+      return new GoogleOAuthHandler(oauthConfig);
+    },
+    createGoogleOAuthHandler: () => {
+      const oauthConfig = {
+        clientId: process.env.GOOGLE_CLIENT_ID || '',
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+        redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/oauth/callback',
+      };
+      if (!oauthConfig.clientId || !oauthConfig.clientSecret) {
+        return null;
+      }
+      return new GoogleOAuthHandler(oauthConfig);
+    },
   };
 }
 
@@ -649,6 +681,39 @@ async function createServer(): Promise<McpServer> {
     "List available and enabled calendar sources (EventKit, Google Calendar) with their health status. Shows which sources can be used and their current state.",
     {},
     async () => handleListCalendarSources(createCalendarToolsContext()),
+  );
+
+  /**
+   * authenticate_google - Complete Google OAuth flow automatically
+   * Requirements: FR-1 (Google OAuth Auto-Callback)
+   */
+  server.tool(
+    "authenticate_google",
+    "Authenticate with Google Calendar using OAuth. Opens browser for authentication and automatically captures the callback. Returns success status with token information.",
+    {
+      force: z
+        .boolean()
+        .optional()
+        .describe("Force re-authentication even if tokens already exist"),
+      timeout: z
+        .number()
+        .optional()
+        .describe("Timeout in seconds for waiting for authentication (default: 300)"),
+    },
+    async ({ force, timeout }) => {
+      const result = await handleAuthenticateGoogle(
+        { force: force ?? false, timeout: timeout ?? 300 },
+        createOAuthToolsContext()
+      );
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
   );
 
   /**
