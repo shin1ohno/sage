@@ -153,7 +153,7 @@
   - _Requirements: FR-1, FR-4_
   - Verify: `npm test -- google-oauth-callback-handler` passes
 
-- [ ] **T-8. Add unit tests for authenticate_google remote mode**
+- [x] **T-8. Add unit tests for authenticate_google remote mode**
   - File: `src/tools/oauth/__tests__/authenticate-google.test.ts`
   - Test: isRemoteMode() returns true for non-localhost URI
   - Test: isRemoteMode() returns false for localhost URI
@@ -187,7 +187,7 @@
 
 ## Phase 4: Integration
 
-- [ ] **T-10. Add integration test for full OAuth flow**
+- [x] **T-10. Add integration test for full OAuth flow**
   - File: `src/oauth/__tests__/remote-oauth-integration.test.ts`
   - Setup: Start HTTP server with test config
   - Test flow:

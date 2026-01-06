@@ -6,15 +6,27 @@
 import { handleAuthenticateGoogle } from '../../../../src/tools/oauth/authenticate-google.js';
 import { OAuthCallbackServer } from '../../../../src/oauth/oauth-callback-server.js';
 import { GoogleOAuthHandler } from '../../../../src/oauth/google-oauth-handler.js';
+import { PendingGoogleAuthStore } from '../../../../src/oauth/pending-google-auth-store.js';
 import * as browserOpener from '../../../../src/utils/browser-opener.js';
 
 // Mock dependencies
 jest.mock('../../../../src/oauth/oauth-callback-server.js');
 jest.mock('../../../../src/oauth/google-oauth-handler.js');
+jest.mock('../../../../src/oauth/pending-google-auth-store.js');
 jest.mock('../../../../src/utils/browser-opener.js');
+jest.mock('googleapis', () => ({
+  google: {
+    auth: {
+      OAuth2: jest.fn().mockImplementation(() => ({
+        generateAuthUrl: jest.fn().mockReturnValue('https://accounts.google.com/oauth?remote=true'),
+      })),
+    },
+  },
+}));
 
 const MockOAuthCallbackServer = OAuthCallbackServer as jest.MockedClass<typeof OAuthCallbackServer>;
 const MockGoogleOAuthHandler = GoogleOAuthHandler as jest.MockedClass<typeof GoogleOAuthHandler>;
+const MockPendingGoogleAuthStore = PendingGoogleAuthStore as jest.MockedClass<typeof PendingGoogleAuthStore>;
 const mockOpenBrowser = browserOpener.openBrowser as jest.MockedFunction<
   typeof browserOpener.openBrowser
 >;
@@ -265,6 +277,142 @@ describe('handleAuthenticateGoogle', () => {
 
       expect(result.success).toBe(false);
       expect(result.message).toContain('コールバックサーバーの起動に失敗');
+    });
+  });
+
+  describe('Remote Mode (T-8)', () => {
+    beforeEach(() => {
+      MockGoogleOAuthHandler.prototype.getTokens = jest.fn().mockResolvedValue(null);
+
+      // Setup PendingGoogleAuthStore mock
+      MockPendingGoogleAuthStore.prototype.initialize = jest.fn().mockResolvedValue(undefined);
+      MockPendingGoogleAuthStore.prototype.create = jest.fn().mockReturnValue({
+        state: 'test-state-uuid',
+        codeVerifier: 'test-code-verifier',
+        codeChallenge: 'test-code-challenge',
+      });
+      MockPendingGoogleAuthStore.prototype.getSessionTimeoutSeconds = jest.fn().mockReturnValue(600);
+    });
+
+    it('should use local mode when GOOGLE_REDIRECT_URI contains localhost', async () => {
+      process.env.GOOGLE_REDIRECT_URI = 'http://localhost:3000/oauth/callback';
+
+      MockOAuthCallbackServer.prototype.start = jest.fn().mockResolvedValue({
+        port: 3000,
+        callbackUrl: 'http://127.0.0.1:3000/oauth/callback',
+      });
+      MockOAuthCallbackServer.prototype.waitForCallback = jest.fn().mockResolvedValue({
+        success: true,
+        code: 'auth-code',
+      });
+      MockOAuthCallbackServer.prototype.shutdown = jest.fn().mockResolvedValue(undefined);
+
+      MockGoogleOAuthHandler.prototype.getAuthorizationUrl = jest
+        .fn()
+        .mockResolvedValue('https://accounts.google.com/oauth?...');
+      MockGoogleOAuthHandler.prototype.exchangeCodeForTokens = jest.fn().mockResolvedValue({
+        accessToken: 'token',
+        refreshToken: 'refresh',
+        expiresAt: Date.now() + 3600000,
+        scope: ['calendar'],
+      });
+      MockGoogleOAuthHandler.prototype.storeTokens = jest.fn().mockResolvedValue(undefined);
+
+      mockOpenBrowser.mockResolvedValue({ success: true });
+
+      const result = await handleAuthenticateGoogle({ force: false, timeout: 300 }, mockContext);
+
+      // Local mode should use OAuthCallbackServer
+      expect(MockOAuthCallbackServer.prototype.start).toHaveBeenCalled();
+      expect(result.pendingAuth).toBeUndefined();
+    });
+
+    it('should use local mode when GOOGLE_REDIRECT_URI contains 127.0.0.1', async () => {
+      process.env.GOOGLE_REDIRECT_URI = 'http://127.0.0.1:3000/oauth/callback';
+
+      MockOAuthCallbackServer.prototype.start = jest.fn().mockResolvedValue({
+        port: 3000,
+        callbackUrl: 'http://127.0.0.1:3000/oauth/callback',
+      });
+      MockOAuthCallbackServer.prototype.waitForCallback = jest.fn().mockResolvedValue({
+        success: true,
+        code: 'auth-code',
+      });
+      MockOAuthCallbackServer.prototype.shutdown = jest.fn().mockResolvedValue(undefined);
+
+      MockGoogleOAuthHandler.prototype.getAuthorizationUrl = jest
+        .fn()
+        .mockResolvedValue('https://accounts.google.com/oauth?...');
+      MockGoogleOAuthHandler.prototype.exchangeCodeForTokens = jest.fn().mockResolvedValue({
+        accessToken: 'token',
+        refreshToken: 'refresh',
+        expiresAt: Date.now() + 3600000,
+        scope: ['calendar'],
+      });
+      MockGoogleOAuthHandler.prototype.storeTokens = jest.fn().mockResolvedValue(undefined);
+
+      mockOpenBrowser.mockResolvedValue({ success: true });
+
+      const result = await handleAuthenticateGoogle({ force: false, timeout: 300 }, mockContext);
+
+      expect(MockOAuthCallbackServer.prototype.start).toHaveBeenCalled();
+      expect(result.pendingAuth).toBeUndefined();
+    });
+
+    it('should use remote mode when GOOGLE_REDIRECT_URI is a server URL', async () => {
+      process.env.GOOGLE_REDIRECT_URI = 'https://mcp.example.com/oauth/google/callback';
+
+      const result = await handleAuthenticateGoogle({ force: false, timeout: 300 }, mockContext);
+
+      // Remote mode should not start local server
+      expect(MockOAuthCallbackServer.prototype.start).not.toHaveBeenCalled();
+      // Should return authorization URL for user to open manually
+      expect(result.success).toBe(true);
+      expect(result.pendingAuth).toBe(true);
+      expect(result.authorizationUrl).toBeDefined();
+      expect(result.state).toBe('test-state-uuid');
+      expect(result.expiresIn).toBe(600);
+      expect(result.message).toContain('URLをブラウザで開いて');
+    });
+
+    it('should create pending session in remote mode', async () => {
+      process.env.GOOGLE_REDIRECT_URI = 'https://mcp.example.com/oauth/google/callback';
+
+      const result = await handleAuthenticateGoogle({ force: false, timeout: 300 }, mockContext);
+
+      // Verify remote mode returns expected fields
+      expect(result.pendingAuth).toBe(true);
+      expect(result.state).toBeDefined();
+    });
+
+    it('should return expiresIn in remote mode', async () => {
+      process.env.GOOGLE_REDIRECT_URI = 'https://mcp.example.com/oauth/google/callback';
+
+      const result = await handleAuthenticateGoogle({ force: false, timeout: 300 }, mockContext);
+
+      // expiresIn should be a positive number
+      expect(result.expiresIn).toBeGreaterThan(0);
+    });
+
+    it('should still check existing tokens in remote mode', async () => {
+      process.env.GOOGLE_REDIRECT_URI = 'https://mcp.example.com/oauth/google/callback';
+
+      const mockTokens = {
+        accessToken: 'existing-token',
+        refreshToken: 'refresh-token',
+        expiresAt: Date.now() + 3600000,
+        scope: ['calendar'],
+      };
+
+      MockGoogleOAuthHandler.prototype.getTokens = jest.fn().mockResolvedValue(mockTokens);
+      MockGoogleOAuthHandler.prototype.validateToken = jest.fn().mockResolvedValue(true);
+
+      const result = await handleAuthenticateGoogle({ force: false, timeout: 300 }, mockContext);
+
+      // Should return early with existing tokens even in remote mode
+      expect(result.success).toBe(true);
+      expect(result.alreadyAuthenticated).toBe(true);
+      expect(result.pendingAuth).toBeUndefined();
     });
   });
 });

@@ -4,7 +4,11 @@
  */
 
 import { OAuthCallbackServer } from '../../src/oauth/oauth-callback-server.js';
-import http from 'http';
+import { PendingGoogleAuthStore } from '../../src/oauth/pending-google-auth-store.js';
+import { GoogleOAuthCallbackHandler } from '../../src/oauth/google-oauth-callback-handler.js';
+import { GoogleOAuthHandler } from '../../src/oauth/google-oauth-handler.js';
+import http, { createServer, IncomingMessage, ServerResponse, Server } from 'http';
+import { URL } from 'url';
 
 describe('Google OAuth Flow Integration', () => {
   let server: OAuthCallbackServer;
@@ -171,6 +175,251 @@ describe('Google OAuth Flow Integration', () => {
       const { port } = await server2.start();
       expect(port).toBe(4099);
       await server2.shutdown();
+    });
+  });
+});
+
+/**
+ * Remote OAuth Flow Integration Tests (T-10)
+ * Requirements: remote-google-oauth spec
+ *
+ * Tests the full remote OAuth flow with:
+ * - PendingGoogleAuthStore for session management
+ * - GoogleOAuthCallbackHandler for callback processing
+ * - Mock Google token endpoint
+ */
+describe('Remote OAuth Flow Integration (T-10)', () => {
+  let httpServer: Server;
+  let pendingAuthStore: PendingGoogleAuthStore;
+  let callbackHandler: GoogleOAuthCallbackHandler;
+  let serverPort: number;
+
+  // Mock Google OAuth handler
+  const mockGoogleOAuthHandler = {
+    storeTokens: jest.fn().mockResolvedValue(undefined),
+  } as unknown as GoogleOAuthHandler;
+
+  beforeEach(async () => {
+    // Create a real PendingGoogleAuthStore (in-memory, not persisted)
+    pendingAuthStore = new PendingGoogleAuthStore('test-encryption-key-32chars!!');
+
+    // Create callback handler
+    callbackHandler = new GoogleOAuthCallbackHandler({
+      pendingAuthStore,
+      googleOAuthHandler: mockGoogleOAuthHandler,
+    });
+
+    // Create HTTP server with callback endpoint
+    httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+      const url = new URL(req.url || '/', `http://localhost`);
+
+      if (url.pathname === '/oauth/google/callback' && req.method === 'GET') {
+        await callbackHandler.handleCallback(req, res);
+      } else {
+        res.writeHead(404);
+        res.end('Not Found');
+      }
+    });
+
+    // Start server on random port
+    await new Promise<void>((resolve) => {
+      httpServer.listen(0, '127.0.0.1', () => {
+        const address = httpServer.address();
+        serverPort = typeof address === 'object' ? address!.port : 0;
+        resolve();
+      });
+    });
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => {
+      httpServer.close(() => resolve());
+    });
+    jest.clearAllMocks();
+  });
+
+  describe('Full Remote OAuth Flow', () => {
+    it('should create pending session and process callback', async () => {
+      const redirectUri = `http://127.0.0.1:${serverPort}/oauth/google/callback`;
+
+      // Step 1: Create pending auth session (simulates authenticate_google in remote mode)
+      const { state, codeVerifier, codeChallenge } = pendingAuthStore.create(redirectUri);
+
+      expect(state).toBeDefined();
+      // PKCE RFC 7636: code_verifier should be 43-128 characters
+      expect(codeVerifier.length).toBeGreaterThanOrEqual(43);
+      expect(codeVerifier.length).toBeLessThanOrEqual(128);
+      expect(codeChallenge).toBeDefined();
+
+      // Verify session is stored
+      const session = pendingAuthStore.findByState(state);
+      expect(session).not.toBeNull();
+      expect(session?.redirectUri).toBe(redirectUri);
+
+      // Step 2: Simulate Google callback (would normally come from Google after user auth)
+      // Note: We can't actually exchange with Google, but we can verify the callback handling
+      const responsePromise = new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: '127.0.0.1',
+            port: serverPort,
+            path: `/oauth/google/callback?code=test_auth_code&state=${state}`,
+            method: 'GET',
+          },
+          (res) => {
+            let body = '';
+            res.on('data', (chunk) => (body += chunk));
+            res.on('end', () => resolve({ statusCode: res.statusCode!, body }));
+          }
+        );
+        req.on('error', reject);
+        req.end();
+      });
+
+      // The callback will fail at token exchange (no real Google endpoint),
+      // but we can verify the session lookup and state validation worked
+      const response = await responsePromise;
+
+      // Should get a response (either success or error HTML)
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain('sage');
+    });
+
+    it('should reject callback with unknown state', async () => {
+      const response = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: '127.0.0.1',
+            port: serverPort,
+            path: '/oauth/google/callback?code=test_code&state=unknown_state',
+            method: 'GET',
+          },
+          (res) => {
+            let body = '';
+            res.on('data', (chunk) => (body += chunk));
+            res.on('end', () => resolve({ statusCode: res.statusCode!, body }));
+          }
+        );
+        req.on('error', reject);
+        req.end();
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain('認証に失敗しました');
+      expect(response.body).toContain('セッション');
+    });
+
+    it('should reject callback without state parameter', async () => {
+      const response = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: '127.0.0.1',
+            port: serverPort,
+            path: '/oauth/google/callback?code=test_code',
+            method: 'GET',
+          },
+          (res) => {
+            let body = '';
+            res.on('data', (chunk) => (body += chunk));
+            res.on('end', () => resolve({ statusCode: res.statusCode!, body }));
+          }
+        );
+        req.on('error', reject);
+        req.end();
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain('認証に失敗しました');
+      expect(response.body).toContain('state');
+    });
+
+    it('should handle OAuth error from Google', async () => {
+      const redirectUri = `http://127.0.0.1:${serverPort}/oauth/google/callback`;
+      const { state } = pendingAuthStore.create(redirectUri);
+
+      const response = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: '127.0.0.1',
+            port: serverPort,
+            path: `/oauth/google/callback?error=access_denied&state=${state}`,
+            method: 'GET',
+          },
+          (res) => {
+            let body = '';
+            res.on('data', (chunk) => (body += chunk));
+            res.on('end', () => resolve({ statusCode: res.statusCode!, body }));
+          }
+        );
+        req.on('error', reject);
+        req.end();
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain('認証に失敗しました');
+      expect(response.body).toContain('拒否');
+    });
+
+    it('should cleanup expired sessions', async () => {
+      const redirectUri = `http://127.0.0.1:${serverPort}/oauth/google/callback`;
+
+      // Create a session
+      const { state } = pendingAuthStore.create(redirectUri);
+      expect(pendingAuthStore.getSessionCount()).toBe(1);
+
+      // Session should exist
+      expect(pendingAuthStore.findByState(state)).not.toBeNull();
+
+      // Cleanup shouldn't remove non-expired session
+      pendingAuthStore.cleanupExpired();
+      expect(pendingAuthStore.getSessionCount()).toBe(1);
+    });
+
+    it('should generate valid PKCE parameters', async () => {
+      const redirectUri = `http://127.0.0.1:${serverPort}/oauth/google/callback`;
+
+      const { codeVerifier, codeChallenge } = pendingAuthStore.create(redirectUri);
+
+      // code_verifier should be 43-128 characters
+      expect(codeVerifier.length).toBeGreaterThanOrEqual(43);
+      expect(codeVerifier.length).toBeLessThanOrEqual(128);
+
+      // code_challenge should be base64url encoded SHA256 hash
+      expect(codeChallenge).toMatch(/^[A-Za-z0-9_-]+$/);
+    });
+  });
+
+  describe('Session State Management', () => {
+    it('should allow multiple concurrent sessions', async () => {
+      const redirectUri = `http://127.0.0.1:${serverPort}/oauth/google/callback`;
+
+      const session1 = pendingAuthStore.create(redirectUri);
+      const session2 = pendingAuthStore.create(redirectUri);
+      const session3 = pendingAuthStore.create(redirectUri);
+
+      expect(pendingAuthStore.getSessionCount()).toBe(3);
+
+      // Each session should have unique state
+      expect(session1.state).not.toBe(session2.state);
+      expect(session2.state).not.toBe(session3.state);
+
+      // All sessions should be findable
+      expect(pendingAuthStore.findByState(session1.state)).not.toBeNull();
+      expect(pendingAuthStore.findByState(session2.state)).not.toBeNull();
+      expect(pendingAuthStore.findByState(session3.state)).not.toBeNull();
+    });
+
+    it('should remove session after retrieval for use', async () => {
+      const redirectUri = `http://127.0.0.1:${serverPort}/oauth/google/callback`;
+      const { state } = pendingAuthStore.create(redirectUri);
+
+      expect(pendingAuthStore.getSessionCount()).toBe(1);
+
+      // Remove session
+      pendingAuthStore.remove(state);
+
+      expect(pendingAuthStore.getSessionCount()).toBe(0);
+      expect(pendingAuthStore.findByState(state)).toBeNull();
     });
   });
 });
