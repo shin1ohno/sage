@@ -19,6 +19,9 @@ describe('Remote MCP Authentication E2E', () => {
   const testDir = join(tmpdir(), 'sage-remote-auth-e2e-' + Date.now());
   let server: HTTPServerWithConfig | null = null;
 
+  // Increase timeout for E2E tests with server startup
+  jest.setTimeout(30000);
+
   beforeAll(async () => {
     await mkdir(testDir, { recursive: true });
   });
@@ -36,7 +39,7 @@ describe('Remote MCP Authentication E2E', () => {
       await server.stop();
       server = null;
     }
-  });
+  }, 15000);
 
   describe('Complete Authentication Flow', () => {
     const validSecret = 'e2e-test-secret-key-at-least-32-characters-long';
