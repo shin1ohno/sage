@@ -297,6 +297,23 @@ export const CreateEventRequestSchema = z
         'Birthday and workingLocation events must be all-day events. Set isAllDay to true.',
       path: ['isAllDay'],
     }
+  )
+  .refine(
+    (data) => {
+      // Enforce timed (non-all-day) constraint for focusTime and outOfOffice events
+      // Google Calendar API does not allow all-day events for these types
+      const eventType = data.eventType || 'default';
+
+      if (eventType === 'focusTime' || eventType === 'outOfOffice') {
+        return data.isAllDay !== true;
+      }
+      return true;
+    },
+    {
+      message:
+        'Focus Time and Out of Office events cannot be all-day events. Set isAllDay to false or omit it.',
+      path: ['isAllDay'],
+    }
   );
 
 /**

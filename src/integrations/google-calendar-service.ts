@@ -308,6 +308,10 @@ export class GoogleCalendarService {
         break;
 
       case 'workingLocation':
+        // Google Calendar API requires visibility: 'public' and transparency: 'transparent'
+        // for workingLocation events
+        payload.visibility = 'public';
+        payload.transparency = 'transparent';
         if (request.workingLocationProperties) {
           const props = request.workingLocationProperties;
           // Build workingLocationProperties based on type
