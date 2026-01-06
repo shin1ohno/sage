@@ -1,6 +1,99 @@
 # Session Progress - sage
 
-## Current Session: 2026-01-06 - E2Eテストタイムアウト移行
+## Current Session: 2026-01-07 - MCPHandler Tool Tests追加
+
+### 完了タスク
+
+#### MCPHandler Tool Tests作成 ✅
+
+**目的**: MCPHandlerのツールハンドラーをテストするための包括的なテストファイルを作成
+
+**新規ファイル**:
+- `tests/unit/mcp-handler-tools.test.ts` - 57テスト
+
+**テストカテゴリ**:
+
+1. **Calendar Tools** (13テスト)
+   - `list_calendar_events`: MCP応答フォーマット、config欠如時の処理、パラメータ検証
+   - `create_calendar_event`: 基本機能、eventType対応（outOfOffice, focusTime）
+   - `find_available_slots`: 基本機能、オプションパラメータ
+   - `list_calendar_sources`: 基本機能、config欠如時の処理
+
+2. **Reminder Tools** (10テスト)
+   - `set_reminder`: MCP応答フォーマット、オプションパラメータ、reminder type全種
+   - `list_todos`: フィルターパラメータ（priority, status, source）
+
+3. **Task Tools** (14テスト)
+   - `sync_tasks`: 基本機能、config欠如時の処理
+   - `detect_duplicates`: autoMergeパラメータ
+   - `update_task_status`: status/sourceの全値、syncAcrossSources
+   - `analyze_tasks`: タスク配列処理、空配列処理
+
+4. **Integration Tools** (10テスト)
+   - `sync_to_notion`: Notion連携、priority全値
+   - `update_config`: section全値（user, calendar, priorityRules等）
+
+5. **Tool Response Format Consistency** (1テスト)
+   - 全ツールのレスポンスフォーマット一貫性検証
+
+6. **Error Handling** (2テスト)
+   - 不明ツールのエラー処理
+   - ツールエラーのcontent内返却
+
+7. **Tool Definitions** (7テスト)
+   - 各カテゴリのスキーマ検証
+
+**テスト結果**:
+```
+Test Suites: 1 passed, 1 total
+Tests:       57 passed, 57 total
+```
+
+**参照ファイル**:
+- `/home/shin1ohno/ManagedProjects/sage/src/cli/mcp-handler.ts`
+- `/home/shin1ohno/ManagedProjects/sage/tests/unit/mcp-handler.test.ts`
+- `/home/shin1ohno/ManagedProjects/sage/tests/utils/mock-config.ts`
+
+---
+
+#### MCPHandler初期化テスト作成 ✅
+
+**目的**: MCPHandlerの初期化メソッド（initialize, initializeServices）をテスト
+
+**新規ファイル**:
+- `tests/unit/mcp-handler-init.test.ts` - 9テスト
+
+**テストカテゴリ**:
+
+1. **initialize()** (4テスト)
+   - 有効な設定で初期化成功
+   - 設定読み込み失敗時のグレースフルハンドリング
+   - null設定時のグレースフルハンドリング
+   - 既に初期化済みの場合はスキップ
+
+2. **initializeServices()** (2テスト)
+   - 有効な設定ですべての必要サービス作成
+   - 部分的な設定でもハンドラーは機能
+
+3. **handler functionality after initialization** (3テスト)
+   - 初期化後の`tools/list`リクエスト処理
+   - 初期化後の`initialize` MCPリクエスト処理
+   - 設定なしの場合のセットアップ要求応答
+
+**テスト結果**:
+```
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total
+```
+
+**モック戦略**:
+- `jest.mock()` で ConfigLoader をモック
+- `getHotReloadConfig` をモックしてホットリロードを無効化
+- `DEFAULT_CONFIG` をベースに `createTestConfig()` ヘルパーで設定を生成
+
+---
+
+## Previous Session: 2026-01-06 - E2Eテストタイムアウト移行
 
 ### 完了タスク
 
