@@ -283,22 +283,28 @@ export class GoogleCalendarService {
 
     switch (eventType) {
       case 'outOfOffice':
-        if (request.outOfOfficeProperties) {
-          payload.outOfOfficeProperties = {
-            autoDeclineMode: request.outOfOfficeProperties.autoDeclineMode,
-            declineMessage: request.outOfOfficeProperties.declineMessage,
-          };
-        }
+        // Google Calendar API requires transparency: 'opaque' for OOO events
+        payload.transparency = 'opaque';
+        // outOfOfficeProperties object is required (can be empty)
+        payload.outOfOfficeProperties = request.outOfOfficeProperties
+          ? {
+              autoDeclineMode: request.outOfOfficeProperties.autoDeclineMode,
+              declineMessage: request.outOfOfficeProperties.declineMessage,
+            }
+          : {};
         break;
 
       case 'focusTime':
-        if (request.focusTimeProperties) {
-          payload.focusTimeProperties = {
-            autoDeclineMode: request.focusTimeProperties.autoDeclineMode,
-            declineMessage: request.focusTimeProperties.declineMessage,
-            chatStatus: request.focusTimeProperties.chatStatus,
-          };
-        }
+        // Google Calendar API requires transparency: 'opaque' for Focus Time events
+        payload.transparency = 'opaque';
+        // focusTimeProperties object is required (can be empty)
+        payload.focusTimeProperties = request.focusTimeProperties
+          ? {
+              autoDeclineMode: request.focusTimeProperties.autoDeclineMode,
+              declineMessage: request.focusTimeProperties.declineMessage,
+              chatStatus: request.focusTimeProperties.chatStatus,
+            }
+          : {};
         break;
 
       case 'workingLocation':
