@@ -31,15 +31,8 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run tests
-        run: npm test -- --maxWorkers=2
-        timeout-minutes: 15
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
-
-      - name: Check test coverage
+      - name: Run tests with coverage
         run: npm run test:coverage -- --maxWorkers=2
-        continue-on-error: true
-        timeout-minutes: 10
+        timeout-minutes: 15
         env:
           NODE_OPTIONS: --max-old-space-size=4096
