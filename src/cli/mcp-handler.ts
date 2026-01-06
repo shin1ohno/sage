@@ -1264,7 +1264,7 @@ class MCPHandlerImpl implements MCPHandler {
       {
         name: 'create_calendar_event',
         description:
-          'Create a new calendar event with optional location, notes, and alarms.',
+          'Create a new calendar event with support for Google Calendar event types (OOO, Focus Time, Working Location, etc.).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1290,6 +1290,39 @@ class MCPHandlerImpl implements MCPHandler {
               items: { type: 'string' },
               description: "Optional: Override default alarms with custom settings (e.g., ['-15m', '-1h']). If omitted, calendar's default alarm settings apply.",
             },
+            eventType: {
+              type: 'string',
+              enum: ['default', 'outOfOffice', 'focusTime', 'workingLocation', 'birthday'],
+              description: "Event type: 'default' (normal), 'outOfOffice' (vacation/OOO with auto-decline), 'focusTime' (deep work), 'workingLocation', 'birthday'. Default: 'default'. Note: Non-default types require Google Calendar.",
+            },
+            autoDeclineMode: {
+              type: 'string',
+              enum: ['declineNone', 'declineAllConflictingInvitations', 'declineOnlyNewConflictingInvitations'],
+              description: 'For outOfOffice/focusTime: auto-decline behavior for conflicting invitations',
+            },
+            declineMessage: {
+              type: 'string',
+              description: 'For outOfOffice/focusTime: custom message sent when auto-declining invitations',
+            },
+            chatStatus: {
+              type: 'string',
+              enum: ['available', 'doNotDisturb'],
+              description: 'For focusTime: Google Chat status during focus time',
+            },
+            workingLocationType: {
+              type: 'string',
+              enum: ['homeOffice', 'officeLocation', 'customLocation'],
+              description: 'For workingLocation: type of work location',
+            },
+            workingLocationLabel: {
+              type: 'string',
+              description: 'For workingLocation: optional label for the location (e.g., office name)',
+            },
+            birthdayType: {
+              type: 'string',
+              enum: ['birthday', 'anniversary', 'other'],
+              description: 'For birthday: type of birthday event',
+            },
           },
           required: ['title', 'startDate', 'endDate'],
         },
@@ -1302,6 +1335,13 @@ class MCPHandlerImpl implements MCPHandler {
           location: args.location as string | undefined,
           notes: args.notes as string | undefined,
           calendarName: args.calendarName as string | undefined,
+          eventType: args.eventType as string | undefined,
+          autoDeclineMode: args.autoDeclineMode as string | undefined,
+          declineMessage: args.declineMessage as string | undefined,
+          chatStatus: args.chatStatus as string | undefined,
+          workingLocationType: args.workingLocationType as string | undefined,
+          workingLocationLabel: args.workingLocationLabel as string | undefined,
+          birthdayType: args.birthdayType as string | undefined,
         })
     );
 
