@@ -179,6 +179,24 @@ describe('Google OAuth Flow Integration', () => {
   });
 });
 
+// Mock googleapis for token exchange
+jest.mock('googleapis', () => ({
+  google: {
+    auth: {
+      OAuth2: jest.fn().mockImplementation(() => ({
+        getToken: jest.fn().mockResolvedValue({
+          tokens: {
+            access_token: 'mock-access-token',
+            refresh_token: 'mock-refresh-token',
+            expiry_date: Date.now() + 3600000,
+            scope: 'https://www.googleapis.com/auth/calendar',
+          },
+        }),
+      })),
+    },
+  },
+}));
+
 /**
  * Remote OAuth Flow Integration Tests (T-10)
  * Requirements: remote-google-oauth spec
@@ -200,10 +218,12 @@ describe('Remote OAuth Flow Integration (T-10)', () => {
   } as unknown as GoogleOAuthHandler;
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+
     // Create a real PendingGoogleAuthStore (in-memory, not persisted)
     pendingAuthStore = new PendingGoogleAuthStore('test-encryption-key-32chars!!');
 
-    // Create callback handler
+    // Create callback handler with mocked Google OAuth handler
     callbackHandler = new GoogleOAuthCallbackHandler({
       pendingAuthStore,
       googleOAuthHandler: mockGoogleOAuthHandler,
@@ -276,13 +296,16 @@ describe('Remote OAuth Flow Integration (T-10)', () => {
         req.end();
       });
 
-      // The callback will fail at token exchange (no real Google endpoint),
-      // but we can verify the session lookup and state validation worked
+      // With mocked GoogleOAuthHandler, the callback should succeed
       const response = await responsePromise;
 
-      // Should get a response (either success or error HTML)
+      // Should get success HTML response
       expect(response.statusCode).toBe(200);
+      expect(response.body).toContain('認証が完了しました');
       expect(response.body).toContain('sage');
+
+      // Verify tokens were stored via GoogleOAuthHandler
+      expect(mockGoogleOAuthHandler.storeTokens).toHaveBeenCalled();
     });
 
     it('should reject callback with unknown state', async () => {
