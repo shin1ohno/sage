@@ -3,18 +3,18 @@
  * Requirements: FR-1 (authenticate_google MCP Tool)
  *
  * Orchestrates the complete Google OAuth flow:
- * 1. Check for existing tokens
- * 2. Start callback server
- * 3. Generate authorization URL
- * 4. Open browser
- * 5. Wait for callback
- * 6. Exchange code for tokens
- * 7. Store tokens
+ * - Local mode: Start callback server, open browser, wait for callback
+ * - Remote mode: Return authorization URL for user to open manually
+ *
+ * Mode is determined by GOOGLE_REDIRECT_URI:
+ * - Contains 'localhost' or '127.0.0.1' -> Local mode
+ * - Otherwise -> Remote mode (server receives callback directly)
  */
 
 import { z } from 'zod';
 import { OAuthCallbackServer } from '../../oauth/oauth-callback-server.js';
-import { GoogleOAuthHandler } from '../../oauth/google-oauth-handler.js';
+import { GoogleOAuthHandler, GOOGLE_CALENDAR_SCOPES } from '../../oauth/google-oauth-handler.js';
+import { PendingGoogleAuthStore } from '../../oauth/pending-google-auth-store.js';
 import { openBrowser } from '../../utils/browser-opener.js';
 import { oauthLogger } from '../../utils/logger.js';
 import type { OAuthToolsContext } from './index.js';
@@ -42,6 +42,56 @@ export interface AuthenticateGoogleResult {
   scopes?: string[];
   authorizationUrl?: string;
   error?: string;
+  // Remote mode fields
+  state?: string;
+  pendingAuth?: boolean;
+  expiresIn?: number;
+}
+
+/**
+ * Singleton instance of PendingGoogleAuthStore for remote mode
+ */
+let pendingAuthStore: PendingGoogleAuthStore | null = null;
+
+/**
+ * Get or create the pending auth store
+ */
+async function getPendingAuthStore(): Promise<PendingGoogleAuthStore> {
+  if (!pendingAuthStore) {
+    pendingAuthStore = new PendingGoogleAuthStore();
+    await pendingAuthStore.initialize();
+  }
+  return pendingAuthStore;
+}
+
+/**
+ * Export the pending auth store for use by HTTP server
+ */
+export function getSharedPendingAuthStore(): PendingGoogleAuthStore | null {
+  return pendingAuthStore;
+}
+
+/**
+ * Set the shared pending auth store (called by HTTP server)
+ */
+export function setSharedPendingAuthStore(store: PendingGoogleAuthStore): void {
+  pendingAuthStore = store;
+}
+
+/**
+ * Check if running in remote mode
+ *
+ * Remote mode is enabled when GOOGLE_REDIRECT_URI is set and
+ * does not point to localhost/127.0.0.1.
+ */
+function isRemoteMode(): boolean {
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  if (!redirectUri) {
+    return false;
+  }
+
+  const lowerUri = redirectUri.toLowerCase();
+  return !lowerUri.includes('localhost') && !lowerUri.includes('127.0.0.1');
 }
 
 /**
@@ -121,7 +171,12 @@ export async function handleAuthenticateGoogle(
     }
   }
 
-  // Start callback server
+  // Remote mode: return authorization URL for user to open manually
+  if (isRemoteMode()) {
+    return handleRemoteModeAuth(oauthHandler, redirectUri);
+  }
+
+  // Local mode: Start callback server
   const callbackServer = new OAuthCallbackServer({
     timeout: timeout * 1000, // Convert to milliseconds
   });
@@ -221,5 +276,61 @@ export async function handleAuthenticateGoogle(
   } finally {
     // Always shutdown the server
     await callbackServer.shutdown();
+  }
+}
+
+/**
+ * Handle remote mode authentication
+ *
+ * In remote mode, we return the authorization URL for the user to open
+ * manually in their browser. The server will receive the callback directly.
+ */
+async function handleRemoteModeAuth(
+  _oauthHandler: GoogleOAuthHandler,
+  redirectUri: string
+): Promise<AuthenticateGoogleResult> {
+  try {
+    const store = await getPendingAuthStore();
+
+    // Create pending auth session (codeVerifier is stored in the session for later use)
+    const { state, codeChallenge } = store.create(redirectUri);
+
+    // Generate authorization URL with PKCE
+    const { google } = await import('googleapis');
+
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      redirectUri
+    );
+
+    const authorizationUrl = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: GOOGLE_CALENDAR_SCOPES,
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      prompt: 'consent',
+      state,
+    } as any);
+
+    oauthLogger.info({ state, redirectUri }, 'Generated remote mode authorization URL');
+
+    return {
+      success: true,
+      message: '以下のURLをブラウザで開いてGoogle認証を完了してください。',
+      authorizationUrl,
+      state,
+      pendingAuth: true,
+      expiresIn: store.getSessionTimeoutSeconds(),
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    oauthLogger.error({ error }, 'Remote mode auth failed');
+
+    return {
+      success: false,
+      message: '認証URLの生成に失敗しました。',
+      error: errorMessage,
+    };
   }
 }

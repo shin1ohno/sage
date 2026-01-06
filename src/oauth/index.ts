@@ -39,3 +39,16 @@ export {
 
 // Google OAuth Handler
 export { GoogleOAuthHandler, GoogleOAuthConfig, GoogleOAuthTokens } from './google-oauth-handler.js';
+
+// Pending Google Auth Store (for remote OAuth mode)
+export {
+  PendingGoogleAuthStore,
+  PendingGoogleAuth,
+  CreatePendingAuthResult,
+} from './pending-google-auth-store.js';
+
+// Google OAuth Callback Handler (for remote OAuth mode)
+export {
+  GoogleOAuthCallbackHandler,
+  GoogleOAuthCallbackHandlerOptions,
+} from './google-oauth-callback-handler.js';

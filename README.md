@@ -103,6 +103,45 @@ sage now supports multiple calendar sources:
 
 **Setup**: See [Configuration Guide](docs/CONFIGURATION.md#google-calendar-integration) for Google OAuth setup instructions.
 
+### Remote Server Google OAuth Setup
+
+When running sage as a remote MCP server (e.g., on a VPS or cloud instance), you can use Google Calendar by setting up a Web Application OAuth client:
+
+**1. Create OAuth Client in Google Cloud Console**
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Navigate to "APIs & Services" → "Credentials" → "Create Credentials" → "OAuth client ID"
+3. Application type: **Web application**
+4. Authorized redirect URIs:
+   - Local development: `http://localhost:3000/oauth/callback`
+   - Production server: `https://mcp.example.com/oauth/google/callback`
+
+**2. Configure Environment Variables**
+
+```bash
+export GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+export GOOGLE_CLIENT_SECRET="your-client-secret"
+export GOOGLE_REDIRECT_URI="https://mcp.example.com/oauth/google/callback"
+```
+
+**3. Authenticate**
+
+From Claude, run the `authenticate_google` tool:
+
+1. The tool returns an authorization URL
+2. Open the URL in your browser
+3. Complete Google authentication
+4. The server receives the callback automatically
+5. A success page is displayed - close the window and return to Claude
+
+**Troubleshooting**
+
+| Issue | Solution |
+|-------|----------|
+| `redirect_uri_mismatch` | Ensure the redirect URI in Google Cloud Console exactly matches `GOOGLE_REDIRECT_URI` |
+| Session expired | Complete authentication within 10 minutes |
+| 503 from callback | Verify `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set |
+
 ### Smart Reminder Routing
 
 Tasks are automatically routed to the appropriate system:

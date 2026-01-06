@@ -16,7 +16,14 @@ import {
 } from './remote-config-loader.js';
 import { createSecretAuthenticator, SecretAuthenticator } from './secret-auth.js';
 import { createMCPHandler, MCPHandler, MCPRequest } from './mcp-handler.js';
-import { OAuthServer, OAuthHandler } from '../oauth/index.js';
+import {
+  OAuthServer,
+  OAuthHandler,
+  PendingGoogleAuthStore,
+  GoogleOAuthCallbackHandler,
+  GoogleOAuthHandler,
+} from '../oauth/index.js';
+import { setSharedPendingAuthStore } from '../tools/oauth/authenticate-google.js';
 import { cliLogger } from '../utils/logger.js';
 
 /**
@@ -106,6 +113,9 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   private oauthServer: OAuthServer | null = null;
   private oauthHandler: OAuthHandler | null = null;
   private debug: boolean = false;
+  // Google OAuth remote mode handlers
+  private pendingGoogleAuthStore: PendingGoogleAuthStore | null = null;
+  private googleOAuthCallbackHandler: GoogleOAuthCallbackHandler | null = null;
 
   constructor(config: RemoteConfig, options: HTTPServerWithConfigOptions) {
     this.config = config;
@@ -159,6 +169,32 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
     // Initialize MCP handler
     this.mcpHandler = await createMCPHandler();
+
+    // Initialize Google OAuth callback handler for remote mode
+    if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+      const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+      // Only enable remote mode if redirect URI is not localhost
+      if (redirectUri && !redirectUri.toLowerCase().includes('localhost') && !redirectUri.toLowerCase().includes('127.0.0.1')) {
+        this.pendingGoogleAuthStore = new PendingGoogleAuthStore();
+        await this.pendingGoogleAuthStore.initialize();
+
+        // Share the store with authenticate_google tool
+        setSharedPendingAuthStore(this.pendingGoogleAuthStore);
+
+        const googleOAuthHandler = new GoogleOAuthHandler({
+          clientId: process.env.GOOGLE_CLIENT_ID,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          redirectUri,
+        });
+
+        this.googleOAuthCallbackHandler = new GoogleOAuthCallbackHandler({
+          pendingAuthStore: this.pendingGoogleAuthStore,
+          googleOAuthHandler,
+        });
+
+        cliLogger.info({ redirectUri }, 'Google OAuth remote mode enabled');
+      }
+    }
 
     // Initialize OAuth if configured (Requirements 21-31)
     if (this.config.remote.auth.type === 'oauth2') {
@@ -232,6 +268,11 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     if (this.oauthServer) {
       cliLogger.info('Shutting down, flushing OAuth data...');
       await this.oauthServer.shutdown();
+    }
+
+    // Shutdown Google OAuth pending auth store
+    if (this.pendingGoogleAuthStore) {
+      await this.pendingGoogleAuthStore.shutdown();
     }
 
     return new Promise((resolve) => {
@@ -310,6 +351,21 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     // OAuth health check endpoint (no auth required)
     if (path === '/oauth/health' && method === 'GET') {
       this.handleOAuthHealthCheck(res);
+      return;
+    }
+
+    // Google OAuth callback endpoint (no auth required - receives redirect from Google)
+    if (path === '/oauth/google/callback' && method === 'GET') {
+      if (this.googleOAuthCallbackHandler) {
+        this.googleOAuthCallbackHandler.handleCallback(req, res).catch((error) => {
+          cliLogger.error({ err: error }, 'Google OAuth callback failed');
+          res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end('<h1>Internal Server Error</h1>');
+        });
+      } else {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Google OAuth not configured' }));
+      }
       return;
     }
 
