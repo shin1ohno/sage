@@ -1218,7 +1218,12 @@ export async function handleSearchRoomAvailability(
         success: true,
         rooms: [],
         message:
-          '指定された条件に一致する空き会議室が見つかりませんでした。別の時間帯をお試しください。',
+          '会議室が見つかりませんでした。会議室を検索するには、事前にGoogle Calendarで会議室をカレンダーリストに追加する必要があります。' +
+          '\n\n【設定手順】\n' +
+          '1. Google Calendar (calendar.google.com) を開く\n' +
+          '2. 左サイドバーの「他のカレンダー」の「+」→「Browse resources」\n' +
+          '3. 使用したい会議室にチェックを入れる\n' +
+          '4. 追加後、sageで会議室検索が可能になります',
       });
     }
 
