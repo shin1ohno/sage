@@ -6,6 +6,10 @@ import { describe, expect, test } from '@jest/globals';
 import {
   validateCalendarSources,
   CalendarSourcesSchema,
+  RoomAvailabilityRequestSchema,
+  CheckRoomAvailabilitySchema,
+  validateRoomAvailabilityRequest,
+  validateCheckRoomAvailability,
 } from '../../src/config/validation.js';
 
 describe('Calendar Sources Validation', () => {
@@ -240,6 +244,218 @@ describe('Calendar Sources Validation', () => {
       };
 
       expect(() => CalendarSourcesSchema.parse(sources)).toThrow();
+    });
+  });
+});
+
+describe('Room Availability Validation', () => {
+  describe('RoomAvailabilityRequestSchema', () => {
+    test('should accept valid request with endTime', () => {
+      const request = {
+        startTime: '2025-01-15T10:00:00+09:00',
+        endTime: '2025-01-15T11:00:00+09:00',
+      };
+
+      const result = RoomAvailabilityRequestSchema.safeParse(request);
+      expect(result.success).toBe(true);
+    });
+
+    test('should accept valid request with durationMinutes', () => {
+      const request = {
+        startTime: '2025-01-15T10:00:00+09:00',
+        durationMinutes: 60,
+      };
+
+      const result = RoomAvailabilityRequestSchema.safeParse(request);
+      expect(result.success).toBe(true);
+    });
+
+    test('should accept valid request with all filters', () => {
+      const request = {
+        startTime: '2025-01-15T10:00:00+09:00',
+        endTime: '2025-01-15T11:00:00+09:00',
+        minCapacity: 10,
+        building: 'Main',
+        floor: '3',
+        features: ['projector', 'whiteboard'],
+      };
+
+      const result = RoomAvailabilityRequestSchema.safeParse(request);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.minCapacity).toBe(10);
+        expect(result.data.features).toEqual(['projector', 'whiteboard']);
+      }
+    });
+
+    test('should reject request without startTime', () => {
+      const request = {
+        endTime: '2025-01-15T11:00:00+09:00',
+      };
+
+      const result = RoomAvailabilityRequestSchema.safeParse(request);
+      expect(result.success).toBe(false);
+    });
+
+    test('should reject request without endTime or durationMinutes', () => {
+      const request = {
+        startTime: '2025-01-15T10:00:00+09:00',
+      };
+
+      const result = RoomAvailabilityRequestSchema.safeParse(request);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some(i => i.path.includes('endTime'))).toBe(true);
+      }
+    });
+
+    test('should reject durationMinutes less than 1', () => {
+      const request = {
+        startTime: '2025-01-15T10:00:00+09:00',
+        durationMinutes: 0,
+      };
+
+      const result = RoomAvailabilityRequestSchema.safeParse(request);
+      expect(result.success).toBe(false);
+    });
+
+    test('should reject durationMinutes greater than 480', () => {
+      const request = {
+        startTime: '2025-01-15T10:00:00+09:00',
+        durationMinutes: 500,
+      };
+
+      const result = RoomAvailabilityRequestSchema.safeParse(request);
+      expect(result.success).toBe(false);
+    });
+
+    test('should reject when startTime is after endTime', () => {
+      const request = {
+        startTime: '2025-01-15T12:00:00+09:00',
+        endTime: '2025-01-15T10:00:00+09:00',
+      };
+
+      const result = RoomAvailabilityRequestSchema.safeParse(request);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some(i => i.message.includes('before'))).toBe(true);
+      }
+    });
+
+    test('should accept both endTime and durationMinutes (endTime takes precedence)', () => {
+      const request = {
+        startTime: '2025-01-15T10:00:00+09:00',
+        endTime: '2025-01-15T11:00:00+09:00',
+        durationMinutes: 30,
+      };
+
+      const result = RoomAvailabilityRequestSchema.safeParse(request);
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('CheckRoomAvailabilitySchema', () => {
+    test('should accept valid request', () => {
+      const request = {
+        roomId: 'room-123@resource.calendar.google.com',
+        startTime: '2025-01-15T10:00:00+09:00',
+        endTime: '2025-01-15T11:00:00+09:00',
+      };
+
+      const result = CheckRoomAvailabilitySchema.safeParse(request);
+      expect(result.success).toBe(true);
+    });
+
+    test('should reject request without roomId', () => {
+      const request = {
+        startTime: '2025-01-15T10:00:00+09:00',
+        endTime: '2025-01-15T11:00:00+09:00',
+      };
+
+      const result = CheckRoomAvailabilitySchema.safeParse(request);
+      expect(result.success).toBe(false);
+    });
+
+    test('should reject request without startTime', () => {
+      const request = {
+        roomId: 'room-123@resource.calendar.google.com',
+        endTime: '2025-01-15T11:00:00+09:00',
+      };
+
+      const result = CheckRoomAvailabilitySchema.safeParse(request);
+      expect(result.success).toBe(false);
+    });
+
+    test('should reject request without endTime', () => {
+      const request = {
+        roomId: 'room-123@resource.calendar.google.com',
+        startTime: '2025-01-15T10:00:00+09:00',
+      };
+
+      const result = CheckRoomAvailabilitySchema.safeParse(request);
+      expect(result.success).toBe(false);
+    });
+
+    test('should reject when startTime is after endTime', () => {
+      const request = {
+        roomId: 'room-123@resource.calendar.google.com',
+        startTime: '2025-01-15T12:00:00+09:00',
+        endTime: '2025-01-15T10:00:00+09:00',
+      };
+
+      const result = CheckRoomAvailabilitySchema.safeParse(request);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some(i => i.message.includes('before'))).toBe(true);
+      }
+    });
+  });
+
+  describe('validateRoomAvailabilityRequest', () => {
+    test('should return success for valid request', () => {
+      const request = {
+        startTime: '2025-01-15T10:00:00+09:00',
+        durationMinutes: 60,
+      };
+
+      const result = validateRoomAvailabilityRequest(request);
+      expect(result.success).toBe(true);
+      expect(result.data).toBeDefined();
+    });
+
+    test('should return error for invalid request', () => {
+      const request = {
+        startTime: '2025-01-15T10:00:00+09:00',
+      };
+
+      const result = validateRoomAvailabilityRequest(request);
+      expect(result.success).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+  });
+
+  describe('validateCheckRoomAvailability', () => {
+    test('should return success for valid request', () => {
+      const request = {
+        roomId: 'room-123@resource.calendar.google.com',
+        startTime: '2025-01-15T10:00:00+09:00',
+        endTime: '2025-01-15T11:00:00+09:00',
+      };
+
+      const result = validateCheckRoomAvailability(request);
+      expect(result.success).toBe(true);
+      expect(result.data).toBeDefined();
+    });
+
+    test('should return error for invalid request', () => {
+      const request = {
+        startTime: '2025-01-15T10:00:00+09:00',
+        endTime: '2025-01-15T11:00:00+09:00',
+      };
+
+      const result = validateCheckRoomAvailability(request);
+      expect(result.success).toBe(false);
+      expect(result.error).toBeDefined();
     });
   });
 });
