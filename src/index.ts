@@ -16,6 +16,7 @@ import { ReminderManager } from "./integrations/reminder-manager.js";
 import { CalendarService } from "./integrations/calendar-service.js";
 import { CalendarSourceManager } from "./integrations/calendar-source-manager.js";
 import { GoogleCalendarService } from "./integrations/google-calendar-service.js";
+import { GooglePeopleService } from "./integrations/google-people-service.js";
 import { NotionMCPService } from "./integrations/notion-mcp.js";
 import { TodoListManager } from "./integrations/todo-list-manager.js";
 import { TaskSynchronizer } from "./integrations/task-synchronizer.js";
@@ -79,7 +80,13 @@ import {
   searchRoomAvailabilityTool,
   checkRoomAvailabilityTool,
   updateCalendarEventTool,
+  searchDirectoryPeopleTool,
 } from "./tools/shared/index.js";
+
+import {
+  type DirectoryToolsContext,
+  handleSearchDirectoryPeople,
+} from "./tools/directory/index.js";
 
 import {
   type IntegrationToolsContext,
@@ -103,6 +110,7 @@ let wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
 let reminderManager: ReminderManager | null = null;
 let calendarService: CalendarService | null = null;
 let googleCalendarService: GoogleCalendarService | null = null;
+let googlePeopleService: GooglePeopleService | null = null;
 let calendarSourceManager: CalendarSourceManager | null = null;
 let notionService: NotionMCPService | null = null;
 let todoListManager: TodoListManager | null = null;
@@ -137,10 +145,13 @@ function initializeServices(userConfig: UserConfig): void {
     };
     const oauthHandler = new GoogleOAuthHandler(oauthConfig);
     googleCalendarService = new GoogleCalendarService(oauthHandler);
+    // Initialize Google People service with the same OAuth handler
+    googlePeopleService = new GooglePeopleService(oauthHandler);
   } catch (error) {
     // If Google Calendar initialization fails, continue without it
     mcpLogger.error({ err: error }, 'Google Calendar service initialization failed');
     googleCalendarService = null;
+    googlePeopleService = null;
   }
 
   calendarSourceManager = new CalendarSourceManager({
@@ -248,6 +259,13 @@ function createOAuthToolsContext(): OAuthToolsContext {
 function createReloadContext(): ReloadContext {
   return {
     getConfigReloadService: () => configReloadService,
+  };
+}
+
+function createDirectoryToolsContext(): DirectoryToolsContext {
+  return {
+    getConfig: () => config,
+    getGooglePeopleService: () => googlePeopleService,
   };
 }
 
@@ -1282,6 +1300,26 @@ async function createServer(): Promise<McpServer> {
         roomId,
         startTime,
         endTime,
+      }),
+  );
+
+  // ============================================
+  // Directory Tools
+  // ============================================
+
+  /**
+   * search_directory_people - Search organization directory for people
+   * Requirement: directory-people-search 1
+   * Uses shared definition from tools/shared/directory-tools.ts
+   */
+  server.tool(
+    searchDirectoryPeopleTool.name,
+    searchDirectoryPeopleTool.description,
+    searchDirectoryPeopleTool.schema.shape,
+    async ({ query, pageSize }) =>
+      handleSearchDirectoryPeople(createDirectoryToolsContext(), {
+        query,
+        pageSize,
       }),
   );
 

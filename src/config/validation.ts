@@ -471,3 +471,48 @@ export function validateCheckRoomAvailability(request: unknown): {
     error: result.error,
   };
 }
+
+// ============================================================
+// Directory People Search Schemas
+// Requirement: directory-people-search 1.1
+// ============================================================
+
+/**
+ * Search Directory People Input Schema
+ * Validates search parameters for directory people search
+ * Requirement: directory-people-search 1.1
+ */
+export const SearchDirectoryPeopleInputSchema = z.object({
+  query: z.string().min(1, 'Search query is required'),
+  pageSize: z.number().min(1).max(50).optional().default(20),
+});
+
+/**
+ * Type export for validated search directory people input
+ */
+export type ValidatedSearchDirectoryPeopleInput = z.infer<typeof SearchDirectoryPeopleInputSchema>;
+
+/**
+ * Validate search directory people request
+ * @param request - The search directory people request to validate
+ * @returns Validation result with parsed data or error
+ */
+export function validateSearchDirectoryPeopleInput(request: unknown): {
+  success: boolean;
+  data?: ValidatedSearchDirectoryPeopleInput;
+  error?: z.ZodError;
+} {
+  const result = SearchDirectoryPeopleInputSchema.safeParse(request);
+
+  if (result.success) {
+    return {
+      success: true,
+      data: result.data,
+    };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+  };
+}

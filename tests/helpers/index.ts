@@ -54,6 +54,7 @@ export {
   createMockCalendarToolsContext,
   createMockReminderTodoContext,
   createMockIntegrationToolsContext,
+  createMockDirectoryToolsContext,
 } from './mock-contexts.js';
 
 // Mock context types
@@ -63,4 +64,5 @@ export type {
   MockCalendarToolsContext,
   MockReminderTodoContext,
   MockIntegrationToolsContext,
+  MockDirectoryToolsContext,
 } from './mock-contexts.js';

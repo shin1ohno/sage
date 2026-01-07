@@ -320,6 +320,89 @@ Browse resources から複数の会議室にチェックを入れてください
 
 ---
 
+### ディレクトリ検索で結果が返らない
+
+**症状:**
+- `search_directory_people` が空の結果を返す
+- "People API が有効になっていません" エラーが表示される
+- "組織のディレクトリへのアクセスが拒否されました" エラーが表示される
+
+**原因と解決策:**
+
+#### 1. People API が有効になっていない
+
+**症状:**
+```
+People API が有効になっていません。Google Cloud Console で有効化してください
+```
+
+**解決策:**
+
+1. [Google Cloud Console](https://console.cloud.google.com) を開く
+
+2. プロジェクトを選択（sage で使用している OAuth クライアントのプロジェクト）
+
+3. 「API とサービス」→「ライブラリ」を選択
+
+4. 「People API」を検索
+
+5. 「有効にする」をクリック
+
+#### 2. OAuth スコープが不足している
+
+**症状:**
+```
+People API へのアクセス権限がありません。authenticate_google を実行して再認証してください
+```
+
+**解決策:**
+
+sage を更新後、`authenticate_google` を実行して再認証してください。
+これにより、新しい `directory.readonly` スコープが追加されます。
+
+```
+authenticate_google を実行してください
+```
+
+#### 3. 組織のディレクトリ共有が無効
+
+**症状:**
+```
+組織のディレクトリへのアクセスが拒否されました。Google Workspace 管理者にディレクトリ共有の設定を確認してください。
+```
+
+**解決策:**
+
+この問題は、組織の Google Workspace 管理者が設定を変更する必要があります。
+
+1. Google Workspace 管理者に連絡
+
+2. 以下の設定を確認してもらう:
+   - [Admin Console](https://admin.google.com) → ディレクトリ → 共有設定
+   - 「ディレクトリのユーザー情報の共有」が有効になっているか確認
+
+3. 設定が有効になったら、sage で再度 `search_directory_people` を試す
+
+#### 4. 検索クエリが短すぎる
+
+**症状:**
+- 検索結果が見つからない
+
+**解決策:**
+
+検索クエリはある程度の長さが必要です。1文字での検索は機能しない場合があります。
+2文字以上のクエリを使用してください。
+
+```
+# 良い例
+search_directory_people({ query: "田中" })
+
+# 避ける
+search_directory_people({ query: "田" })
+```
+
+---
+
 ## Notion 統合の問題
 
 ### Notion に接続できない

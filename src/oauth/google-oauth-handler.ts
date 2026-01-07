@@ -43,11 +43,13 @@ export interface GoogleOAuthConfig {
 }
 
 /**
- * Google Calendar API Scopes
+ * Google API Scopes
+ * Includes Calendar API and People API (directory) scopes
  */
 export const GOOGLE_CALENDAR_SCOPES = [
   'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/directory.readonly',
 ];
 
 /**

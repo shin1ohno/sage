@@ -12,12 +12,14 @@ import type { TaskToolsContext } from '../../src/tools/tasks/handlers.js';
 import type { CalendarToolsContext } from '../../src/tools/calendar/handlers.js';
 import type { ReminderTodoContext } from '../../src/tools/reminders/handlers.js';
 import type { IntegrationToolsContext } from '../../src/tools/integrations/handlers.js';
+import type { DirectoryToolsContext } from '../../src/tools/directory/handlers.js';
 import type { TodoListManager } from '../../src/integrations/todo-list-manager.js';
 import type { TaskSynchronizer } from '../../src/integrations/task-synchronizer.js';
 import type { ReminderManager } from '../../src/integrations/reminder-manager.js';
 import type { CalendarSourceManager } from '../../src/integrations/calendar-source-manager.js';
 import type { CalendarEventResponseService } from '../../src/integrations/calendar-event-response.js';
 import type { GoogleCalendarService } from '../../src/integrations/google-calendar-service.js';
+import type { GooglePeopleService } from '../../src/integrations/google-people-service.js';
 import type { WorkingCadenceService } from '../../src/services/working-cadence.js';
 import type { NotionMCPService } from '../../src/integrations/notion-mcp.js';
 import { DEFAULT_TEST_CONFIG } from './mock-config.js';
@@ -302,5 +304,50 @@ export function createMockIntegrationToolsContext(
     }),
     getNotionService: overrides?.getNotionService ?? jest.fn(() => state.notionService),
     initializeServices: overrides?.initializeServices ?? jest.fn(),
+  };
+}
+
+/**
+ * Mock DirectoryToolsContext with configurable state
+ */
+export interface MockDirectoryToolsContext extends DirectoryToolsContext {
+  config: UserConfig | null;
+  googlePeopleService: GooglePeopleService | null;
+}
+
+/**
+ * Create a mock DirectoryToolsContext
+ *
+ * @param overrides - Optional overrides for context methods and services
+ * @returns Mocked DirectoryToolsContext
+ *
+ * @example
+ * ```typescript
+ * const mockPeopleService = createMockGooglePeopleService();
+ * const ctx = createMockDirectoryToolsContext({
+ *   googlePeopleService: mockPeopleService as unknown as GooglePeopleService,
+ * });
+ * const result = await handleSearchDirectoryPeople(ctx, { query: '田中' });
+ * ```
+ */
+export function createMockDirectoryToolsContext(
+  overrides?: Partial<{
+    config: UserConfig | null;
+    googlePeopleService: GooglePeopleService | null;
+    getConfig: () => UserConfig | null;
+    getGooglePeopleService: () => GooglePeopleService | null;
+  }>
+): MockDirectoryToolsContext {
+  const state = {
+    config: overrides?.config !== undefined ? overrides.config : DEFAULT_TEST_CONFIG,
+    googlePeopleService: overrides?.googlePeopleService ?? null,
+  };
+
+  return {
+    config: state.config,
+    googlePeopleService: state.googlePeopleService,
+    getConfig: overrides?.getConfig ?? jest.fn(() => state.config),
+    getGooglePeopleService:
+      overrides?.getGooglePeopleService ?? jest.fn(() => state.googlePeopleService),
   };
 }

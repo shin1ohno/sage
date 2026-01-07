@@ -40,3 +40,9 @@ export {
   updateCalendarEventTool,
   calendarTools,
 } from './calendar-tools.js';
+
+// Directory tools
+export {
+  searchDirectoryPeopleTool,
+  directoryTools,
+} from './directory-tools.js';

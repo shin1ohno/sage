@@ -17,6 +17,7 @@ import { CalendarEventResponseService, type EventResponseType } from '../integra
 import { WorkingCadenceService } from '../services/working-cadence.js';
 import { CalendarSourceManager } from '../integrations/calendar-source-manager.js';
 import { GoogleCalendarService } from '../integrations/google-calendar-service.js';
+import { GooglePeopleService } from '../integrations/google-people-service.js';
 import { GoogleOAuthHandler } from '../oauth/google-oauth-handler.js';
 import type { UserConfig } from '../types/index.js';
 
@@ -87,8 +88,14 @@ import {
   searchRoomAvailabilityTool,
   checkRoomAvailabilityTool,
   updateCalendarEventTool,
+  searchDirectoryPeopleTool,
   toJsonSchema,
 } from '../tools/shared/index.js';
+
+import {
+  type DirectoryToolsContext,
+  handleSearchDirectoryPeople,
+} from '../tools/directory/index.js';
 
 import {
   type OAuthToolsContext,
@@ -170,6 +177,7 @@ class MCPHandlerImpl implements MCPHandler {
   private workingCadenceService: WorkingCadenceService | null = null;
   private calendarSourceManager: CalendarSourceManager | null = null;
   private googleCalendarService: GoogleCalendarService | null = null;
+  private googlePeopleService: GooglePeopleService | null = null;
   private initialized: boolean = false;
 
   // Hot-reload infrastructure
@@ -342,6 +350,8 @@ class MCPHandlerImpl implements MCPHandler {
     };
     const oauthHandler = new GoogleOAuthHandler(oauthConfig);
     this.googleCalendarService = new GoogleCalendarService(oauthHandler);
+    // Initialize Google People service with the same OAuth handler
+    this.googlePeopleService = new GooglePeopleService(oauthHandler);
 
     this.calendarSourceManager = new CalendarSourceManager({
       calendarService: this.calendarService,
@@ -487,6 +497,16 @@ class MCPHandlerImpl implements MCPHandler {
         return createHandler();
       },
       createGoogleOAuthHandler: createHandler,
+    };
+  }
+
+  /**
+   * Create DirectoryToolsContext for directory tool handlers
+   */
+  private createDirectoryToolsContext(): DirectoryToolsContext {
+    return {
+      getConfig: () => this.config,
+      getGooglePeopleService: () => this.googlePeopleService,
     };
   }
 
@@ -1490,6 +1510,22 @@ class MCPHandlerImpl implements MCPHandler {
           roomId: args.roomId as string,
           startTime: args.startTime as string,
           endTime: args.endTime as string,
+        })
+    );
+
+    // search_directory_people - Search organization directory for people
+    // Requirement: directory-people-search 1
+    // Uses shared definition from tools/shared/directory-tools.ts
+    this.registerTool(
+      {
+        name: searchDirectoryPeopleTool.name,
+        description: searchDirectoryPeopleTool.description,
+        inputSchema: toJsonSchema(searchDirectoryPeopleTool.schema),
+      },
+      async (args) =>
+        handleSearchDirectoryPeople(this.createDirectoryToolsContext(), {
+          query: args.query as string,
+          pageSize: args.pageSize as number | undefined,
         })
     );
 
