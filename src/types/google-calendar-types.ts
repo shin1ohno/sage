@@ -31,6 +31,14 @@ export type AutoDeclineMode =
   | 'declineOnlyNewConflictingInvitations';
 
 /**
+ * Recurrence Scope for update/delete operations on recurring events
+ * - 'thisEvent': Apply to only this single instance
+ * - 'thisAndFuture': Apply to this instance and all future instances
+ * - 'allEvents': Apply to all instances in the series
+ */
+export type RecurrenceScope = 'thisEvent' | 'thisAndFuture' | 'allEvents';
+
+/**
  * Out of Office Properties
  * Used for vacation blocks and automatic decline functionality
  * Requirement: 1
@@ -128,6 +136,8 @@ export interface GoogleCalendarEvent {
     }>;
   };
   recurringEventId?: string;
+  /** RFC 5545 recurrence rules (e.g., ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR"]) */
+  recurrence?: string[];
   iCalUID: string; // Used for deduplication
   status?: 'confirmed' | 'tentative' | 'cancelled';
   organizer?: {
@@ -256,6 +266,24 @@ export interface CalendarEvent {
    * Requirement: 6.3
    */
   typeSpecificProperties?: EventTypeSpecificProperties;
+  /**
+   * RFC 5545 recurrence rules (e.g., ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR"])
+   * Present on the master event of a recurring series
+   * Requirement: recurring-calendar-events
+   */
+  recurrence?: string[];
+  /**
+   * ID of the master recurring event this instance belongs to
+   * Present on individual instances of a recurring series
+   * Requirement: recurring-calendar-events
+   */
+  recurringEventId?: string;
+  /**
+   * Human-readable description of the recurrence pattern
+   * E.g., "Weekly on Monday, Wednesday, Friday"
+   * Requirement: recurring-calendar-events
+   */
+  recurrenceDescription?: string;
 }
 
 /**
@@ -488,6 +516,86 @@ export interface SingleRoomAvailability {
   busyPeriods: BusyPeriod[];
   /** The requested time period */
   requestedPeriod: {
+    start: string;
+    end: string;
+  };
+}
+
+// ============================================================
+// People Availability Types
+// Requirement: check-others-availability 1, 2, 3, 4
+// ============================================================
+
+/**
+ * Individual person's availability status
+ * Requirement: check-others-availability 1.1, 1.4, 1.5, 1.6
+ */
+export interface PersonAvailability {
+  /** Email address of the person */
+  email: string;
+  /** Display name (if available) */
+  displayName?: string;
+  /** True if completely free during requested period */
+  isAvailable: boolean;
+  /** Busy periods within the requested time range */
+  busyPeriods: BusyPeriod[];
+  /** Error message if availability check failed for this person */
+  error?: string;
+}
+
+/**
+ * Result of checking multiple people's availability
+ * Requirement: check-others-availability 1.1, 1.5
+ */
+export interface PeopleAvailabilityResult {
+  /** Availability status for each person */
+  people: PersonAvailability[];
+  /** The requested time range */
+  timeRange: {
+    start: string;
+    end: string;
+  };
+}
+
+/**
+ * A common free time slot shared by all participants
+ * Requirement: check-others-availability 2.1, 2.3, 2.5
+ */
+export interface CommonFreeSlot {
+  /** Start time in ISO 8601 format */
+  start: string;
+  /** End time in ISO 8601 format */
+  end: string;
+  /** Duration in minutes */
+  durationMinutes: number;
+}
+
+/**
+ * Resolved participant information after name lookup
+ * Requirement: check-others-availability 4.1, 4.2, 4.3
+ */
+export interface ResolvedParticipant {
+  /** Original query (name or email) */
+  query: string;
+  /** Resolved email address */
+  email: string;
+  /** Display name from directory */
+  displayName?: string;
+  /** Error message if resolution failed */
+  error?: string;
+}
+
+/**
+ * Result of finding common availability among multiple people
+ * Requirement: check-others-availability 2.1-2.6
+ */
+export interface CommonAvailabilityResult {
+  /** Common free time slots */
+  commonSlots: CommonFreeSlot[];
+  /** Resolved participant information */
+  participants: ResolvedParticipant[];
+  /** The requested time range */
+  timeRange: {
     start: string;
     end: string;
   };

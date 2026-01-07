@@ -12,6 +12,7 @@ import type { UserConfig } from '../../types/index.js';
 import type { CalendarSourceManager } from '../../integrations/calendar-source-manager.js';
 import type { CalendarEventResponseService } from '../../integrations/calendar-event-response.js';
 import type { GoogleCalendarService, CreateEventRequest } from '../../integrations/google-calendar-service.js';
+import type { GooglePeopleService } from '../../integrations/google-people-service.js';
 import type { WorkingCadenceService } from '../../services/working-cadence.js';
 import type {
   GoogleCalendarEventType,
@@ -28,6 +29,7 @@ export interface CalendarToolsContext {
   getCalendarSourceManager: () => CalendarSourceManager | null;
   getCalendarEventResponseService: () => CalendarEventResponseService | null;
   getGoogleCalendarService: () => GoogleCalendarService | null;
+  getGooglePeopleService?: () => GooglePeopleService | null;
   getWorkingCadenceService: () => WorkingCadenceService | null;
   setWorkingCadenceService: (service: WorkingCadenceService) => void;
   initializeServices: (config: UserConfig) => void;
@@ -1563,5 +1565,289 @@ export async function handleCheckRoomAvailability(
       });
     }
     return createErrorFromCatch('会議室の空き状況確認に失敗しました', error);
+  }
+}
+
+// ============================================================
+// People Availability Input Types
+// Requirement: check-others-availability 1, 2, 4
+// ============================================================
+
+/**
+ * Input for checking people availability
+ * Requirement: check-others-availability 1.1-1.3
+ */
+export interface CheckPeopleAvailabilityInput {
+  emails: string[];
+  startTime: string;
+  endTime: string;
+}
+
+/**
+ * Input for finding common availability
+ * Requirement: check-others-availability 2.1-2.6, 4.1
+ */
+export interface FindCommonAvailabilityInput {
+  participants: string[];
+  startTime: string;
+  endTime: string;
+  minDurationMinutes?: number;
+  includeMyCalendar?: boolean;
+}
+
+/**
+ * check_people_availability handler
+ *
+ * Check availability of multiple people by their email addresses.
+ * Requirement: check-others-availability 1.1-1.6, 3.1-3.3
+ */
+export async function handleCheckPeopleAvailability(
+  ctx: CalendarToolsContext,
+  args: CheckPeopleAvailabilityInput
+) {
+  const { emails, startTime, endTime } = args;
+  const config = ctx.getConfig();
+
+  if (!config) {
+    return createToolResponse({
+      error: true,
+      message:
+        'sageが設定されていません。check_setup_statusを実行してください。',
+    });
+  }
+
+  // Validate email count
+  if (!emails || emails.length === 0) {
+    return createToolResponse({
+      error: true,
+      message: '少なくとも1つのメールアドレスを指定してください。',
+    });
+  }
+
+  if (emails.length > 20) {
+    return createToolResponse({
+      error: true,
+      message: '最大20名まで指定できます。',
+    });
+  }
+
+  // Check if Google Calendar is enabled
+  const googleCalendarService = ctx.getGoogleCalendarService();
+  if (!googleCalendarService) {
+    return createToolResponse({
+      error: true,
+      message:
+        'Google Calendarが設定されていません。この機能にはGoogle Calendarが必要です。',
+    });
+  }
+
+  try {
+    const result = await googleCalendarService.checkPeopleAvailability(
+      emails,
+      startTime,
+      endTime
+    );
+
+    // Count available/unavailable/error people
+    const available = result.people.filter(p => p.isAvailable && !p.error).length;
+    const unavailable = result.people.filter(p => !p.isAvailable && !p.error).length;
+    const errors = result.people.filter(p => p.error).length;
+
+    return createToolResponse({
+      success: true,
+      people: result.people,
+      timeRange: result.timeRange,
+      summary: {
+        total: result.people.length,
+        available,
+        unavailable,
+        errors,
+      },
+      message: `${result.people.length}名の空き状況を確認しました（空き: ${available}名、予定あり: ${unavailable}名、エラー: ${errors}名）`,
+    });
+  } catch (error) {
+    return createErrorFromCatch('空き状況の確認に失敗しました', error);
+  }
+}
+
+/**
+ * find_common_availability handler
+ *
+ * Find common free time slots among multiple people.
+ * Supports names (resolved via directory search) or email addresses.
+ * Requirement: check-others-availability 2.1-2.6, 4.1-4.3
+ */
+export async function handleFindCommonAvailability(
+  ctx: CalendarToolsContext,
+  args: FindCommonAvailabilityInput
+) {
+  const {
+    participants,
+    startTime,
+    endTime,
+    minDurationMinutes = 30,
+    includeMyCalendar = true,
+  } = args;
+  const config = ctx.getConfig();
+
+  if (!config) {
+    return createToolResponse({
+      error: true,
+      message:
+        'sageが設定されていません。check_setup_statusを実行してください。',
+    });
+  }
+
+  // Validate participant count
+  if (!participants || participants.length === 0) {
+    return createToolResponse({
+      error: true,
+      message: '少なくとも1名の参加者を指定してください。',
+    });
+  }
+
+  if (participants.length > 20) {
+    return createToolResponse({
+      error: true,
+      message: '最大20名まで指定できます。',
+    });
+  }
+
+  // Check if Google Calendar is enabled
+  const googleCalendarService = ctx.getGoogleCalendarService();
+  if (!googleCalendarService) {
+    return createToolResponse({
+      error: true,
+      message:
+        'Google Calendarが設定されていません。この機能にはGoogle Calendarが必要です。',
+    });
+  }
+
+  try {
+    // Resolve participants: names to emails via People API, keep emails as-is
+    const resolvedEmails: string[] = [];
+    const resolvedParticipants: Array<{
+      query: string;
+      email: string;
+      displayName?: string;
+      error?: string;
+    }> = [];
+
+    // Get GooglePeopleService from context for name resolution
+    const peopleService = ctx.getGooglePeopleService?.();
+
+    for (const participant of participants) {
+      // Check if it's an email address (contains @)
+      if (participant.includes('@')) {
+        resolvedEmails.push(participant);
+        resolvedParticipants.push({
+          query: participant,
+          email: participant,
+        });
+      } else {
+        // It's a name, resolve via People API
+        if (!peopleService) {
+          // No People service available, treat as error
+          resolvedParticipants.push({
+            query: participant,
+            email: '',
+            error: `名前による検索にはGoogle認証が必要です。メールアドレスを直接指定してください。`,
+          });
+          continue;
+        }
+        try {
+          const searchResult = await peopleService.searchDirectoryPeople(participant, 1);
+          if (searchResult.people.length > 0) {
+            const person = searchResult.people[0];
+            resolvedEmails.push(person.emailAddress);
+            resolvedParticipants.push({
+              query: participant,
+              email: person.emailAddress,
+              displayName: person.displayName,
+            });
+          } else {
+            resolvedParticipants.push({
+              query: participant,
+              email: '',
+              error: `「${participant}」が見つかりませんでした`,
+            });
+          }
+        } catch (searchError) {
+          resolvedParticipants.push({
+            query: participant,
+            email: '',
+            error: `「${participant}」の検索に失敗しました`,
+          });
+        }
+      }
+    }
+
+    // Include user's own calendar if requested
+    if (includeMyCalendar) {
+      try {
+        const myEmail = await googleCalendarService.getPrimaryCalendarEmail();
+        if (myEmail && !resolvedEmails.includes(myEmail)) {
+          resolvedEmails.push(myEmail);
+          resolvedParticipants.push({
+            query: 'me',
+            email: myEmail,
+            displayName: '自分',
+          });
+        }
+      } catch {
+        // Ignore error, continue without user's calendar
+      }
+    }
+
+    // Check if we have at least one valid email
+    const validEmails = resolvedEmails.filter(e => e.length > 0);
+    if (validEmails.length === 0) {
+      return createToolResponse({
+        success: false,
+        participants: resolvedParticipants,
+        message: '有効な参加者が見つかりませんでした。',
+      });
+    }
+
+    // Find common availability
+    const result = await googleCalendarService.findCommonAvailability(
+      validEmails,
+      startTime,
+      endTime,
+      minDurationMinutes
+    );
+
+    // Update participants with resolved info
+    const finalParticipants = resolvedParticipants.map(rp => {
+      const found = result.participants.find(p => p.email === rp.email);
+      return {
+        ...rp,
+        displayName: rp.displayName || found?.displayName,
+        error: rp.error || found?.error,
+      };
+    });
+
+    // Build message
+    const validNames = finalParticipants
+      .filter(p => !p.error && p.email)
+      .map(p => p.displayName || p.email)
+      .join(', ');
+
+    let message: string;
+    if (result.commonSlots.length === 0) {
+      message = `共通の空き時間が見つかりませんでした（${finalParticipants.filter(p => !p.error).length}名: ${validNames}）`;
+    } else {
+      message = `${result.commonSlots.length}件の共通空き時間が見つかりました（${finalParticipants.filter(p => !p.error).length}名: ${validNames}）`;
+    }
+
+    return createToolResponse({
+      success: true,
+      commonSlots: result.commonSlots,
+      participants: finalParticipants,
+      timeRange: result.timeRange,
+      message,
+    });
+  } catch (error) {
+    return createErrorFromCatch('共通空き時間の検索に失敗しました', error);
   }
 }

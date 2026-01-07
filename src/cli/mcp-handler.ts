@@ -81,6 +81,8 @@ import {
   handleUpdateCalendarEvent,
   handleSearchRoomAvailability,
   handleCheckRoomAvailability,
+  handleCheckPeopleAvailability,
+  handleFindCommonAvailability,
 } from '../tools/calendar/handlers.js';
 
 // Shared tool definitions
@@ -89,6 +91,8 @@ import {
   checkRoomAvailabilityTool,
   updateCalendarEventTool,
   searchDirectoryPeopleTool,
+  checkPeopleAvailabilityTool,
+  findCommonAvailabilityTool,
   toJsonSchema,
 } from '../tools/shared/index.js';
 
@@ -459,6 +463,7 @@ class MCPHandlerImpl implements MCPHandler {
       },
       getCalendarEventResponseService: () => this.calendarEventResponseService,
       getGoogleCalendarService: () => this.googleCalendarService,
+      getGooglePeopleService: () => this.googlePeopleService,
       getWorkingCadenceService: () => {
         // Prefer reloadable adapter instance if available
         if (this.workingCadenceAdapter) {
@@ -1526,6 +1531,42 @@ class MCPHandlerImpl implements MCPHandler {
         handleSearchDirectoryPeople(this.createDirectoryToolsContext(), {
           query: args.query as string,
           pageSize: args.pageSize as number | undefined,
+        })
+    );
+
+    // check_people_availability - Check availability of people by email
+    // Requirement: check-others-availability 1
+    // Uses shared definition from tools/shared/availability-tools.ts
+    this.registerTool(
+      {
+        name: checkPeopleAvailabilityTool.name,
+        description: checkPeopleAvailabilityTool.description,
+        inputSchema: toJsonSchema(checkPeopleAvailabilityTool.schema),
+      },
+      async (args) =>
+        handleCheckPeopleAvailability(this.createCalendarToolsContext(), {
+          emails: args.emails as string[],
+          startTime: args.startTime as string,
+          endTime: args.endTime as string,
+        })
+    );
+
+    // find_common_availability - Find common free time among people
+    // Requirement: check-others-availability 2, 4
+    // Uses shared definition from tools/shared/availability-tools.ts
+    this.registerTool(
+      {
+        name: findCommonAvailabilityTool.name,
+        description: findCommonAvailabilityTool.description,
+        inputSchema: toJsonSchema(findCommonAvailabilityTool.schema),
+      },
+      async (args) =>
+        handleFindCommonAvailability(this.createCalendarToolsContext(), {
+          participants: args.participants as string[],
+          startTime: args.startTime as string,
+          endTime: args.endTime as string,
+          minDurationMinutes: args.minDurationMinutes as number | undefined,
+          includeMyCalendar: args.includeMyCalendar as boolean | undefined,
         })
     );
 

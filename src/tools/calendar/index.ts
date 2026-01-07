@@ -21,6 +21,8 @@ export type {
   GetWorkingCadenceInput,
   SearchRoomAvailabilityInput,
   CheckRoomAvailabilityInput,
+  CheckPeopleAvailabilityInput,
+  FindCommonAvailabilityInput,
 } from './handlers.js';
 
 export {
@@ -36,4 +38,6 @@ export {
   handleGetWorkingCadence,
   handleSearchRoomAvailability,
   handleCheckRoomAvailability,
+  handleCheckPeopleAvailability,
+  handleFindCommonAvailability,
 } from './handlers.js';

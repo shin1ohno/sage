@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { validateRecurrenceRules, type ValidationResult as RecurrenceValidationResult } from '../utils/recurrence-validator';
 
 /**
  * EventKit source configuration schema
@@ -174,6 +175,52 @@ export type ValidatedBirthdayProperties = z.infer<typeof BirthdayPropertiesSchem
 export type ValidatedGoogleCalendarEventType = z.infer<typeof GoogleCalendarEventTypeSchema>;
 
 // ============================================================
+// Recurrence Rule Schema
+// Requirement: recurring-calendar-events 1.1, 1.3
+// ============================================================
+
+/**
+ * Recurrence Rule Schema
+ * Validates RRULE strings for iCalendar recurrence rules
+ * Requirement: recurring-calendar-events 1.1, 1.3
+ */
+export const RecurrenceRuleSchema = z
+  .array(z.string())
+  .refine(
+    (rules) => {
+      const result = validateRecurrenceRules(rules);
+      return result.success;
+    },
+    {
+      message: 'Invalid recurrence rules. See validateRecurrence() for detailed error information.',
+    }
+  );
+
+/**
+ * Type export for validated recurrence rules
+ */
+export type ValidatedRecurrenceRules = z.infer<typeof RecurrenceRuleSchema>;
+
+/**
+ * Validate recurrence rules
+ * Provides detailed validation errors for RRULE strings
+ *
+ * @param rules - Array of RRULE strings to validate
+ * @returns Validation result with success status and detailed errors
+ *
+ * @example
+ * validateRecurrence(["FREQ=WEEKLY;BYDAY=MO,WE,FR"])
+ * // Returns: { success: true, errors: [] }
+ *
+ * @example
+ * validateRecurrence(["FREQ=WEEKLY;COUNT=5;UNTIL=20251231"])
+ * // Returns: { success: false, errors: [{ code: "MUTUALLY_EXCLUSIVE", message: "...", rule: "..." }] }
+ */
+export function validateRecurrence(rules: string[]): RecurrenceValidationResult {
+  return validateRecurrenceRules(rules);
+}
+
+// ============================================================
 // Create Event Request Schema (Task 5)
 // Requirement: 4.4, 5.4, 6.4, 6.5, 8.2, 8.3
 // ============================================================
@@ -212,6 +259,10 @@ export const CreateEventRequestSchema = z
     description: z.string().optional(),
     attendees: z.array(z.string().email('Invalid attendee email address')).optional(),
     reminders: RemindersSchema.optional(),
+
+    // Recurrence rules (RRULE format)
+    // Requirement: recurring-calendar-events 1.1
+    recurrence: RecurrenceRuleSchema.optional(),
 
     // Event type and type-specific properties
     eventType: GoogleCalendarEventTypeSchema.optional(),
@@ -503,6 +554,118 @@ export function validateSearchDirectoryPeopleInput(request: unknown): {
   error?: z.ZodError;
 } {
   const result = SearchDirectoryPeopleInputSchema.safeParse(request);
+
+  if (result.success) {
+    return {
+      success: true,
+      data: result.data,
+    };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+  };
+}
+
+// ============================================================
+// People Availability Schemas
+// Requirement: check-others-availability 1, 2, 4
+// ============================================================
+
+/**
+ * Check People Availability Input Schema
+ * Validates parameters for checking multiple people's availability
+ * Requirement: check-others-availability 1.1, 1.2, 1.3
+ */
+export const CheckPeopleAvailabilityInputSchema = z.object({
+  emails: z
+    .array(z.string().email('Invalid email address'))
+    .min(1, 'At least one email address is required')
+    .max(20, 'Maximum 20 email addresses allowed'),
+  startTime: z.string().min(1, 'Start time is required'),
+  endTime: z.string().min(1, 'End time is required'),
+}).refine(
+  (data) => {
+    const start = new Date(data.startTime);
+    const end = new Date(data.endTime);
+    return start < end;
+  },
+  {
+    message: 'Start time must be before end time',
+    path: ['startTime'],
+  }
+);
+
+/**
+ * Find Common Availability Input Schema
+ * Validates parameters for finding common free time among participants
+ * Supports both names and email addresses as input
+ * Requirement: check-others-availability 2.1, 2.2, 2.6, 4.1
+ */
+export const FindCommonAvailabilityInputSchema = z.object({
+  participants: z
+    .array(z.string().min(1, 'Participant name or email is required'))
+    .min(1, 'At least one participant is required')
+    .max(20, 'Maximum 20 participants allowed'),
+  startTime: z.string().min(1, 'Start time is required'),
+  endTime: z.string().min(1, 'End time is required'),
+  minDurationMinutes: z.number().min(1).optional().default(30),
+  includeMyCalendar: z.boolean().optional().default(true),
+}).refine(
+  (data) => {
+    const start = new Date(data.startTime);
+    const end = new Date(data.endTime);
+    return start < end;
+  },
+  {
+    message: 'Start time must be before end time',
+    path: ['startTime'],
+  }
+);
+
+/**
+ * Type exports for people availability schemas
+ */
+export type ValidatedCheckPeopleAvailabilityInput = z.infer<typeof CheckPeopleAvailabilityInputSchema>;
+export type ValidatedFindCommonAvailabilityInput = z.infer<typeof FindCommonAvailabilityInputSchema>;
+
+/**
+ * Validate check people availability request
+ * @param request - The check people availability request to validate
+ * @returns Validation result with parsed data or error
+ */
+export function validateCheckPeopleAvailabilityInput(request: unknown): {
+  success: boolean;
+  data?: ValidatedCheckPeopleAvailabilityInput;
+  error?: z.ZodError;
+} {
+  const result = CheckPeopleAvailabilityInputSchema.safeParse(request);
+
+  if (result.success) {
+    return {
+      success: true,
+      data: result.data,
+    };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+  };
+}
+
+/**
+ * Validate find common availability request
+ * @param request - The find common availability request to validate
+ * @returns Validation result with parsed data or error
+ */
+export function validateFindCommonAvailabilityInput(request: unknown): {
+  success: boolean;
+  data?: ValidatedFindCommonAvailabilityInput;
+  error?: z.ZodError;
+} {
+  const result = FindCommonAvailabilityInputSchema.safeParse(request);
 
   if (result.success) {
     return {

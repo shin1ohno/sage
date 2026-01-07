@@ -67,6 +67,8 @@ import {
   handleGetWorkingCadence,
   handleSearchRoomAvailability,
   handleCheckRoomAvailability,
+  handleCheckPeopleAvailability,
+  handleFindCommonAvailability,
 } from "./tools/calendar/index.js";
 
 import {
@@ -81,6 +83,8 @@ import {
   checkRoomAvailabilityTool,
   updateCalendarEventTool,
   searchDirectoryPeopleTool,
+  checkPeopleAvailabilityTool,
+  findCommonAvailabilityTool,
 } from "./tools/shared/index.js";
 
 import {
@@ -200,6 +204,7 @@ function createCalendarToolsContext(): CalendarToolsContext {
     getCalendarSourceManager: () => calendarSourceManager,
     getCalendarEventResponseService: () => calendarEventResponseService,
     getGoogleCalendarService: () => googleCalendarService,
+    getGooglePeopleService: () => googlePeopleService,
     getWorkingCadenceService: () => workingCadenceService,
     setWorkingCadenceService: (service: WorkingCadenceService) => {
       workingCadenceService = service;
@@ -1320,6 +1325,47 @@ async function createServer(): Promise<McpServer> {
       handleSearchDirectoryPeople(createDirectoryToolsContext(), {
         query,
         pageSize,
+      }),
+  );
+
+  // ============================================
+  // People Availability Tools
+  // Requirement: check-others-availability
+  // ============================================
+
+  /**
+   * check_people_availability - Check availability of people by email
+   * Requirement: check-others-availability 1
+   * Uses shared definition from tools/shared/availability-tools.ts
+   */
+  server.tool(
+    checkPeopleAvailabilityTool.name,
+    checkPeopleAvailabilityTool.description,
+    checkPeopleAvailabilityTool.schema.shape,
+    async ({ emails, startTime, endTime }) =>
+      handleCheckPeopleAvailability(createCalendarToolsContext(), {
+        emails,
+        startTime,
+        endTime,
+      }),
+  );
+
+  /**
+   * find_common_availability - Find common free time among people
+   * Requirement: check-others-availability 2, 4
+   * Uses shared definition from tools/shared/availability-tools.ts
+   */
+  server.tool(
+    findCommonAvailabilityTool.name,
+    findCommonAvailabilityTool.description,
+    findCommonAvailabilityTool.schema.shape,
+    async ({ participants, startTime, endTime, minDurationMinutes, includeMyCalendar }) =>
+      handleFindCommonAvailability(createCalendarToolsContext(), {
+        participants,
+        startTime,
+        endTime,
+        minDurationMinutes,
+        includeMyCalendar,
       }),
   );
 

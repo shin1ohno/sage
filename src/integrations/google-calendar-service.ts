@@ -18,6 +18,12 @@ import type {
   FocusTimeProperties,
   WorkingLocationProperties,
   BirthdayProperties,
+  PersonAvailability,
+  PeopleAvailabilityResult,
+  BusyPeriod,
+  CommonFreeSlot,
+  CommonAvailabilityResult,
+  ResolvedParticipant,
 } from '../types/google-calendar-types.js';
 import { convertGoogleToCalendarEvent, detectEventType } from '../types/google-calendar-types.js';
 import { retryWithBackoff } from '../utils/retry.js';
@@ -1337,5 +1343,411 @@ export class GoogleCalendarService {
         `Failed to list calendars from Google Calendar: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
+  }
+
+  /**
+   * Check availability for multiple people
+   * Requirement: check-others-availability 1.1-1.6, 3.1-3.3
+   *
+   * Uses Google Calendar Freebusy API to check availability of multiple people.
+   * Returns busy periods for each person. Handles permission errors gracefully
+   * (partial success - returns error for inaccessible calendars).
+   *
+   * @param emails - Array of email addresses (max 20)
+   * @param startTime - Start of time range (ISO 8601)
+   * @param endTime - End of time range (ISO 8601)
+   * @returns PeopleAvailabilityResult with availability for each person
+   * @throws Error if authentication fails or API request fails after retries
+   */
+  async checkPeopleAvailability(
+    emails: string[],
+    startTime: string,
+    endTime: string
+  ): Promise<PeopleAvailabilityResult> {
+    // Ensure client is authenticated
+    if (!this.calendarClient) {
+      await this.authenticate();
+    }
+
+    // Validate email count
+    if (emails.length === 0) {
+      throw new Error('At least one email address is required');
+    }
+    if (emails.length > 20) {
+      throw new Error('Maximum 20 email addresses allowed');
+    }
+
+    calendarLogger.info(
+      { emailCount: emails.length, startTime, endTime },
+      'Checking people availability'
+    );
+
+    try {
+      // Query Freebusy API with batching (50 calendars per request max)
+      const busyData = await this.queryFreebusyForPeople(emails, startTime, endTime);
+
+      // Build result for each person
+      const people: PersonAvailability[] = emails.map(email => {
+        const data = busyData.get(email);
+
+        if (!data) {
+          // No data returned - likely permission denied
+          return {
+            email,
+            isAvailable: false,
+            busyPeriods: [],
+            error: 'アクセス権限がないか、カレンダーが見つかりません',
+          };
+        }
+
+        if (data.error) {
+          return {
+            email,
+            isAvailable: false,
+            busyPeriods: [],
+            error: data.error,
+          };
+        }
+
+        const busyPeriods = data.busyPeriods || [];
+        const isAvailable = this.isPersonAvailable(busyPeriods, startTime, endTime);
+
+        return {
+          email,
+          isAvailable,
+          busyPeriods,
+        };
+      });
+
+      return {
+        people,
+        timeRange: {
+          start: startTime,
+          end: endTime,
+        },
+      };
+    } catch (error) {
+      throw new Error(
+        `Failed to check people availability: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
+   * Query Freebusy API for multiple people
+   * Batches requests in groups of 50 (API limit)
+   *
+   * @param emails - Array of email addresses
+   * @param startTime - Start time in ISO 8601 format
+   * @param endTime - End time in ISO 8601 format
+   * @returns Map of email to availability data
+   */
+  private async queryFreebusyForPeople(
+    emails: string[],
+    startTime: string,
+    endTime: string
+  ): Promise<Map<string, { busyPeriods?: BusyPeriod[]; error?: string }>> {
+    const result = new Map<string, { busyPeriods?: BusyPeriod[]; error?: string }>();
+
+    // Batch requests in groups of 50 (API limit)
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < emails.length; i += BATCH_SIZE) {
+      const batch = emails.slice(i, i + BATCH_SIZE);
+
+      const response = await retryWithBackoff(
+        async () => {
+          return (
+            await this.calendarClient!.freebusy.query({
+              requestBody: {
+                timeMin: startTime,
+                timeMax: endTime,
+                items: batch.map(email => ({ id: email })),
+              },
+            })
+          ).data;
+        },
+        {
+          maxAttempts: 3,
+          initialDelay: 1000,
+          shouldRetry: (error: Error) => {
+            const message = error.message.toLowerCase();
+            if (
+              message.includes('rate limit') ||
+              message.includes('429') ||
+              message.includes('500') ||
+              message.includes('503') ||
+              message.includes('service unavailable') ||
+              message.includes('temporary')
+            ) {
+              return true;
+            }
+            if (
+              message.includes('unauthorized') ||
+              message.includes('401') ||
+              message.includes('forbidden') ||
+              message.includes('403')
+            ) {
+              return false;
+            }
+            return true;
+          },
+        }
+      );
+
+      const calendars = response.calendars || {};
+      for (const email of batch) {
+        const calendarData = calendars[email];
+
+        if (!calendarData) {
+          result.set(email, { error: 'カレンダーデータが取得できませんでした' });
+          continue;
+        }
+
+        // Check for errors in the response
+        if (calendarData.errors && calendarData.errors.length > 0) {
+          const errorReason = calendarData.errors[0].reason || 'unknown';
+          let errorMessage = 'カレンダーにアクセスできません';
+          if (errorReason === 'notFound') {
+            errorMessage = 'カレンダーが見つかりません';
+          } else if (errorReason === 'notAnAttendee' || errorReason === 'accessDenied') {
+            errorMessage = 'アクセス権限がありません';
+          }
+          result.set(email, { error: errorMessage });
+          continue;
+        }
+
+        // Extract busy periods
+        const busyPeriods: BusyPeriod[] = (calendarData.busy || []).map(period => ({
+          start: period.start || '',
+          end: period.end || '',
+        }));
+
+        result.set(email, { busyPeriods });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Check if a person is available during the requested period
+   *
+   * @param busyPeriods - Array of busy periods
+   * @param startTime - Requested start time
+   * @param endTime - Requested end time
+   * @returns True if person has no overlapping busy periods
+   */
+  private isPersonAvailable(
+    busyPeriods: BusyPeriod[],
+    startTime: string,
+    endTime: string
+  ): boolean {
+    const requestStart = new Date(startTime).getTime();
+    const requestEnd = new Date(endTime).getTime();
+
+    for (const busy of busyPeriods) {
+      const busyStart = new Date(busy.start).getTime();
+      const busyEnd = new Date(busy.end).getTime();
+
+      // Check for overlap
+      if (requestStart < busyEnd && requestEnd > busyStart) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Get the primary calendar email for the authenticated user
+   * Requirement: check-others-availability 2.2
+   *
+   * @returns Primary calendar email address
+   */
+  async getPrimaryCalendarEmail(): Promise<string> {
+    if (!this.calendarClient) {
+      await this.authenticate();
+    }
+
+    const calendarInfo = await this.calendarClient!.calendarList.get({
+      calendarId: 'primary',
+    });
+
+    return calendarInfo.data.id || '';
+  }
+
+  /**
+   * Find common free time slots among multiple people
+   * Requirement: check-others-availability 2.1-2.6
+   *
+   * Calculates time slots where ALL specified people are available.
+   * Algorithm:
+   * 1. Get busy periods for all users
+   * 2. Start with the full time range as "free"
+   * 3. Subtract each user's busy periods
+   * 4. Filter by minimum duration
+   * 5. Sort by start time
+   *
+   * @param emails - Array of email addresses
+   * @param startTime - Start of search range (ISO 8601)
+   * @param endTime - End of search range (ISO 8601)
+   * @param minDurationMinutes - Minimum slot duration (default: 30)
+   * @returns CommonAvailabilityResult with common free slots
+   */
+  async findCommonAvailability(
+    emails: string[],
+    startTime: string,
+    endTime: string,
+    minDurationMinutes: number = 30
+  ): Promise<CommonAvailabilityResult> {
+    calendarLogger.info(
+      { emailCount: emails.length, startTime, endTime, minDurationMinutes },
+      'Finding common availability'
+    );
+
+    // Get availability for all people
+    const availabilityResult = await this.checkPeopleAvailability(emails, startTime, endTime);
+
+    // Collect all busy periods from all people (exclude those with errors)
+    const allBusyPeriods: BusyPeriod[] = [];
+    const resolvedParticipants: ResolvedParticipant[] = [];
+
+    for (const person of availabilityResult.people) {
+      resolvedParticipants.push({
+        query: person.email,
+        email: person.email,
+        displayName: person.displayName,
+        error: person.error,
+      });
+
+      // Skip people with errors - they don't contribute to busy periods
+      if (person.error) {
+        continue;
+      }
+
+      allBusyPeriods.push(...person.busyPeriods);
+    }
+
+    // Calculate common free slots
+    const commonSlots = this.calculateCommonFreeSlots(
+      allBusyPeriods,
+      startTime,
+      endTime,
+      minDurationMinutes
+    );
+
+    return {
+      commonSlots,
+      participants: resolvedParticipants,
+      timeRange: {
+        start: startTime,
+        end: endTime,
+      },
+    };
+  }
+
+  /**
+   * Calculate common free time slots by subtracting busy periods
+   *
+   * Algorithm:
+   * 1. Merge and sort all busy periods
+   * 2. Walk through the time range, identifying gaps (free time)
+   * 3. Filter by minimum duration
+   *
+   * @param busyPeriods - All busy periods from all people
+   * @param startTime - Start of search range
+   * @param endTime - End of search range
+   * @param minDurationMinutes - Minimum slot duration
+   * @returns Array of common free slots
+   */
+  private calculateCommonFreeSlots(
+    busyPeriods: BusyPeriod[],
+    startTime: string,
+    endTime: string,
+    minDurationMinutes: number
+  ): CommonFreeSlot[] {
+    const rangeStart = new Date(startTime).getTime();
+    const rangeEnd = new Date(endTime).getTime();
+    const minDurationMs = minDurationMinutes * 60 * 1000;
+
+    // If no busy periods, the entire range is free
+    if (busyPeriods.length === 0) {
+      const duration = rangeEnd - rangeStart;
+      if (duration >= minDurationMs) {
+        return [{
+          start: startTime,
+          end: endTime,
+          durationMinutes: Math.floor(duration / 60000),
+        }];
+      }
+      return [];
+    }
+
+    // Sort busy periods by start time
+    const sortedBusy = busyPeriods
+      .map(bp => ({
+        start: new Date(bp.start).getTime(),
+        end: new Date(bp.end).getTime(),
+      }))
+      .sort((a, b) => a.start - b.start);
+
+    // Merge overlapping busy periods
+    const mergedBusy: { start: number; end: number }[] = [];
+    for (const busy of sortedBusy) {
+      // Clip to range
+      const clippedStart = Math.max(busy.start, rangeStart);
+      const clippedEnd = Math.min(busy.end, rangeEnd);
+
+      if (clippedStart >= clippedEnd) {
+        // Outside range, skip
+        continue;
+      }
+
+      if (mergedBusy.length === 0) {
+        mergedBusy.push({ start: clippedStart, end: clippedEnd });
+      } else {
+        const last = mergedBusy[mergedBusy.length - 1];
+        if (clippedStart <= last.end) {
+          // Overlapping or adjacent, merge
+          last.end = Math.max(last.end, clippedEnd);
+        } else {
+          // Non-overlapping, add new
+          mergedBusy.push({ start: clippedStart, end: clippedEnd });
+        }
+      }
+    }
+
+    // Find free slots (gaps between busy periods)
+    const freeSlots: CommonFreeSlot[] = [];
+    let currentTime = rangeStart;
+
+    for (const busy of mergedBusy) {
+      if (currentTime < busy.start) {
+        // Free slot found
+        const slotDuration = busy.start - currentTime;
+        if (slotDuration >= minDurationMs) {
+          freeSlots.push({
+            start: new Date(currentTime).toISOString(),
+            end: new Date(busy.start).toISOString(),
+            durationMinutes: Math.floor(slotDuration / 60000),
+          });
+        }
+      }
+      currentTime = Math.max(currentTime, busy.end);
+    }
+
+    // Check for free time after the last busy period
+    if (currentTime < rangeEnd) {
+      const slotDuration = rangeEnd - currentTime;
+      if (slotDuration >= minDurationMs) {
+        freeSlots.push({
+          start: new Date(currentTime).toISOString(),
+          end: new Date(rangeEnd).toISOString(),
+          durationMinutes: Math.floor(slotDuration / 60000),
+        });
+      }
+    }
+
+    return freeSlots;
   }
 }

@@ -137,6 +137,7 @@ export interface MockCalendarToolsContext extends CalendarToolsContext {
   calendarSourceManager: CalendarSourceManager | null;
   calendarEventResponseService: CalendarEventResponseService | null;
   googleCalendarService: GoogleCalendarService | null;
+  googlePeopleService: GooglePeopleService | null;
   workingCadenceService: WorkingCadenceService | null;
 }
 
@@ -161,11 +162,13 @@ export function createMockCalendarToolsContext(
     calendarSourceManager: CalendarSourceManager | null;
     calendarEventResponseService: CalendarEventResponseService | null;
     googleCalendarService: GoogleCalendarService | null;
+    googlePeopleService: GooglePeopleService | null;
     workingCadenceService: WorkingCadenceService | null;
     getConfig: () => UserConfig | null;
     getCalendarSourceManager: () => CalendarSourceManager | null;
     getCalendarEventResponseService: () => CalendarEventResponseService | null;
     getGoogleCalendarService: () => GoogleCalendarService | null;
+    getGooglePeopleService: () => GooglePeopleService | null;
     getWorkingCadenceService: () => WorkingCadenceService | null;
     setWorkingCadenceService: (service: WorkingCadenceService) => void;
     initializeServices: (config: UserConfig) => void;
@@ -176,6 +179,7 @@ export function createMockCalendarToolsContext(
     calendarSourceManager: overrides?.calendarSourceManager ?? null,
     calendarEventResponseService: overrides?.calendarEventResponseService ?? null,
     googleCalendarService: overrides?.googleCalendarService ?? null,
+    googlePeopleService: overrides?.googlePeopleService ?? null,
     workingCadenceService: overrides?.workingCadenceService ?? null,
   };
 
@@ -184,6 +188,7 @@ export function createMockCalendarToolsContext(
     calendarSourceManager: state.calendarSourceManager,
     calendarEventResponseService: state.calendarEventResponseService,
     googleCalendarService: state.googleCalendarService,
+    googlePeopleService: state.googlePeopleService,
     workingCadenceService: state.workingCadenceService,
     getConfig: overrides?.getConfig ?? jest.fn(() => state.config),
     getCalendarSourceManager:
@@ -193,6 +198,8 @@ export function createMockCalendarToolsContext(
       jest.fn(() => state.calendarEventResponseService),
     getGoogleCalendarService:
       overrides?.getGoogleCalendarService ?? jest.fn(() => state.googleCalendarService),
+    getGooglePeopleService:
+      overrides?.getGooglePeopleService ?? jest.fn(() => state.googlePeopleService),
     getWorkingCadenceService:
       overrides?.getWorkingCadenceService ?? jest.fn(() => state.workingCadenceService),
     setWorkingCadenceService:

@@ -46,3 +46,10 @@ export {
   searchDirectoryPeopleTool,
   directoryTools,
 } from './directory-tools.js';
+
+// People availability tools
+export {
+  checkPeopleAvailabilityTool,
+  findCommonAvailabilityTool,
+  availabilityTools,
+} from './availability-tools.js';
