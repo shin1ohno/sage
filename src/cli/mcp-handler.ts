@@ -77,6 +77,8 @@ import {
   handleRespondToCalendarEventsBatch,
   handleDeleteCalendarEvent,
   handleDeleteCalendarEventsBatch,
+  handleSearchRoomAvailability,
+  handleCheckRoomAvailability,
 } from '../tools/calendar/handlers.js';
 
 import {
@@ -1323,6 +1325,10 @@ class MCPHandlerImpl implements MCPHandler {
               enum: ['birthday', 'anniversary', 'other'],
               description: 'For birthday: type of birthday event',
             },
+            roomId: {
+              type: 'string',
+              description: 'Room calendar ID to book for this event. Use search_room_availability to find available rooms. Requires Google Calendar.',
+            },
           },
           required: ['title', 'startDate', 'endDate'],
         },
@@ -1342,6 +1348,7 @@ class MCPHandlerImpl implements MCPHandler {
           workingLocationType: args.workingLocationType as string | undefined,
           workingLocationLabel: args.workingLocationLabel as string | undefined,
           birthdayType: args.birthdayType as string | undefined,
+          roomId: args.roomId as string | undefined,
         })
     );
 
@@ -1409,6 +1416,93 @@ class MCPHandlerImpl implements MCPHandler {
         },
       },
       async () => handleListCalendarSources(this.createCalendarToolsContext())
+    );
+
+    // search_room_availability - Search for available meeting rooms
+    // Requirement: room-availability-search 1
+    this.registerTool(
+      {
+        name: 'search_room_availability',
+        description: 'Search for available meeting rooms during a specific time period. Returns rooms sorted by capacity match with availability status.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            startTime: {
+              type: 'string',
+              description: 'Start time in ISO 8601 format (e.g., 2025-01-15T10:00:00+09:00)',
+            },
+            endTime: {
+              type: 'string',
+              description: 'End time in ISO 8601 format. Either endTime or durationMinutes is required.',
+            },
+            durationMinutes: {
+              type: 'number',
+              description: 'Duration in minutes. Used to calculate endTime if not specified.',
+            },
+            minCapacity: {
+              type: 'number',
+              description: 'Minimum room capacity (number of people)',
+            },
+            building: {
+              type: 'string',
+              description: 'Filter by building name',
+            },
+            floor: {
+              type: 'string',
+              description: 'Filter by floor',
+            },
+            features: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Required features (e.g., ["projector", "whiteboard"])',
+            },
+          },
+          required: ['startTime'],
+        },
+      },
+      async (args) =>
+        handleSearchRoomAvailability(this.createCalendarToolsContext(), {
+          startTime: args.startTime as string,
+          endTime: args.endTime as string | undefined,
+          durationMinutes: args.durationMinutes as number | undefined,
+          minCapacity: args.minCapacity as number | undefined,
+          building: args.building as string | undefined,
+          floor: args.floor as string | undefined,
+          features: args.features as string[] | undefined,
+        })
+    );
+
+    // check_room_availability - Check availability of a specific room
+    // Requirement: room-availability-search 2
+    this.registerTool(
+      {
+        name: 'check_room_availability',
+        description: 'Check availability of a specific meeting room during a time period. Returns detailed availability including busy periods.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            roomId: {
+              type: 'string',
+              description: 'Calendar ID of the room to check',
+            },
+            startTime: {
+              type: 'string',
+              description: 'Start time in ISO 8601 format',
+            },
+            endTime: {
+              type: 'string',
+              description: 'End time in ISO 8601 format',
+            },
+          },
+          required: ['roomId', 'startTime', 'endTime'],
+        },
+      },
+      async (args) =>
+        handleCheckRoomAvailability(this.createCalendarToolsContext(), {
+          roomId: args.roomId as string,
+          startTime: args.startTime as string,
+          endTime: args.endTime as string,
+        })
     );
 
     // authenticate_google - Complete Google OAuth flow automatically
