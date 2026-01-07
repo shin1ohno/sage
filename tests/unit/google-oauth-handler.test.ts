@@ -468,7 +468,7 @@ describe('GoogleOAuthHandler', () => {
 
       expect(fs.mkdir).toHaveBeenCalledWith(
         expect.stringContaining('.sage'),
-        { recursive: true }
+        expect.objectContaining({ recursive: true })
       );
       expect(fs.writeFile).toHaveBeenCalledWith(
         expect.stringContaining('google_oauth_tokens_test-user-123.enc'),
@@ -549,7 +549,7 @@ describe('GoogleOAuthHandler', () => {
 
       expect(fs.mkdir).toHaveBeenCalledWith(
         expect.stringContaining('.sage'),
-        { recursive: true }
+        expect.objectContaining({ recursive: true })
       );
     });
 

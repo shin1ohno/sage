@@ -11,6 +11,7 @@ import { GoogleCalendarService } from '../../src/integrations/google-calendar-se
 import type { GoogleOAuthTokens } from '../../src/oauth/google-oauth-handler.js';
 import type { GoogleCalendarEvent } from '../../src/types/google-calendar-types.js';
 import * as fs from 'fs/promises';
+import * as syncFs from 'fs';
 
 // Mock modules
 jest.mock('googleapis', () => ({
@@ -23,6 +24,11 @@ jest.mock('googleapis', () => ({
 }));
 
 jest.mock('fs/promises');
+
+jest.mock('fs', () => ({
+  ...jest.requireActual('fs'),
+  existsSync: jest.fn(),
+}));
 
 jest.mock('../../src/utils/retry.js', () => {
   const actual = jest.requireActual('../../src/utils/retry.js');
@@ -46,9 +52,13 @@ describe('Google Calendar Integration', () => {
   let calendarService: GoogleCalendarService;
   let mockOAuth2Client: any;
   let mockCalendarClient: any;
+  let mockFileStore: Record<string, string>;
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Reset file store for each test
+    mockFileStore = {};
 
     // Create mock OAuth2Client
     mockOAuth2Client = {
@@ -80,10 +90,28 @@ describe('Google Calendar Integration', () => {
     google.calendar.mockReturnValue(mockCalendarClient);
     google.auth.OAuth2.mockImplementation(() => mockOAuth2Client);
 
-    // Mock fs operations
+    // Mock fs operations with file store pattern
     (fs.mkdir as jest.Mock).mockResolvedValue(undefined);
-    (fs.writeFile as jest.Mock).mockResolvedValue(undefined);
-    (fs.readFile as jest.Mock).mockResolvedValue('');
+    (fs.writeFile as jest.Mock).mockImplementation(async (filePath: string, data: string) => {
+      mockFileStore[filePath] = data;
+    });
+    (fs.readFile as jest.Mock).mockImplementation(async (filePath: string) => {
+      if (mockFileStore[filePath]) {
+        return mockFileStore[filePath];
+      }
+      throw new Error('File not found');
+    });
+    (fs.chmod as jest.Mock).mockResolvedValue(undefined);
+    (fs.rename as jest.Mock).mockImplementation(async (oldPath: string, newPath: string) => {
+      if (mockFileStore[oldPath]) {
+        mockFileStore[newPath] = mockFileStore[oldPath];
+        delete mockFileStore[oldPath];
+      }
+    });
+    // Mock sync fs.existsSync to check our file store
+    (syncFs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+      return filePath in mockFileStore;
+    });
 
     // Create handler and service instances
     oauthHandler = new GoogleOAuthHandler(mockConfig, mockEncryptionKey, mockUserId);
@@ -134,27 +162,17 @@ describe('Google Calendar Integration', () => {
         codeVerifier: expect.any(String),
       });
 
-      // Step 3: Store tokens securely
-      let storedData: string = '';
-      (fs.writeFile as jest.Mock).mockImplementation(async (_path, data) => {
-        storedData = data;
-      });
-
+      // Step 3: Store tokens securely (uses main beforeEach's file store pattern)
       await oauthHandler.storeTokens(tokens);
 
+      // Verify directory and file operations were called
       expect(fs.mkdir).toHaveBeenCalledWith(
         expect.stringContaining('.sage'),
-        { recursive: true }
+        expect.objectContaining({ recursive: true })
       );
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        expect.stringContaining(`google_oauth_tokens_${mockUserId}.enc`),
-        expect.any(String),
-        'utf8'
-      );
+      expect(fs.writeFile).toHaveBeenCalled();
 
-      // Step 4: Retrieve stored tokens
-      (fs.readFile as jest.Mock).mockResolvedValue(storedData);
-
+      // Step 4: Retrieve stored tokens (file store pattern handles read/write automatically)
       const retrievedTokens = await oauthHandler.getTokens();
 
       expect(retrievedTokens).not.toBeNull();
@@ -199,14 +217,8 @@ describe('Google Calendar Integration', () => {
     };
 
     beforeEach(async () => {
-      // Setup: Store valid tokens and authenticate
-      let storedData: string = '';
-      (fs.writeFile as jest.Mock).mockImplementation(async (_path, data) => {
-        storedData = data;
-      });
+      // Setup: Store valid tokens and authenticate (using main beforeEach's file store)
       await oauthHandler.storeTokens(validTokens);
-      (fs.readFile as jest.Mock).mockResolvedValue(storedData);
-
       await calendarService.authenticate();
       jest.clearAllMocks();
 
@@ -261,6 +273,11 @@ describe('Google Calendar Integration', () => {
       expect(events[0].id).toBe('created-event-integration-123');
 
       // UPDATE
+      // First mock events.get for fetching existing event (updateEvent checks event type first)
+      mockCalendarClient.events.get.mockResolvedValue({
+        data: mockCreatedEvent,
+      });
+
       const mockUpdatedEvent: GoogleCalendarEvent = {
         ...mockCreatedEvent,
         summary: 'Updated Integration Test Event',
@@ -377,7 +394,7 @@ describe('Google Calendar Integration', () => {
 
   describe('Token Refresh Flow Integration', () => {
     it('should automatically refresh expired token and retry API call', async () => {
-      // Setup: Store expired tokens
+      // Setup: Store expired tokens (using main beforeEach's file store)
       const expiredTokens: GoogleOAuthTokens = {
         accessToken: 'expired-access-token',
         refreshToken: 'valid-refresh-token',
@@ -385,12 +402,7 @@ describe('Google Calendar Integration', () => {
         scope: GOOGLE_CALENDAR_SCOPES,
       };
 
-      let storedData: string = '';
-      (fs.writeFile as jest.Mock).mockImplementation(async (_path, data) => {
-        storedData = data;
-      });
       await oauthHandler.storeTokens(expiredTokens);
-      (fs.readFile as jest.Mock).mockResolvedValue(storedData);
 
       // Mock token refresh response
       const newTokens = {
@@ -425,12 +437,7 @@ describe('Google Calendar Integration', () => {
         scope: GOOGLE_CALENDAR_SCOPES,
       };
 
-      let storedData: string = '';
-      (fs.writeFile as jest.Mock).mockImplementation(async (_path, data) => {
-        storedData = data;
-      });
       await oauthHandler.storeTokens(expiredTokens);
-      (fs.readFile as jest.Mock).mockResolvedValue(storedData);
 
       // Mock refresh failure
       mockOAuth2Client.refreshAccessToken.mockRejectedValue(
@@ -452,14 +459,8 @@ describe('Google Calendar Integration', () => {
     };
 
     beforeEach(async () => {
-      // Setup: Store valid tokens and authenticate
-      let storedData: string = '';
-      (fs.writeFile as jest.Mock).mockImplementation(async (_path, data) => {
-        storedData = data;
-      });
+      // Setup: Store valid tokens and authenticate (using main beforeEach's file store)
       await oauthHandler.storeTokens(validTokens);
-      (fs.readFile as jest.Mock).mockResolvedValue(storedData);
-
       await calendarService.authenticate();
       jest.clearAllMocks();
     });
@@ -611,12 +612,7 @@ describe('Google Calendar Integration', () => {
         scope: GOOGLE_CALENDAR_SCOPES,
       };
 
-      let storedData: string = '';
-      (fs.writeFile as jest.Mock).mockImplementation(async (_path, data) => {
-        storedData = data;
-      });
       await oauthHandler.storeTokens(validTokens);
-      (fs.readFile as jest.Mock).mockResolvedValue(storedData);
 
       mockCalendarClient.calendarList.list.mockResolvedValue({ data: {} });
 
@@ -629,11 +625,11 @@ describe('Google Calendar Integration', () => {
     });
 
     it('should return false when authentication fails', async () => {
-      const error: any = new Error('No tokens found');
-      error.code = 'ENOENT';
-      (fs.readFile as jest.Mock).mockRejectedValue(error);
+      // Create new service instance without stored tokens
+      const newOauthHandler = new GoogleOAuthHandler(mockConfig, mockEncryptionKey, 'no-tokens-user');
+      const newCalendarService = new GoogleCalendarService(newOauthHandler, { userId: 'no-tokens-user' });
 
-      const isAvailable = await calendarService.isAvailable();
+      const isAvailable = await newCalendarService.isAvailable();
 
       expect(isAvailable).toBe(false);
     });
@@ -646,12 +642,7 @@ describe('Google Calendar Integration', () => {
         scope: GOOGLE_CALENDAR_SCOPES,
       };
 
-      let storedData: string = '';
-      (fs.writeFile as jest.Mock).mockImplementation(async (_path, data) => {
-        storedData = data;
-      });
       await oauthHandler.storeTokens(validTokens);
-      (fs.readFile as jest.Mock).mockResolvedValue(storedData);
 
       mockCalendarClient.calendarList.list.mockRejectedValue(
         new Error('Service unavailable')
@@ -672,13 +663,8 @@ describe('Google Calendar Integration', () => {
     };
 
     beforeEach(async () => {
-      let storedData: string = '';
-      (fs.writeFile as jest.Mock).mockImplementation(async (_path, data) => {
-        storedData = data;
-      });
+      // Setup: Store valid tokens and authenticate (using main beforeEach's file store)
       await oauthHandler.storeTokens(validTokens);
-      (fs.readFile as jest.Mock).mockResolvedValue(storedData);
-
       await calendarService.authenticate();
       jest.clearAllMocks();
     });

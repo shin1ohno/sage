@@ -20,6 +20,7 @@ import { ConfigLoader } from '../../src/config/loader.js';
 import type { UserConfig } from '../../src/types/config.js';
 import type { GoogleOAuthTokens } from '../../src/oauth/google-oauth-handler.js';
 import * as fs from 'fs/promises';
+import * as syncFs from 'fs';
 
 // Mock modules
 jest.mock('googleapis', () => ({
@@ -32,6 +33,11 @@ jest.mock('googleapis', () => ({
 }));
 
 jest.mock('fs/promises');
+
+jest.mock('fs', () => ({
+  ...jest.requireActual('fs'),
+  existsSync: jest.fn(),
+}));
 
 jest.mock('../../src/utils/retry.js', () => {
   const actual = jest.requireActual('../../src/utils/retry.js');
@@ -125,9 +131,13 @@ describe('E2E: Google Calendar Setup Flow', () => {
   let sourceManager: CalendarSourceManager;
   let mockOAuth2Client: any;
   let mockCalendarClient: any;
+  let mockFileStore: Record<string, string>;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    // Reset file store for each test
+    mockFileStore = {};
 
     // Create mock OAuth2Client
     mockOAuth2Client = {
@@ -159,8 +169,7 @@ describe('E2E: Google Calendar Setup Flow', () => {
     google.calendar.mockReturnValue(mockCalendarClient);
     google.auth.OAuth2.mockImplementation(() => mockOAuth2Client);
 
-    // Mock fs operations
-    let mockFileStore: Record<string, string> = {};
+    // Mock fs operations with file store pattern
     (fs.mkdir as jest.Mock).mockResolvedValue(undefined);
     (fs.writeFile as jest.Mock).mockImplementation(async (filePath: string, data: string) => {
       mockFileStore[filePath] = data;
@@ -170,6 +179,17 @@ describe('E2E: Google Calendar Setup Flow', () => {
         return mockFileStore[filePath];
       }
       throw new Error('File not found');
+    });
+    (fs.chmod as jest.Mock).mockResolvedValue(undefined);
+    (fs.rename as jest.Mock).mockImplementation(async (oldPath: string, newPath: string) => {
+      if (mockFileStore[oldPath]) {
+        mockFileStore[newPath] = mockFileStore[oldPath];
+        delete mockFileStore[oldPath];
+      }
+    });
+    // Mock sync fs.existsSync to check our file store
+    (syncFs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+      return filePath in mockFileStore;
     });
 
     // Initialize components
@@ -274,12 +294,12 @@ describe('E2E: Google Calendar Setup Flow', () => {
 
       expect(fs.mkdir).toHaveBeenCalledWith(
         expect.stringContaining('.sage'),
-        { recursive: true }
+        expect.objectContaining({ recursive: true })
       );
       expect(fs.writeFile).toHaveBeenCalledWith(
         expect.stringContaining(`google_oauth_tokens_${mockUserId}.enc`),
         expect.any(String),
-        'utf8'
+        expect.objectContaining({ mode: 0o600 })
       );
 
       // Step 8: Verify tokens can be retrieved
