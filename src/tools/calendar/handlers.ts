@@ -142,6 +142,8 @@ export interface CreateCalendarEventInput {
   workingLocationType?: string;
   workingLocationLabel?: string;
   birthdayType?: string;
+  /** Room ID (calendar ID) to book for this event */
+  roomId?: string;
 }
 
 export interface DeleteCalendarEventInput {
@@ -658,6 +660,7 @@ export async function handleCreateCalendarEvent(
     workingLocationType,
     workingLocationLabel,
     birthdayType,
+    roomId,
   } = args;
   const config = ctx.getConfig();
 
@@ -815,6 +818,25 @@ export async function handleCreateCalendarEvent(
       effectivePreferredSource = 'google';
     }
 
+    // Handle room booking: add room as attendee
+    // Requirement: room-availability-search 3.1-3.4
+    if (roomId) {
+      // Room booking requires Google Calendar
+      if (!enabledSources.includes('google')) {
+        return createToolResponse({
+          success: false,
+          error: true,
+          message: '会議室予約にはGoogle Calendarが必要です。Google Calendarを有効にしてください。',
+        });
+      }
+      effectivePreferredSource = 'google';
+
+      // Add room as attendee (Google Calendar treats room resources as attendees)
+      // The room calendar ID is added as an attendee email
+      request.attendees = request.attendees || [];
+      request.attendees.push(roomId);
+    }
+
     const event = await calendarSourceManager!.createEvent(
       request,
       effectivePreferredSource
@@ -850,6 +872,12 @@ export async function handleCreateCalendarEvent(
       messageDetail = ` (勤務場所: ${workingLocationType})`;
     } else if (effectiveEventType === 'birthday') {
       messageDetail = ' (誕生日/記念日)';
+    }
+
+    // Add room booking info to response
+    if (roomId) {
+      response.roomId = roomId;
+      messageDetail += ` [会議室: ${roomId}]`;
     }
 
     response.message = `カレンダーイベントを作成しました: ${event.title}${messageDetail} (ソース: ${event.source || 'unknown'})`;

@@ -13,7 +13,7 @@
 - `.claude/specs/room-availability-search/design.md`
 - `.claude/specs/room-availability-search/tasks.md`
 
-**実装タスク完了状況**: 16/19タスク完了
+**実装タスク完了状況**: 19/19タスク完了 ✅
 
 #### Phase 1: Types and Interfaces ✅
 
@@ -61,10 +61,27 @@ config-validation.test.ts: 32 passed ✅ (20 new room tests)
 google-calendar-room-service.test.ts: 29 passed ✅
 ```
 
-#### 残タスク（Phase 4-5）
+#### Phase 5: Room Booking Integration ✅
 
-- **Task 17**: Integration tests for MCP tools（未実装）
-- **Task 18-19**: create_calendar_eventにroom booking機能追加（未実装）
+- **Task 17**: Integration tests for MCP tools (`tests/integration/room-availability.test.ts`)
+  - 11テスト追加（search, check, booking, end-to-end workflow）
+  - MCPハンドラーのレスポンス構造検証
+  - エラーハンドリング（バリデーション、Google Calendar未設定、会議室未検出）
+
+- **Task 18**: create_calendar_eventにroomId パラメータ追加
+  - `src/tools/calendar/handlers.ts`: CreateCalendarEventInput にroomId追加
+  - 会議室をattendeesとして追加
+  - Google Calendar強制選択
+
+- **Task 19**: Room booking tests
+  - 統合テストでカバー（Task 17に含む）
+
+**テスト結果**:
+```
+room-availability.test.ts: 11 passed ✅
+google-calendar-room-service.test.ts: 29 passed ✅
+Total room tests: 40 passed ✅
+```
 
 ### コミット履歴
 
@@ -82,11 +99,13 @@ google-calendar-room-service.test.ts: 29 passed ✅
 - ✅ 50件バッチ処理（API制限対応）
 - ✅ 会議室メタデータ解析（description/summaryから）
 - ✅ MCPツール2種（search/check）
+- ✅ create_calendar_eventでの会議室予約（roomIdパラメータ）
 
 ### 新規ファイル
 
 - `src/integrations/google-calendar-room-service.ts` - 会議室サービス（460行）
 - `tests/unit/google-calendar-room-service.test.ts` - サービステスト（540行）
+- `tests/integration/room-availability.test.ts` - 統合テスト（338行）
 
 ### 変更ファイル
 

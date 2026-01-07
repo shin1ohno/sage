@@ -549,8 +549,12 @@ async function createServer(): Promise<McpServer> {
         .enum(['birthday', 'anniversary', 'other'])
         .optional()
         .describe("For birthday: type of birthday event"),
+      roomId: z
+        .string()
+        .optional()
+        .describe("Room calendar ID to book for this event. Use search_room_availability to find available rooms. Requires Google Calendar."),
     },
-    async ({ title, startDate, endDate, location, notes, calendarName, alarms, preferredSource, eventType, autoDeclineMode, declineMessage, chatStatus, workingLocationType, workingLocationLabel, birthdayType }) =>
+    async ({ title, startDate, endDate, location, notes, calendarName, alarms, preferredSource, eventType, autoDeclineMode, declineMessage, chatStatus, workingLocationType, workingLocationLabel, birthdayType, roomId }) =>
       handleCreateCalendarEvent(createCalendarToolsContext(), {
         title,
         startDate,
@@ -567,6 +571,7 @@ async function createServer(): Promise<McpServer> {
         workingLocationType,
         workingLocationLabel,
         birthdayType,
+        roomId,
       }),
   );
 
