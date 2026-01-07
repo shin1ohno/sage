@@ -247,6 +247,22 @@ export class GoogleCalendarService {
   }
 
   /**
+   * Get the underlying Google Calendar API client
+   *
+   * Returns the authenticated calendar_v3.Calendar client for advanced operations
+   * like freebusy queries. Authenticates if not already authenticated.
+   *
+   * @returns The Google Calendar API client
+   * @throws Error if authentication fails
+   */
+  async getCalendarClient(): Promise<calendar_v3.Calendar> {
+    if (!this.calendarClient) {
+      await this.authenticate();
+    }
+    return this.calendarClient!;
+  }
+
+  /**
    * Validate event type and properties
    *
    * Uses CreateEventRequestSchema to validate the request, ensuring that:

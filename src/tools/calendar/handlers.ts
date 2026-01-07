@@ -1098,3 +1098,197 @@ export async function handleGetWorkingCadence(
     return createErrorFromCatch('勤務リズム情報の取得に失敗しました', error);
   }
 }
+
+// ============================================================
+// Room Availability Input Types
+// Requirement: room-availability-search 1, 2
+// ============================================================
+
+/**
+ * Input for searching room availability
+ * Requirement: room-availability-search 1.1-1.10
+ */
+export interface SearchRoomAvailabilityInput {
+  startTime: string;
+  endTime?: string;
+  durationMinutes?: number;
+  minCapacity?: number;
+  building?: string;
+  floor?: string;
+  features?: string[];
+}
+
+/**
+ * Input for checking specific room availability
+ * Requirement: room-availability-search 2.1-2.4
+ */
+export interface CheckRoomAvailabilityInput {
+  roomId: string;
+  startTime: string;
+  endTime: string;
+}
+
+/**
+ * search_room_availability handler
+ *
+ * Search for available meeting rooms during a specific time period.
+ * Requirement: room-availability-search 1.1-1.10
+ */
+export async function handleSearchRoomAvailability(
+  ctx: CalendarToolsContext,
+  args: SearchRoomAvailabilityInput
+) {
+  const {
+    startTime,
+    endTime,
+    durationMinutes,
+    minCapacity,
+    building,
+    floor,
+    features,
+  } = args;
+  const config = ctx.getConfig();
+
+  if (!config) {
+    return createToolResponse({
+      error: true,
+      message:
+        'sageが設定されていません。check_setup_statusを実行してください。',
+    });
+  }
+
+  // Check if Google Calendar is enabled (required for room search)
+  const googleCalendarService = ctx.getGoogleCalendarService();
+  if (!googleCalendarService) {
+    return createToolResponse({
+      error: true,
+      message:
+        'Google Calendarが設定されていません。会議室検索にはGoogle Calendarが必要です。',
+    });
+  }
+
+  try {
+    // Dynamically import GoogleCalendarRoomService
+    const { GoogleCalendarRoomService } = await import(
+      '../../integrations/google-calendar-room-service.js'
+    );
+
+    const roomService = new GoogleCalendarRoomService(googleCalendarService);
+
+    const results = await roomService.searchRoomAvailability({
+      startTime,
+      endTime,
+      durationMinutes,
+      minCapacity,
+      building,
+      floor,
+      features,
+    });
+
+    if (results.length === 0) {
+      return createToolResponse({
+        success: true,
+        rooms: [],
+        message:
+          '指定された条件に一致する空き会議室が見つかりませんでした。別の時間帯をお試しください。',
+      });
+    }
+
+    // Filter to only available rooms
+    const availableRooms = results.filter((r) => r.isAvailable);
+
+    return createToolResponse({
+      success: true,
+      totalRooms: results.length,
+      availableCount: availableRooms.length,
+      rooms: results.map((r) => ({
+        id: r.room.id,
+        name: r.room.name,
+        capacity: r.room.capacity,
+        building: r.room.building,
+        floor: r.room.floor,
+        features: r.room.features,
+        isAvailable: r.isAvailable,
+        busyPeriods: r.busyPeriods,
+      })),
+      message: `${availableRooms.length}/${results.length}件の会議室が利用可能です。`,
+    });
+  } catch (error) {
+    return createErrorFromCatch('会議室の空き状況検索に失敗しました', error);
+  }
+}
+
+/**
+ * check_room_availability handler
+ *
+ * Check if a specific meeting room is available during a time period.
+ * Requirement: room-availability-search 2.1-2.4
+ */
+export async function handleCheckRoomAvailability(
+  ctx: CalendarToolsContext,
+  args: CheckRoomAvailabilityInput
+) {
+  const { roomId, startTime, endTime } = args;
+  const config = ctx.getConfig();
+
+  if (!config) {
+    return createToolResponse({
+      error: true,
+      message:
+        'sageが設定されていません。check_setup_statusを実行してください。',
+    });
+  }
+
+  // Check if Google Calendar is enabled (required for room search)
+  const googleCalendarService = ctx.getGoogleCalendarService();
+  if (!googleCalendarService) {
+    return createToolResponse({
+      error: true,
+      message:
+        'Google Calendarが設定されていません。会議室検索にはGoogle Calendarが必要です。',
+    });
+  }
+
+  try {
+    // Dynamically import GoogleCalendarRoomService
+    const { GoogleCalendarRoomService } = await import(
+      '../../integrations/google-calendar-room-service.js'
+    );
+
+    const roomService = new GoogleCalendarRoomService(googleCalendarService);
+
+    const result = await roomService.checkRoomAvailability(
+      roomId,
+      startTime,
+      endTime
+    );
+
+    return createToolResponse({
+      success: true,
+      room: {
+        id: result.room.id,
+        name: result.room.name,
+        capacity: result.room.capacity,
+        building: result.room.building,
+        floor: result.room.floor,
+        features: result.room.features,
+      },
+      isAvailable: result.isAvailable,
+      busyPeriods: result.busyPeriods,
+      requestedPeriod: result.requestedPeriod,
+      message: result.isAvailable
+        ? `会議室「${result.room.name}」は指定された時間帯に利用可能です。`
+        : `会議室「${result.room.name}」は指定された時間帯に予約済みです。`,
+    });
+  } catch (error) {
+    // Handle room not found error
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    if (errorMessage.includes('Room not found')) {
+      return createToolResponse({
+        error: true,
+        message: `指定された会議室が見つかりません: ${roomId}`,
+      });
+    }
+    return createErrorFromCatch('会議室の空き状況確認に失敗しました', error);
+  }
+}

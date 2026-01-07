@@ -18,6 +18,8 @@ export type {
   DeleteCalendarEventsBatchInput,
   SetCalendarSourceInput,
   GetWorkingCadenceInput,
+  SearchRoomAvailabilityInput,
+  CheckRoomAvailabilityInput,
 } from './handlers.js';
 
 export {
@@ -30,4 +32,6 @@ export {
   handleDeleteCalendarEventsBatch,
   handleListCalendarSources,
   handleGetWorkingCadence,
+  handleSearchRoomAvailability,
+  handleCheckRoomAvailability,
 } from './handlers.js';

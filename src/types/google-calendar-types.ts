@@ -387,3 +387,108 @@ export function areEventsDuplicate(event1: CalendarEvent, event2: CalendarEvent)
 
   return titleMatch && startMatch && endMatch;
 }
+
+// ============================================================
+// Room Availability Types
+// ============================================================
+
+/**
+ * Meeting room resource from Google Workspace
+ * Requirement: room-availability-search 1.9
+ */
+export interface RoomResource {
+  /** Calendar ID (e.g., "room-huddle-1@company.com") */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Resource email address */
+  email: string;
+  /** Room capacity */
+  capacity?: number;
+  /** Room features (e.g., ["videoConference", "whiteboard"]) */
+  features?: string[];
+  /** Building name */
+  building?: string;
+  /** Floor identifier */
+  floor?: string;
+  /** Room description */
+  description?: string;
+}
+
+/**
+ * Filter options for room resource search
+ * Requirement: room-availability-search 1.5, 1.6, 1.7, 1.8
+ */
+export interface RoomResourceFilter {
+  /** Minimum required capacity */
+  minCapacity?: number;
+  /** Filter by building name */
+  building?: string;
+  /** Filter by floor */
+  floor?: string;
+  /** Required features (all must be present) */
+  features?: string[];
+}
+
+/**
+ * Request parameters for room availability search
+ * Requirement: room-availability-search 1.1, 1.2
+ */
+export interface RoomAvailabilityRequest {
+  /** Start time in ISO 8601 format (required) */
+  startTime: string;
+  /** End time in ISO 8601 format (optional if durationMinutes specified) */
+  endTime?: string;
+  /** Duration in minutes (optional if endTime specified) */
+  durationMinutes?: number;
+  /** Minimum required capacity */
+  minCapacity?: number;
+  /** Filter by building name */
+  building?: string;
+  /** Filter by floor */
+  floor?: string;
+  /** Required features */
+  features?: string[];
+}
+
+/**
+ * Busy period within a time range
+ * Requirement: room-availability-search 1.9, 2.2
+ */
+export interface BusyPeriod {
+  /** Start time in ISO 8601 format */
+  start: string;
+  /** End time in ISO 8601 format */
+  end: string;
+}
+
+/**
+ * Room availability result
+ * Requirement: room-availability-search 1.9
+ */
+export interface RoomAvailability {
+  /** Room resource information */
+  room: RoomResource;
+  /** True if completely free during requested period */
+  isAvailable: boolean;
+  /** Busy periods within the requested time range */
+  busyPeriods: BusyPeriod[];
+}
+
+/**
+ * Single room availability check result
+ * Requirement: room-availability-search 2.1, 2.2, 2.3
+ */
+export interface SingleRoomAvailability {
+  /** Room resource information */
+  room: RoomResource;
+  /** True if completely free during requested period */
+  isAvailable: boolean;
+  /** Busy periods within the requested time range */
+  busyPeriods: BusyPeriod[];
+  /** The requested time period */
+  requestedPeriod: {
+    start: string;
+    end: string;
+  };
+}

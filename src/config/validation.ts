@@ -345,3 +345,129 @@ export function validateCreateEventRequest(request: unknown): {
     error: result.error,
   };
 }
+
+// ============================================================
+// Room Availability Schemas
+// Requirement: room-availability-search 1.1, 1.2, 2.1
+// ============================================================
+
+/**
+ * Room Availability Request Schema
+ * Validates search parameters for room availability
+ * Requirement: room-availability-search 1.1, 1.2
+ */
+export const RoomAvailabilityRequestSchema = z
+  .object({
+    startTime: z.string().min(1, 'Start time is required'),
+    endTime: z.string().optional(),
+    durationMinutes: z.number().min(1).max(480).optional(),
+    minCapacity: z.number().min(1).optional(),
+    building: z.string().optional(),
+    floor: z.string().optional(),
+    features: z.array(z.string()).optional(),
+  })
+  .refine(
+    (data) => {
+      // Either endTime or durationMinutes must be specified
+      return data.endTime !== undefined || data.durationMinutes !== undefined;
+    },
+    {
+      message: 'Either endTime or durationMinutes must be specified',
+      path: ['endTime'],
+    }
+  )
+  // Note: If both endTime and durationMinutes are specified, endTime takes precedence
+  .refine(
+    (data) => {
+      // Validate that startTime is before endTime if endTime is specified
+      if (data.endTime) {
+        const start = new Date(data.startTime);
+        const end = new Date(data.endTime);
+        return start < end;
+      }
+      return true;
+    },
+    {
+      message: 'Start time must be before end time',
+      path: ['startTime'],
+    }
+  );
+
+/**
+ * Check Room Availability Schema
+ * Validates parameters for checking specific room availability
+ * Requirement: room-availability-search 2.1
+ */
+export const CheckRoomAvailabilitySchema = z
+  .object({
+    roomId: z.string().min(1, 'Room ID is required'),
+    startTime: z.string().min(1, 'Start time is required'),
+    endTime: z.string().min(1, 'End time is required'),
+  })
+  .refine(
+    (data) => {
+      const start = new Date(data.startTime);
+      const end = new Date(data.endTime);
+      return start < end;
+    },
+    {
+      message: 'Start time must be before end time',
+      path: ['startTime'],
+    }
+  );
+
+/**
+ * Type exports for room availability schemas
+ */
+export type ValidatedRoomAvailabilityRequest = z.infer<typeof RoomAvailabilityRequestSchema>;
+export type ValidatedCheckRoomAvailability = z.infer<typeof CheckRoomAvailabilitySchema>;
+
+/**
+ * Validate room availability request
+ * @param request - The room availability request to validate
+ * @returns Validation result with parsed data or error
+ */
+export function validateRoomAvailabilityRequest(request: unknown): {
+  success: boolean;
+  data?: ValidatedRoomAvailabilityRequest;
+  error?: z.ZodError;
+} {
+  const result = RoomAvailabilityRequestSchema.safeParse(request);
+
+  if (result.success) {
+    return {
+      success: true,
+      data: result.data,
+    };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+  };
+}
+
+/**
+ * Validate check room availability request
+ * @param request - The check room availability request to validate
+ * @returns Validation result with parsed data or error
+ */
+export function validateCheckRoomAvailability(request: unknown): {
+  success: boolean;
+  data?: ValidatedCheckRoomAvailability;
+  error?: z.ZodError;
+} {
+  const result = CheckRoomAvailabilitySchema.safeParse(request);
+
+  if (result.success) {
+    return {
+      success: true,
+      data: result.data,
+    };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+  };
+}
