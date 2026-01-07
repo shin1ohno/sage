@@ -1,6 +1,106 @@
 # Session Progress - sage
 
-## Current Session: 2026-01-07 - MCPHandler Tool Tests追加
+## Current Session: 2026-01-07 - Room Availability Search実装
+
+### 完了タスク
+
+#### Room Availability Search機能実装 ✅
+
+**目的**: Google Calendarの会議室空き状況検索機能を追加
+
+**仕様ファイル**:
+- `.claude/specs/room-availability-search/requirements.md`
+- `.claude/specs/room-availability-search/design.md`
+- `.claude/specs/room-availability-search/tasks.md`
+
+**実装タスク完了状況**: 16/19タスク完了
+
+#### Phase 1: Types and Interfaces ✅
+
+- **Task 1**: Room resource types追加 (`src/types/google-calendar-types.ts`)
+  - `RoomResource`, `RoomResourceFilter`, `RoomAvailabilityRequest`, `RoomAvailability`, `SingleRoomAvailability`, `BusyPeriod`
+
+- **Task 2**: Zod validation schemas追加 (`src/config/validation.ts`)
+  - `RoomAvailabilityRequestSchema`, `CheckRoomAvailabilitySchema`
+  - `validateRoomAvailabilityRequest()`, `validateCheckRoomAvailability()`
+
+#### Phase 2: Core Service Implementation ✅
+
+- **Task 3-8**: `GoogleCalendarRoomService`クラス実装 (`src/integrations/google-calendar-room-service.ts`)
+  - `searchRoomAvailability()` - 会議室検索（フィルタ、ソート対応）
+  - `checkRoomAvailability()` - 特定会議室の空き確認
+  - `fetchRoomResources()` - CalendarList APIで会議室一覧取得
+  - `queryFreebusy()` - Freebusy APIで空き状況照会（50件バッチ処理）
+  - `sortByCapacityMatch()` - 人数マッチでソート
+  - `parseRoomFromCalendar()` - 会議室メタデータ解析
+
+#### Phase 3: MCP Tool Integration ✅
+
+- **Task 9-10**: MCPツール定義追加 (`src/index.ts`)
+  - `search_room_availability` - 会議室検索ツール
+  - `check_room_availability` - 特定会議室確認ツール
+
+- **Task 11-12**: ツールハンドラー実装 (`src/tools/calendar/handlers.ts`)
+  - `handleSearchRoomAvailability()`, `handleCheckRoomAvailability()`
+
+#### Phase 4: Testing ✅
+
+- **Task 13**: Validation schemas unit tests (`tests/unit/config-validation.test.ts`)
+  - 20テスト追加（Room Availability Validation）
+
+- **Task 14-16**: Service unit tests (`tests/unit/google-calendar-room-service.test.ts`)
+  - 29テスト追加
+  - searchRoomAvailability: フィルタ、ソート、バッチ処理
+  - checkRoomAvailability: 空き確認、エラーハンドリング
+  - isRoomAvailable: オーバーラップ検出
+  - parseRoomFromCalendar: メタデータ解析
+
+**テスト結果**:
+```
+config-validation.test.ts: 32 passed ✅ (20 new room tests)
+google-calendar-room-service.test.ts: 29 passed ✅
+```
+
+#### 残タスク（Phase 4-5）
+
+- **Task 17**: Integration tests for MCP tools（未実装）
+- **Task 18-19**: create_calendar_eventにroom booking機能追加（未実装）
+
+### コミット履歴
+
+1. `dc46f11` - spec: Add room availability search specification
+2. `b479f74` - room-service: Implement room availability search feature
+3. `b9c63f7` - tests: Add unit tests for room availability feature
+
+### 主要機能
+
+- ✅ Google Workspace会議室リソース検索
+- ✅ CalendarList APIによる会議室発見
+- ✅ Freebusy APIによる空き状況照会
+- ✅ フィルタリング（人数、ビル、フロア、設備）
+- ✅ 人数マッチによるソート
+- ✅ 50件バッチ処理（API制限対応）
+- ✅ 会議室メタデータ解析（description/summaryから）
+- ✅ MCPツール2種（search/check）
+
+### 新規ファイル
+
+- `src/integrations/google-calendar-room-service.ts` - 会議室サービス（460行）
+- `tests/unit/google-calendar-room-service.test.ts` - サービステスト（540行）
+
+### 変更ファイル
+
+- `src/types/google-calendar-types.ts` - 会議室型定義追加
+- `src/config/validation.ts` - Zod schemas追加
+- `src/index.ts` - MCPツール定義追加
+- `src/tools/calendar/handlers.ts` - ハンドラー追加
+- `src/tools/calendar/index.ts` - エクスポート追加
+- `src/integrations/google-calendar-service.ts` - `getCalendarClient()`追加
+- `tests/unit/config-validation.test.ts` - バリデーションテスト追加
+
+---
+
+## Previous Session: 2026-01-07 - MCPHandler Tool Tests追加
 
 ### 完了タスク
 
