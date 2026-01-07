@@ -27,13 +27,27 @@ describe('Tool Parity', () => {
     const indexPath = path.join(__dirname, '../../src/index.ts');
     const content = fs.readFileSync(indexPath, 'utf-8');
 
-    // Match server.tool("tool_name", ...) pattern
-    const regex = /server\.tool\(\s*\n?\s*["']([^"']+)["']/g;
     const tools: string[] = [];
-    let match;
 
-    while ((match = regex.exec(content)) !== null) {
+    // Match server.tool("tool_name", ...) pattern (string literals)
+    const stringLiteralRegex = /server\.tool\(\s*\n?\s*["']([^"']+)["']/g;
+    let match;
+    while ((match = stringLiteralRegex.exec(content)) !== null) {
       tools.push(match[1]);
+    }
+
+    // Match server.tool(toolDefinition.name, ...) pattern (shared definitions)
+    // Look for patterns like: searchRoomAvailabilityTool.name
+    const variableRegex = /server\.tool\(\s*\n?\s*(\w+Tool)\.name/g;
+    while ((match = variableRegex.exec(content)) !== null) {
+      // Convert variable name to tool name: searchRoomAvailabilityTool -> search_room_availability
+      const varName = match[1];
+      const toolName = varName
+        .replace(/Tool$/, '')
+        .replace(/([A-Z])/g, '_$1')
+        .toLowerCase()
+        .replace(/^_/, '');
+      tools.push(toolName);
     }
 
     return tools.sort();
@@ -43,13 +57,26 @@ describe('Tool Parity', () => {
     const handlerPath = path.join(__dirname, '../../src/cli/mcp-handler.ts');
     const content = fs.readFileSync(handlerPath, 'utf-8');
 
-    // Match name: 'tool_name' or name: "tool_name" pattern in registerTool calls
-    const regex = /name:\s*['"]([^'"]+)['"]/g;
     const tools: string[] = [];
-    let match;
 
-    while ((match = regex.exec(content)) !== null) {
+    // Match name: 'tool_name' or name: "tool_name" pattern (string literals)
+    const stringLiteralRegex = /name:\s*['"]([^'"]+)['"]/g;
+    let match;
+    while ((match = stringLiteralRegex.exec(content)) !== null) {
       tools.push(match[1]);
+    }
+
+    // Match name: toolDefinition.name pattern (shared definitions)
+    const variableRegex = /name:\s*(\w+Tool)\.name/g;
+    while ((match = variableRegex.exec(content)) !== null) {
+      // Convert variable name to tool name: searchRoomAvailabilityTool -> search_room_availability
+      const varName = match[1];
+      const toolName = varName
+        .replace(/Tool$/, '')
+        .replace(/([A-Z])/g, '_$1')
+        .toLowerCase()
+        .replace(/^_/, '');
+      tools.push(toolName);
     }
 
     return tools.sort();

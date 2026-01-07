@@ -81,6 +81,13 @@ import {
   handleCheckRoomAvailability,
 } from '../tools/calendar/handlers.js';
 
+// Shared tool definitions
+import {
+  searchRoomAvailabilityTool,
+  checkRoomAvailabilityTool,
+  toJsonSchema,
+} from '../tools/shared/index.js';
+
 import {
   type OAuthToolsContext,
   handleAuthenticateGoogle,
@@ -1420,45 +1427,12 @@ class MCPHandlerImpl implements MCPHandler {
 
     // search_room_availability - Search for available meeting rooms
     // Requirement: room-availability-search 1
+    // Uses shared definition from tools/shared/room-tools.ts
     this.registerTool(
       {
-        name: 'search_room_availability',
-        description: 'Search for available meeting rooms during a specific time period. Returns rooms sorted by capacity match with availability status.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            startTime: {
-              type: 'string',
-              description: 'Start time in ISO 8601 format (e.g., 2025-01-15T10:00:00+09:00)',
-            },
-            endTime: {
-              type: 'string',
-              description: 'End time in ISO 8601 format. Either endTime or durationMinutes is required.',
-            },
-            durationMinutes: {
-              type: 'number',
-              description: 'Duration in minutes. Used to calculate endTime if not specified.',
-            },
-            minCapacity: {
-              type: 'number',
-              description: 'Minimum room capacity (number of people)',
-            },
-            building: {
-              type: 'string',
-              description: 'Filter by building name',
-            },
-            floor: {
-              type: 'string',
-              description: 'Filter by floor',
-            },
-            features: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Required features (e.g., ["projector", "whiteboard"])',
-            },
-          },
-          required: ['startTime'],
-        },
+        name: searchRoomAvailabilityTool.name,
+        description: searchRoomAvailabilityTool.description,
+        inputSchema: toJsonSchema(searchRoomAvailabilityTool.schema),
       },
       async (args) =>
         handleSearchRoomAvailability(this.createCalendarToolsContext(), {
@@ -1474,28 +1448,12 @@ class MCPHandlerImpl implements MCPHandler {
 
     // check_room_availability - Check availability of a specific room
     // Requirement: room-availability-search 2
+    // Uses shared definition from tools/shared/room-tools.ts
     this.registerTool(
       {
-        name: 'check_room_availability',
-        description: 'Check availability of a specific meeting room during a time period. Returns detailed availability including busy periods.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            roomId: {
-              type: 'string',
-              description: 'Calendar ID of the room to check',
-            },
-            startTime: {
-              type: 'string',
-              description: 'Start time in ISO 8601 format',
-            },
-            endTime: {
-              type: 'string',
-              description: 'End time in ISO 8601 format',
-            },
-          },
-          required: ['roomId', 'startTime', 'endTime'],
-        },
+        name: checkRoomAvailabilityTool.name,
+        description: checkRoomAvailabilityTool.description,
+        inputSchema: toJsonSchema(checkRoomAvailabilityTool.schema),
       },
       async (args) =>
         handleCheckRoomAvailability(this.createCalendarToolsContext(), {
