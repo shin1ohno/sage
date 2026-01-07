@@ -77,6 +77,7 @@ import {
   handleRespondToCalendarEventsBatch,
   handleDeleteCalendarEvent,
   handleDeleteCalendarEventsBatch,
+  handleUpdateCalendarEvent,
   handleSearchRoomAvailability,
   handleCheckRoomAvailability,
 } from '../tools/calendar/handlers.js';
@@ -85,6 +86,7 @@ import {
 import {
   searchRoomAvailabilityTool,
   checkRoomAvailabilityTool,
+  updateCalendarEventTool,
   toJsonSchema,
 } from '../tools/shared/index.js';
 
@@ -1409,6 +1411,34 @@ class MCPHandlerImpl implements MCPHandler {
       async (args) =>
         handleDeleteCalendarEventsBatch(this.createCalendarToolsContext(), {
           eventIds: args.eventIds as string[],
+        })
+    );
+
+    // update_calendar_event - Update an existing calendar event
+    // Requirement: update-calendar-event 1-8
+    // Uses shared definition from tools/shared/calendar-tools.ts
+    this.registerTool(
+      {
+        name: updateCalendarEventTool.name,
+        description: updateCalendarEventTool.description,
+        inputSchema: toJsonSchema(updateCalendarEventTool.schema),
+      },
+      async (args) =>
+        handleUpdateCalendarEvent(this.createCalendarToolsContext(), {
+          eventId: args.eventId as string,
+          title: args.title as string | undefined,
+          startDate: args.startDate as string | undefined,
+          endDate: args.endDate as string | undefined,
+          location: args.location as string | undefined,
+          notes: args.notes as string | undefined,
+          attendees: args.attendees as string[] | undefined,
+          alarms: args.alarms as string[] | undefined,
+          roomId: args.roomId as string | undefined,
+          removeRoom: args.removeRoom as boolean | undefined,
+          autoDeclineMode: args.autoDeclineMode as string | undefined,
+          declineMessage: args.declineMessage as string | undefined,
+          chatStatus: args.chatStatus as string | undefined,
+          calendarName: args.calendarName as string | undefined,
         })
     );
 

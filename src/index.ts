@@ -61,6 +61,7 @@ import {
   handleCreateCalendarEvent,
   handleDeleteCalendarEvent,
   handleDeleteCalendarEventsBatch,
+  handleUpdateCalendarEvent,
   handleListCalendarSources,
   handleGetWorkingCadence,
   handleSearchRoomAvailability,
@@ -77,6 +78,7 @@ import {
 import {
   searchRoomAvailabilityTool,
   checkRoomAvailabilityTool,
+  updateCalendarEventTool,
 } from "./tools/shared/index.js";
 
 import {
@@ -609,6 +611,34 @@ async function createServer(): Promise<McpServer> {
     },
     async ({ eventIds, source }) =>
       handleDeleteCalendarEventsBatch(createCalendarToolsContext(), { eventIds, source }),
+  );
+
+  /**
+   * update_calendar_event - Update an existing calendar event
+   * Requirement: update-calendar-event 1-8
+   * Uses shared definition from tools/shared/calendar-tools.ts
+   */
+  server.tool(
+    updateCalendarEventTool.name,
+    updateCalendarEventTool.description,
+    updateCalendarEventTool.schema.shape,
+    async ({ eventId, title, startDate, endDate, location, notes, attendees, alarms, roomId, removeRoom, autoDeclineMode, declineMessage, chatStatus, calendarName }) =>
+      handleUpdateCalendarEvent(createCalendarToolsContext(), {
+        eventId,
+        title,
+        startDate,
+        endDate,
+        location,
+        notes,
+        attendees,
+        alarms,
+        roomId,
+        removeRoom,
+        autoDeclineMode,
+        declineMessage,
+        chatStatus,
+        calendarName,
+      }),
   );
 
   // sync_to_notion - uses extracted handler

@@ -623,10 +623,54 @@ export class GoogleCalendarService {
   }
 
   /**
-   * Update a calendar event
-   * Requirement: 4, 10, 4.5, 5.3, 6.6 (Calendar event updates with partial updates, retry logic, and event type restrictions)
+   * Get a single calendar event by ID
+   * Requirement: update-calendar-event (support for fetching event details)
    *
-   * Updates an existing event in Google Calendar using the patch API for partial updates.
+   * @param eventId - Event ID to fetch
+   * @param calendarId - Calendar ID (optional, defaults to 'primary')
+   * @returns Calendar event
+   * @throws Error if event not found or authentication fails
+   */
+  async getEvent(eventId: string, calendarId?: string): Promise<CalendarEvent> {
+    if (!this.calendarClient) {
+      await this.authenticate();
+    }
+
+    const targetCalendarId = calendarId || 'primary';
+
+    const response = await retryWithBackoff(
+      async () => {
+        return (
+          await this.calendarClient!.events.get({
+            calendarId: targetCalendarId,
+            eventId: eventId,
+          })
+        ).data;
+      },
+      {
+        maxAttempts: 3,
+        initialDelay: 1000,
+        shouldRetry: (error: Error) => {
+          const message = error.message.toLowerCase();
+          if (message.includes('not found') || message.includes('404')) {
+            return false;
+          }
+          if (message.includes('unauthorized') || message.includes('401') ||
+              message.includes('forbidden') || message.includes('403')) {
+            return false;
+          }
+          return true;
+        },
+      }
+    );
+
+    return convertGoogleToCalendarEvent(response as GoogleCalendarEvent);
+  }
+
+  /**
+   * Update an existing calendar event
+   * Requirement: 4, 10 (Calendar event update with retry logic)
+   *
    * Supports all-day events, reminders, attendees, and recurring events.
    * Includes retry logic with exponential backoff for transient failures.
    * Enforces event type restrictions (birthday and fromGmail events have limited updatable fields).

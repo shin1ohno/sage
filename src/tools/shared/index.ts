@@ -34,3 +34,9 @@ export {
   checkRoomAvailabilityTool,
   roomTools,
 } from './room-tools.js';
+
+// Calendar tools
+export {
+  updateCalendarEventTool,
+  calendarTools,
+} from './calendar-tools.js';

@@ -156,6 +156,41 @@ export interface DeleteCalendarEventsBatchInput {
   source?: 'eventkit' | 'google';
 }
 
+/**
+ * Input for updating a calendar event
+ *
+ * @property eventId - The ID of the event to update
+ * @property title - New title/summary for the event
+ * @property startDate - New start date/time in ISO 8601 format
+ * @property endDate - New end date/time in ISO 8601 format
+ * @property location - New location for the event
+ * @property notes - New notes/description for the event
+ * @property attendees - New list of attendee email addresses
+ * @property alarms - New alarm settings (e.g., ['-15m', '-1h'])
+ * @property roomId - Room calendar ID to add or change
+ * @property removeRoom - Set to true to remove the current room
+ * @property autoDeclineMode - For outOfOffice/focusTime events
+ * @property declineMessage - Custom decline message
+ * @property chatStatus - For focusTime events
+ * @property calendarName - Calendar name (optional)
+ */
+export interface UpdateCalendarEventInput {
+  eventId: string;
+  title?: string;
+  startDate?: string;
+  endDate?: string;
+  location?: string;
+  notes?: string;
+  attendees?: string[];
+  alarms?: string[];
+  roomId?: string;
+  removeRoom?: boolean;
+  autoDeclineMode?: string;
+  declineMessage?: string;
+  chatStatus?: string;
+  calendarName?: string;
+}
+
 export interface SetCalendarSourceInput {
   source: 'eventkit' | 'google';
   enabled: boolean;
@@ -1014,6 +1049,211 @@ export async function handleDeleteCalendarEventsBatch(
       'カレンダーイベント一括削除に失敗しました',
       error
     );
+  }
+}
+
+/**
+ * update_calendar_event handler
+ *
+ * Update an existing calendar event.
+ * Requirement: update-calendar-event 1-8
+ */
+export async function handleUpdateCalendarEvent(
+  ctx: CalendarToolsContext,
+  args: UpdateCalendarEventInput
+) {
+  const {
+    eventId,
+    title,
+    startDate,
+    endDate,
+    location,
+    notes,
+    attendees,
+    alarms,
+    roomId,
+    removeRoom,
+    autoDeclineMode,
+    declineMessage,
+    chatStatus,
+    calendarName,
+  } = args;
+
+  const config = ctx.getConfig();
+
+  if (!config) {
+    return createToolResponse({
+      error: true,
+      message:
+        'sageが設定されていません。check_setup_statusを実行してください。',
+    });
+  }
+
+  // Validate date order if both are provided
+  if (startDate && endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (start > end) {
+      return createToolResponse({
+        success: false,
+        error: true,
+        message: '開始日時は終了日時より前である必要があります。',
+      });
+    }
+  }
+
+  // Room operations require Google Calendar
+  const googleCalendarService = ctx.getGoogleCalendarService();
+  if ((roomId || removeRoom) && !googleCalendarService) {
+    return createToolResponse({
+      success: false,
+      error: true,
+      message: '会議室の操作にはGoogle Calendarが必要です。Google Calendarを有効にしてください。',
+    });
+  }
+
+  // Currently, update is only supported via Google Calendar
+  if (!googleCalendarService) {
+    return createToolResponse({
+      success: false,
+      error: true,
+      message: 'イベントの更新にはGoogle Calendarが必要です。Google Calendarを有効にしてください。',
+    });
+  }
+
+  try {
+    // Build update request
+    const updateRequest: Partial<CreateEventRequest> = {};
+
+    if (title !== undefined) {
+      updateRequest.title = title;
+    }
+    if (startDate !== undefined) {
+      updateRequest.start = startDate;
+    }
+    if (endDate !== undefined) {
+      updateRequest.end = endDate;
+    }
+    if (location !== undefined) {
+      updateRequest.location = location;
+    }
+    if (notes !== undefined) {
+      updateRequest.description = notes;
+    }
+    if (alarms !== undefined) {
+      // Convert alarm strings to reminder format
+      const overrides = alarms.map((alarm) => {
+        // Parse alarm format like '-15m', '-1h', '-1d'
+        const match = alarm.match(/^-?(\d+)([mhd])$/);
+        if (match) {
+          const value = parseInt(match[1], 10);
+          const unit = match[2];
+          let minutes = value;
+          if (unit === 'h') minutes = value * 60;
+          if (unit === 'd') minutes = value * 60 * 24;
+          return { method: 'popup' as const, minutes };
+        }
+        return { method: 'popup' as const, minutes: 15 }; // Default
+      });
+      updateRequest.reminders = { useDefault: false, overrides };
+    }
+
+    // Handle room and attendees
+    if (roomId || removeRoom || attendees !== undefined) {
+      // Need to get current attendees first to handle room changes
+      let currentAttendees: string[] = [];
+
+      // If we're modifying rooms but attendees not provided, we need to preserve existing
+      if ((roomId || removeRoom) && attendees === undefined) {
+        // Fetch current event to get existing attendees
+        try {
+          const currentEvent = await googleCalendarService.getEvent(eventId, calendarName);
+          currentAttendees = currentEvent.attendees || [];
+        } catch {
+          // If we can't get the event, start with empty attendees
+          currentAttendees = [];
+        }
+      } else if (attendees !== undefined) {
+        currentAttendees = attendees;
+      }
+
+      // Remove existing room if removeRoom is true or if adding new room
+      if (removeRoom || roomId) {
+        currentAttendees = currentAttendees.filter(
+          (a) => !a.includes('@resource.calendar.google.com')
+        );
+      }
+
+      // Add new room if specified
+      if (roomId) {
+        currentAttendees.push(roomId);
+      }
+
+      updateRequest.attendees = currentAttendees;
+    }
+
+    // Handle event type specific properties
+    if (autoDeclineMode || declineMessage || chatStatus) {
+      if (autoDeclineMode) {
+        // These properties are handled by the Google Calendar API based on event type
+        updateRequest.outOfOfficeProperties = {
+          autoDeclineMode: autoDeclineMode as 'declineNone' | 'declineAllConflictingInvitations' | 'declineOnlyNewConflictingInvitations',
+          declineMessage,
+        };
+        updateRequest.focusTimeProperties = {
+          autoDeclineMode: autoDeclineMode as 'declineNone' | 'declineAllConflictingInvitations' | 'declineOnlyNewConflictingInvitations',
+          declineMessage,
+          chatStatus: chatStatus as 'available' | 'doNotDisturb' | undefined,
+        };
+      }
+    }
+
+    // Call Google Calendar service to update
+    const updatedEvent = await googleCalendarService.updateEvent(
+      eventId,
+      updateRequest,
+      calendarName
+    );
+
+    // Build change summary
+    const changes: string[] = [];
+    if (title !== undefined) changes.push('タイトル');
+    if (startDate !== undefined) changes.push('開始日時');
+    if (endDate !== undefined) changes.push('終了日時');
+    if (location !== undefined) changes.push('場所');
+    if (notes !== undefined) changes.push('説明');
+    if (attendees !== undefined) changes.push('参加者');
+    if (alarms !== undefined) changes.push('リマインダー');
+    if (roomId) changes.push('会議室追加');
+    if (removeRoom) changes.push('会議室削除');
+
+    return createToolResponse({
+      success: true,
+      event: updatedEvent,
+      changes,
+      message: `イベントを更新しました: ${changes.join(', ')}`,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // Provide helpful error messages
+    if (errorMessage.includes('404') || errorMessage.includes('not found')) {
+      return createToolResponse({
+        success: false,
+        error: true,
+        message: '指定されたイベントが見つかりませんでした。イベントIDを確認してください。',
+      });
+    }
+
+    if (errorMessage.includes('401') || errorMessage.includes('403')) {
+      return createToolResponse({
+        success: false,
+        error: true,
+        message: 'Google Calendarへのアクセス権限がありません。再認証してください。',
+      });
+    }
+
+    return createErrorFromCatch('イベントの更新に失敗しました', error);
   }
 }
 
