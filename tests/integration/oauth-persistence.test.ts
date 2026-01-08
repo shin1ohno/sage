@@ -588,7 +588,6 @@ describe('OAuth Persistence - End-to-End Integration', () => {
     });
 
     it('should handle concurrent client registrations', async () => {
-      jest.setTimeout(30000);
       // Arrange: Create server
       const server = await createTestServer();
 
@@ -621,10 +620,9 @@ describe('OAuth Persistence - End-to-End Integration', () => {
       }
 
       await server2.shutdown();
-    });
+    }, 30000); // Extended timeout for concurrent operations on slower CI
 
     it('should handle mixed concurrent operations', async () => {
-      jest.setTimeout(30000);
       // Arrange: Create server with initial data
       const server = await createTestServer();
 
