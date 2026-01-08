@@ -132,7 +132,8 @@ describe('OAuth PKCE (S256)', () => {
     });
 
     it('should reject tampered verifier', () => {
-      const originalVerifier = generateCodeVerifier();
+      // Use fixed verifier for deterministic test (RFC 7636 Appendix B example)
+      const originalVerifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
       const codeChallenge = generateCodeChallenge(originalVerifier);
 
       // Attacker tries to use different verifier
