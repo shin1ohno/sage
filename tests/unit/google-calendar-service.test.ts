@@ -348,7 +348,7 @@ describe('GoogleCalendarService', () => {
       );
     });
 
-    it('should normalize simple date format (YYYY-MM-DD) to RFC3339', async () => {
+    it('should normalize simple date format (YYYY-MM-DD) to RFC3339 with endDate adjusted', async () => {
       mockCalendarClient.events.list.mockResolvedValueOnce({
         data: { items: [] },
       });
@@ -361,7 +361,28 @@ describe('GoogleCalendarService', () => {
       expect(mockCalendarClient.events.list).toHaveBeenCalledWith(
         expect.objectContaining({
           timeMin: '2026-01-15T00:00:00Z', // Normalized to RFC3339
-          timeMax: '2026-01-16T00:00:00Z',
+          timeMax: '2026-01-17T00:00:00Z', // endDate + 1 day (timeMax is exclusive)
+        })
+      );
+    });
+
+    it('should handle same-day date range correctly (endDate adjusted for exclusive timeMax)', async () => {
+      // This is the critical test case for the bug fix:
+      // When startDate == endDate, we need to ensure events on that day are returned.
+      // Google Calendar API's timeMax is EXCLUSIVE, so we must add 1 day to endDate.
+      mockCalendarClient.events.list.mockResolvedValueOnce({
+        data: { items: [] },
+      });
+
+      await service.listEvents({
+        startDate: '2026-01-09', // Same day
+        endDate: '2026-01-09',
+      });
+
+      expect(mockCalendarClient.events.list).toHaveBeenCalledWith(
+        expect.objectContaining({
+          timeMin: '2026-01-09T00:00:00Z',
+          timeMax: '2026-01-10T00:00:00Z', // Next day to include all events on 2026-01-09
         })
       );
     });

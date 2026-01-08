@@ -468,17 +468,32 @@ export class GoogleCalendarService {
    * Converts simple ISO date format (YYYY-MM-DD) to RFC3339 format with UTC timezone.
    * If input is already in RFC3339 format, returns unchanged.
    *
+   * For endDate (isEndDate=true), adds 1 day because Google Calendar API's timeMax
+   * parameter is EXCLUSIVE (events before this time are returned, not including this time).
+   * This ensures events on the endDate are included in the results.
+   *
    * @param dateString - Date string in YYYY-MM-DD or RFC3339 format
+   * @param isEndDate - If true, adds 1 day to make timeMax exclusive work correctly
    * @returns Date string in RFC3339 format (YYYY-MM-DDT00:00:00Z)
    */
-  private normalizeToRFC3339(dateString: string): string {
+  private normalizeToRFC3339(dateString: string, isEndDate: boolean = false): string {
     // Check if already in RFC3339 format (contains 'T' and timezone)
     if (dateString.includes('T')) {
       return dateString;
     }
 
+    if (isEndDate) {
+      // For endDate: add 1 day to make timeMax exclusive work correctly
+      // Google Calendar API's timeMax is EXCLUSIVE, meaning it returns events
+      // BEFORE this time. To include events on endDate, we need to set
+      // timeMax to the start of the next day.
+      const date = new Date(dateString + 'T00:00:00Z');
+      date.setUTCDate(date.getUTCDate() + 1);
+      return date.toISOString().replace('.000Z', 'Z');
+    }
+
     // Convert YYYY-MM-DD to YYYY-MM-DDT00:00:00Z
-    // Using 00:00:00 UTC ensures we capture all events on the date
+    // Using 00:00:00 UTC ensures we capture all events starting from this date
     return `${dateString}T00:00:00Z`;
   }
 
@@ -514,7 +529,7 @@ export class GoogleCalendarService {
               await this.calendarClient!.events.list({
                 calendarId: calendarId,
                 timeMin: this.normalizeToRFC3339(request.startDate),
-                timeMax: this.normalizeToRFC3339(request.endDate),
+                timeMax: this.normalizeToRFC3339(request.endDate, true),
                 maxResults: 250,
                 pageToken: pageToken,
                 singleEvents: true, // Expand recurring events into individual instances
