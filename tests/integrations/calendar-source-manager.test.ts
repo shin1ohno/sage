@@ -666,7 +666,7 @@ describe('CalendarSourceManager', () => {
 
       await manager.deleteEvent('event-123', 'google');
 
-      expect(mockGoogleCalendarService.deleteEvent).toHaveBeenCalledWith('event-123');
+      expect(mockGoogleCalendarService.deleteEvent).toHaveBeenCalledWith('event-123', undefined, undefined);
     });
 
     it('should throw error if source not enabled', async () => {
@@ -685,7 +685,7 @@ describe('CalendarSourceManager', () => {
 
       await manager.deleteEvent('event-123');
 
-      expect(mockGoogleCalendarService.deleteEvent).toHaveBeenCalledWith('event-123');
+      expect(mockGoogleCalendarService.deleteEvent).toHaveBeenCalledWith('event-123', undefined, undefined);
     });
 
     it('should handle 404 gracefully when source specified', async () => {

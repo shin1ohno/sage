@@ -315,7 +315,7 @@ describe('MCPHandler Context Creation', () => {
           };
           expect(result.content).toBeDefined();
           expect(result.content[0].type).toBe('text');
-        });
+        }, 15000); // Extended timeout for OAuth initialization
       });
     });
   });

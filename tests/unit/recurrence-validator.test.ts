@@ -1152,13 +1152,14 @@ describe('describeRecurrence', () => {
     test('should include end date in ISO format', () => {
       // Arrange
       // Note: When UNTIL contains colons (ISO format), RRULE: prefix is required
-      // Note: ISO 8601 UTC date is converted to local timezone (JST), so 2025-12-31T23:59:59Z becomes 2026-01-01 in Japan
-      const rules = ['RRULE:FREQ=DAILY;UNTIL=2025-12-31T23:59:59Z'];
+      // Use a date that doesn't change across timezones (midday UTC)
+      const rules = ['RRULE:FREQ=DAILY;UNTIL=2026-01-01T12:00:00Z'];
 
       // Act
       const result = describeRecurrence(rules);
 
       // Assert
+      // The date should be 2026年1月1日 in any timezone (UTC midday avoids day boundary issues)
       expect(result).toBe('毎日（2026年1月1日まで）');
     });
   });
