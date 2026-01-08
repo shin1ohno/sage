@@ -4,6 +4,8 @@
  * Design: .claude/specs/google-calendar-api/design.md (Data Models section)
  */
 
+import { describeRecurrence } from '../utils/recurrence-validator.js';
+
 // ============================================================
 // Event Type Discriminated Union
 // ============================================================
@@ -369,10 +371,6 @@ export function extractTypeSpecificProperties(
  * @returns Unified CalendarEvent object with eventType and typeSpecificProperties
  */
 export function convertGoogleToCalendarEvent(googleEvent: GoogleCalendarEvent): CalendarEvent {
-  // Import describeRecurrence for generating human-readable recurrence descriptions
-  // Requirement: recurring-calendar-events 6.3
-  const { describeRecurrence } = require('../utils/recurrence-validator');
-
   // Detect event type using helper function
   const eventType = detectEventType(googleEvent);
 
