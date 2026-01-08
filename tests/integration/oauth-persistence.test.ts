@@ -14,6 +14,9 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { existsSync, mkdirSync, rmSync } from 'fs';
 
+// Extend timeout for all tests in this file (Node.js 20.x is slower on CI)
+jest.setTimeout(30000);
+
 describe('OAuth Persistence - End-to-End Integration', () => {
   let tempDir: string;
   let encryptionService: EncryptionService;
