@@ -22,7 +22,7 @@
 
 ### Phase 1: Test Utilities
 
-- [ ] 1. Create server-ready utility with waitForServerReady function
+- [x] 1. Create server-ready utility with waitForServerReady function
   - File: `tests/utils/server-ready.ts` (create new)
   - Implement `waitForServerReady(url, options)` function
   - Use Node.js built-in `fetch` for health endpoint polling
@@ -31,7 +31,7 @@
   - Purpose: Enable event-based server startup detection
   - _Requirements: REQ-TIMEOUT-001, REQ-TIMEOUT-005_
 
-- [ ] 2. Add waitForServerStopped function to server-ready utility
+- [x] 2. Add waitForServerStopped function to server-ready utility
   - File: `tests/utils/server-ready.ts` (modify)
   - Implement `waitForServerStopped(url, options)` function
   - Poll URL until connection is refused
@@ -39,7 +39,7 @@
   - _Leverage: Task 1 の `waitForServerReady` パターン_
   - _Requirements: REQ-TIMEOUT-002, REQ-TIMEOUT-005_
 
-- [ ] 3. Create process-lifecycle utility with waitForProcessOutput function
+- [x] 3. Create process-lifecycle utility with waitForProcessOutput function
   - File: `tests/utils/process-lifecycle.ts` (create new)
   - Implement `waitForProcessOutput(proc, pattern, options)` function
   - Monitor stdout/stderr for pattern match using EventEmitter
@@ -49,7 +49,7 @@
   - Purpose: Enable event-based CLI process startup detection
   - _Requirements: REQ-TIMEOUT-003, REQ-TIMEOUT-005_
 
-- [ ] 4. Add waitForProcessExit and gracefulStop functions to process-lifecycle utility
+- [x] 4. Add waitForProcessExit and gracefulStop functions to process-lifecycle utility
   - File: `tests/utils/process-lifecycle.ts` (modify)
   - Implement `waitForProcessExit(proc, options)` function
   - Implement `gracefulStop(proc, options)` function with SIGINT → SIGKILL fallback
@@ -58,7 +58,7 @@
   - _Leverage: Task 3 の EventEmitter パターン_
   - _Requirements: REQ-TIMEOUT-004, REQ-TIMEOUT-005_
 
-- [ ] 5. Create index.ts to export all utilities
+- [x] 5. Create index.ts to export all utilities
   - File: `tests/utils/index.ts` (create new)
   - Re-export all functions from server-ready.ts and process-lifecycle.ts
   - Purpose: Provide single import point for test utilities
@@ -67,7 +67,7 @@
 
 ### Phase 2: Test Migration
 
-- [ ] 6. Migrate remote-auth.test.ts to use waitForServerReady
+- [x] 6. Migrate remote-auth.test.ts to use waitForServerReady
   - File: `tests/e2e/remote-auth.test.ts` (modify)
   - Import `waitForServerReady` from `../utils/index.js`
   - Replace `jest.setTimeout(30000)` with per-test safety net (optional)
@@ -77,7 +77,7 @@
   - _Leverage: tests/utils/server-ready.ts_
   - _Requirements: REQ-TIMEOUT-001, REQ-TIMEOUT-006_
 
-- [ ] 7. Extract startHTTPServer helper from cli-modes.test.ts
+- [x] 7. Extract startHTTPServer helper from cli-modes.test.ts
   - File: `tests/e2e/cli-modes.test.ts` (modify)
   - Replace inline `startHTTPServer()` with `waitForProcessOutput()` usage
   - Import utilities from `../utils/index.js`
@@ -86,7 +86,7 @@
   - _Leverage: tests/utils/process-lifecycle.ts_
   - _Requirements: REQ-TIMEOUT-003, REQ-TIMEOUT-006_
 
-- [ ] 8. Update cli-modes.test.ts afterEach cleanup to use gracefulStop
+- [x] 8. Update cli-modes.test.ts afterEach cleanup to use gracefulStop
   - File: `tests/e2e/cli-modes.test.ts` (modify)
   - Replace inline stop logic with `gracefulStop()` usage
   - Ensure proper cleanup of test config files after process exit
@@ -94,7 +94,7 @@
   - _Leverage: tests/utils/process-lifecycle.ts_
   - _Requirements: REQ-TIMEOUT-004, REQ-TIMEOUT-006_
 
-- [ ] 9. Update runCLI helper in cli-modes.test.ts
+- [x] 9. Update runCLI helper in cli-modes.test.ts
   - File: `tests/e2e/cli-modes.test.ts` (modify)
   - Replace fixed 5000ms timeout with `waitForProcessExit()` usage
   - Keep maxTimeout as safety net parameter
@@ -102,7 +102,7 @@
   - _Leverage: tests/utils/process-lifecycle.ts_
   - _Requirements: REQ-TIMEOUT-004, REQ-TIMEOUT-006_
 
-- [ ] 10. Migrate mcp-over-http.test.ts to use waitForServerReady
+- [x] 10. Migrate mcp-over-http.test.ts to use waitForServerReady
   - File: `tests/e2e/mcp-over-http.test.ts` (modify)
   - Import `waitForServerReady` from `../utils/index.js`
   - Replace `jest.setTimeout(15000)` with per-test safety net (optional)
@@ -113,7 +113,7 @@
 
 ### Phase 3: Validation
 
-- [ ] 11. Run all E2E tests and verify improvements
+- [x] 11. Run all E2E tests and verify improvements
   - Files: All `tests/e2e/*.test.ts`
   - Run `npm test -- --testPathPattern=e2e`
   - Verify all tests pass

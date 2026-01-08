@@ -66,21 +66,8 @@ const config = {
   verbose: true,
 };
 
-// In CI environment, skip tests that require external services or have timing issues
-if (process.env.CI === 'true') {
-  config.testPathIgnorePatterns = [
-    '/node_modules/',
-    // Skip Google Calendar integration tests (require OAuth authentication)
-    'tests/integration/google-calendar-integration.test.ts',
-    'tests/e2e/google-calendar-setup.test.ts',
-    'tests/e2e/multi-source-calendar.test.ts',
-    'tests/e2e/calendar-fallback.test.ts',
-    // Skip CLI modes E2E test (timeout issues in CI environment)
-    'tests/e2e/cli-modes.test.ts',
-    // Skip remote auth E2E test (network issues in CI environment)
-    'tests/e2e/remote-auth.test.ts',
-    // OAuth persistent store tests now have extended timeouts (30s)
-  ];
-}
+// Note: Previously skipped tests in CI environment are now included.
+// Tests use mocks and should work in CI. If specific tests fail,
+// consider using jest.skip or checking process.env.CI within the test.
 
 export default config;

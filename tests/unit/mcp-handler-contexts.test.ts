@@ -26,6 +26,12 @@ describe('MCPHandler Context Creation', () => {
     handler = await createMCPHandler();
   });
 
+  afterEach(async () => {
+    if (handler) {
+      await handler.shutdown();
+    }
+  });
+
   describe('SetupContext', () => {
     describe('through check_setup_status', () => {
       it('should return setup status response', async () => {

@@ -21,7 +21,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
 
 ### Phase 1: 型定義とスコープ
 
-- [ ] 1. Create type definitions in src/types/google-people-types.ts
+- [x] 1. Create type definitions in src/types/google-people-types.ts
   - File: `src/types/google-people-types.ts` (new)
   - Define `DirectoryPerson` interface with displayName, emailAddress, organization, photoUrl
   - Define `SearchDirectoryPeopleInput` interface with query, pageSize
@@ -29,7 +29,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
   - Export all types
   - _Requirements: 4.1, 4.2_
 
-- [ ] 2. Add directory.readonly scope to OAuth handler
+- [x] 2. Add directory.readonly scope to OAuth handler
   - File: `src/oauth/google-oauth-handler.ts` (modify)
   - Add `'https://www.googleapis.com/auth/directory.readonly'` to `GOOGLE_CALENDAR_SCOPES` array
   - _Leverage: existing GOOGLE_CALENDAR_SCOPES constant at line 48-51_
@@ -37,7 +37,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
 
 ### Phase 2: サービス実装
 
-- [ ] 3. Create GooglePeopleService class skeleton
+- [x] 3. Create GooglePeopleService class skeleton
   - File: `src/integrations/google-people-service.ts` (new)
   - Import googleapis, GoogleOAuthHandler
   - Create class with constructor accepting GoogleOAuthHandler
@@ -46,7 +46,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
   - _Leverage: `src/integrations/google-calendar-service.ts` lines 170-219_
   - _Requirements: 1.1_
 
-- [ ] 4. Implement searchDirectoryPeople method
+- [x] 4. Implement searchDirectoryPeople method
   - File: `src/integrations/google-people-service.ts` (continue)
   - Add searchDirectoryPeople(query: string, pageSize?: number) method
   - Call people.searchDirectoryPeople with query, readMask, sources
@@ -55,7 +55,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
   - _Leverage: `src/utils/retry.ts` retryWithBackoff function_
   - _Requirements: 1.1, 1.2, 1.3, 1.4_
 
-- [ ] 5. Add isAvailable method to GooglePeopleService
+- [x] 5. Add isAvailable method to GooglePeopleService
   - File: `src/integrations/google-people-service.ts` (continue)
   - Add isAvailable(): Promise<boolean> method
   - Try simple API call to verify authentication
@@ -65,7 +65,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
 
 ### Phase 3: エラーハンドリング
 
-- [ ] 6. Add error detection and user-friendly messages
+- [x] 6. Add error detection and user-friendly messages
   - File: `src/integrations/google-people-service.ts` (continue)
   - Add helper function to detect error type (API not enabled, permission denied, scope missing)
   - Return appropriate error messages with setup instructions
@@ -76,7 +76,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
 
 ### Phase 4: ツールハンドラー
 
-- [ ] 7. Create tool handler for search_directory_people
+- [x] 7. Create tool handler for search_directory_people
   - File: `src/tools/directory/handlers.ts` (new)
   - File: `src/tools/directory/index.ts` (new)
   - Create DirectoryToolsContext interface
@@ -87,7 +87,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
   - _Leverage: `src/tools/calendar/handlers.ts` handleSearchRoomAvailability pattern_
   - _Requirements: 1.1, 4.1, 4.2, 4.3_
 
-- [ ] 8. Add Zod validation schema for search input
+- [x] 8. Add Zod validation schema for search input
   - File: `src/config/validation.ts` (modify)
   - Add SearchDirectoryPeopleInputSchema with query (string, min 1), pageSize (number, optional, max 50)
   - Export schema
@@ -96,7 +96,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
 
 ### Phase 5: MCP ツール登録
 
-- [ ] 9. Create shared tool definition for search_directory_people
+- [x] 9. Create shared tool definition for search_directory_people
   - File: `src/tools/shared/directory-tools.ts` (new)
   - File: `src/tools/shared/index.ts` (modify)
   - Define searchDirectoryPeopleTool with name, description, inputSchema
@@ -104,7 +104,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
   - _Leverage: `src/tools/shared/room-tools.ts` pattern_
   - _Requirements: 1.1_
 
-- [ ] 10. Register tool in index.ts (local MCP)
+- [x] 10. Register tool in index.ts (local MCP)
   - File: `src/index.ts` (modify)
   - Import handleSearchDirectoryPeople from tools/directory
   - Import searchDirectoryPeopleTool from tools/shared
@@ -113,7 +113,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
   - _Leverage: existing tool registration pattern for search_room_availability_
   - _Requirements: 1.1_
 
-- [ ] 11. Register tool in mcp-handler.ts (remote MCP)
+- [x] 11. Register tool in mcp-handler.ts (remote MCP)
   - File: `src/cli/mcp-handler.ts` (modify)
   - Import handleSearchDirectoryPeople and searchDirectoryPeopleTool
   - Add tool to TOOL_DEFINITIONS array
@@ -123,7 +123,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
 
 ### Phase 6: テスト
 
-- [ ] 12. Create unit tests for GooglePeopleService
+- [x] 12. Create unit tests for GooglePeopleService
   - File: `tests/unit/google-people-service.test.ts` (new)
   - Mock googleapis people client
   - Test searchDirectoryPeople with valid query
@@ -134,7 +134,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
   - _Leverage: `tests/unit/google-calendar-service.test.ts` patterns_
   - _Requirements: 1.1, 1.2, 1.3, 3.1, 3.2, 3.3_
 
-- [ ] 13. Create unit tests for directory tool handler
+- [x] 13. Create unit tests for directory tool handler
   - File: `tests/unit/directory-handlers.test.ts` (new)
   - Mock GooglePeopleService
   - Test handleSearchDirectoryPeople with valid input
@@ -143,7 +143,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
   - _Leverage: `tests/unit/google-calendar-service.test.ts` test patterns_
   - _Requirements: 4.1, 4.2, 4.3_
 
-- [ ] 14. Add tool parity test for search_directory_people
+- [x] 14. Add tool parity test for search_directory_people
   - File: `tests/unit/tool-parity.test.ts` (modify)
   - Add search_directory_people to expected tools list
   - Verify tool is registered in both index.ts and mcp-handler.ts
@@ -152,7 +152,7 @@ Google People API を使用した組織ディレクトリ検索機能を実装�
 
 ### Phase 7: ドキュメント
 
-- [ ] 15. Add troubleshooting documentation for People API
+- [x] 15. Add troubleshooting documentation for People API
   - File: `docs/TROUBLESHOOTING.md` (modify)
   - Add section "ディレクトリ検索で結果が返らない"
   - Document People API enable steps

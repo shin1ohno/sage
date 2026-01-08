@@ -188,7 +188,7 @@
   - _Leverage: existing handleUpdateCalendarEvent (lines 1055-1258)_
   - _Requirements: 2.1, 2.4, 3.1, 4.1, 4.4_
 
-- [ ] 18. Extend handleDeleteCalendarEvent for scope
+- [x] 18. Extend handleDeleteCalendarEvent for scope
   - File: `src/tools/calendar/handlers.ts`
   - Add `deleteScope?: RecurrenceScope` to input interface
   - Pass scope to service deleteEvent
@@ -240,7 +240,7 @@
 
 ### Phase 9: Testing
 
-- [ ] 24. Add recurrence validator unit tests
+- [x] 24. Add recurrence validator unit tests
   - File: `tests/unit/recurrence-validator.test.ts` (if not complete in task 6)
   - Comprehensive tests for all validation scenarios
   - Purpose: Ensure complete test coverage for validator

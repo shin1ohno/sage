@@ -165,6 +165,11 @@ type ToolHandler = (args: Record<string, unknown>) => Promise<{
 export interface MCPHandler {
   handleRequest(request: MCPRequest): Promise<MCPResponse>;
   listTools(): ToolDefinition[];
+  /**
+   * Shutdown the handler and release all resources
+   * Should be called when the handler is no longer needed (e.g., in tests)
+   */
+  shutdown(): Promise<void>;
 }
 
 /**
@@ -662,6 +667,18 @@ class MCPHandlerImpl implements MCPHandler {
    */
   listTools(): ToolDefinition[] {
     return Array.from(this.tools.values()).map((t) => t.definition);
+  }
+
+  /**
+   * Shutdown the handler and release all resources
+   * Stops the ConfigReloadService and ConfigWatcher to prevent resource leaks
+   */
+  async shutdown(): Promise<void> {
+    if (this.configReloadService) {
+      this.configReloadService.stop();
+      this.configReloadService = null;
+    }
+    this.initialized = false;
   }
 
   /**

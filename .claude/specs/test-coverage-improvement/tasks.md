@@ -14,14 +14,14 @@
 
 ### Phase 2: mcp-handler.ts テスト追加 (REQ-1)
 
-- [ ] **Task 2.1**: テストユーティリティとモックの作成
+- [x] **Task 2.1**: テストユーティリティとモックの作成
   - **Files**:
     - `tests/utils/mock-config.ts` (NEW)
   - **Requirements**: REQ-1
   - **Description**: ConfigLoader と UserConfig のモックヘルパーを作成
   - **Acceptance**: モックが正しく動作し、他のテストで再利用可能
 
-- [ ] **Task 2.2**: MCPHandler 初期化テストの作成
+- [x] **Task 2.2**: MCPHandler 初期化テストの作成
   - **Files**:
     - `tests/unit/mcp-handler-init.test.ts` (NEW)
   - **Requirements**: REQ-1 (AC-1.1)
@@ -32,7 +32,7 @@
     - 2回目の初期化がスキップされること
   - **Leverage**: 既存の `tests/unit/mcp-handler.test.ts` のパターン
 
-- [ ] **Task 2.3**: MCPHandler コンテキスト生成テストの作成
+- [x] **Task 2.3**: MCPHandler コンテキスト生成テストの作成
   - **Files**:
     - `tests/unit/mcp-handler-contexts.test.ts` (NEW)
   - **Requirements**: REQ-1 (AC-1.1)
@@ -44,7 +44,7 @@
     - OAuthToolsContext の生成（環境変数あり/なし）
   - **Leverage**: 既存の `tests/unit/mcp-handler.test.ts` のパターン
 
-- [ ] **Task 2.4**: MCPHandler ツールハンドラテストの作成
+- [x] **Task 2.4**: MCPHandler ツールハンドラテストの作成
   - **Files**:
     - `tests/unit/mcp-handler-tools.test.ts` (NEW)
   - **Requirements**: REQ-1 (AC-1.1)
@@ -57,7 +57,7 @@
 
 ### Phase 3: oauth-handler.ts テスト追加 (REQ-1)
 
-- [ ] **Task 3.1**: OAuthHandler 基本テストの作成
+- [x] **Task 3.1**: OAuthHandler 基本テストの作成
   - **Files**:
     - `tests/unit/oauth-handler.test.ts` (NEW)
   - **Requirements**: REQ-1 (AC-1.1)
@@ -71,7 +71,7 @@
 
 ### Phase 4: todo-list-manager.ts テスト拡張 (REQ-1)
 
-- [ ] **Task 4.1**: TodoListManager テストの拡張
+- [x] **Task 4.1**: TodoListManager テストの拡張
   - **Files**:
     - `tests/unit/todo-list-manager.test.ts` (MODIFY)
   - **Requirements**: REQ-1 (AC-1.1)
@@ -84,7 +84,7 @@
 
 ### Phase 5: 検証とCI修正
 
-- [ ] **Task 5.1**: カバレッジ確認とCI実行
+- [x] **Task 5.1**: カバレッジ確認とCI実行
   - **Files**: なし
   - **Requirements**: REQ-1 (AC-1.1, AC-1.2)
   - **Description**: ローカルでカバレッジ確認、CIで成功確認

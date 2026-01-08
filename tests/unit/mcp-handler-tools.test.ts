@@ -20,6 +20,12 @@ describe('MCPHandler Tool Handlers', () => {
     handler = await createMCPHandler();
   });
 
+  afterEach(async () => {
+    if (handler) {
+      await handler.shutdown();
+    }
+  });
+
   /**
    * Helper function to call a tool via handleRequest
    */
@@ -682,6 +688,12 @@ describe('MCPHandler Tool Definitions', () => {
 
   beforeEach(async () => {
     handler = await createMCPHandler();
+  });
+
+  afterEach(async () => {
+    if (handler) {
+      await handler.shutdown();
+    }
   });
 
   describe('Calendar Tool Definitions', () => {

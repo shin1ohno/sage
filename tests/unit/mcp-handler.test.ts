@@ -21,6 +21,12 @@ describe('MCPHandler', () => {
     handler = await createMCPHandler();
   });
 
+  afterEach(async () => {
+    if (handler) {
+      await handler.shutdown();
+    }
+  });
+
   describe('createMCPHandler', () => {
     it('should create an MCP handler instance', async () => {
       const h = await createMCPHandler();
@@ -302,6 +308,12 @@ describe('MCPHandler tool definitions', () => {
 
   beforeEach(async () => {
     handler = await createMCPHandler();
+  });
+
+  afterEach(async () => {
+    if (handler) {
+      await handler.shutdown();
+    }
   });
 
   describe('listTools', () => {

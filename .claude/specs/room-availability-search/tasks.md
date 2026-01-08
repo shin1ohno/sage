@@ -22,7 +22,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
 
 ### Phase 1: Types and Interfaces
 
-- [ ] 1. Add room resource types to google-calendar-types.ts
+- [x] 1. Add room resource types to google-calendar-types.ts
   - File: `src/types/google-calendar-types.ts`
   - Add `RoomResource` interface (id, name, email, capacity, features, building, floor, description)
   - Add `RoomResourceFilter` interface (minCapacity, building, floor, features)
@@ -33,7 +33,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - _Leverage: existing interfaces in `src/types/google-calendar-types.ts`_
   - _Requirements: 1.9_
 
-- [ ] 2. Add Zod validation schemas for room search parameters
+- [x] 2. Add Zod validation schemas for room search parameters
   - File: `src/config/validation.ts`
   - Add `roomAvailabilityRequestSchema` with startTime (required), endTime (optional), durationMinutes (optional), filters
   - Add `checkRoomAvailabilitySchema` with roomId, startTime, endTime (all required)
@@ -44,7 +44,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
 
 ### Phase 2: Core Service Implementation
 
-- [ ] 3. Create GoogleCalendarRoomService class skeleton
+- [x] 3. Create GoogleCalendarRoomService class skeleton
   - File: `src/integrations/google-calendar-room-service.ts` (new file)
   - Create class with constructor accepting `GoogleCalendarService`
   - Add method signatures: `searchRoomAvailability()`, `checkRoomAvailability()`
@@ -54,7 +54,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - _Leverage: `src/integrations/google-calendar-service.ts` class structure_
   - _Requirements: 1.1, 2.1_
 
-- [ ] 4. Implement fetchRoomResources private method
+- [x] 4. Implement fetchRoomResources private method
   - File: `src/integrations/google-calendar-room-service.ts`
   - Use CalendarList API to fetch calendars with `minAccessRole: 'freeBusyReader'`
   - Filter calendars to identify room resources (by naming pattern or metadata)
@@ -64,7 +64,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - _Leverage: `GoogleCalendarService.getCalendarClient()` for API access_
   - _Requirements: 1.5, 1.6, 1.7, 1.8_
 
-- [ ] 5. Implement queryFreebusy private method
+- [x] 5. Implement queryFreebusy private method
   - File: `src/integrations/google-calendar-room-service.ts`
   - Use Freebusy API to query room availability
   - Accept roomIds array, startTime, endTime
@@ -75,7 +75,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - _Leverage: `src/utils/retry.ts` for retry logic_
   - _Requirements: 1.1, 2.1_
 
-- [ ] 6. Implement sortByCapacityMatch private method
+- [x] 6. Implement sortByCapacityMatch private method
   - File: `src/integrations/google-calendar-room-service.ts`
   - Sort by `|requiredCapacity - actualCapacity|` ascending
   - Secondary sort by room name alphabetically
@@ -83,7 +83,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - Purpose: Return rooms in user-friendly order
   - _Requirements: 1.4_
 
-- [ ] 7. Implement searchRoomAvailability public method
+- [x] 7. Implement searchRoomAvailability public method
   - File: `src/integrations/google-calendar-room-service.ts`
   - Validate input with Zod schema
   - Calculate endTime from durationMinutes if needed
@@ -94,7 +94,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - Purpose: Main entry point for room search
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.9, 1.10_
 
-- [ ] 8. Implement checkRoomAvailability public method
+- [x] 8. Implement checkRoomAvailability public method
   - File: `src/integrations/google-calendar-room-service.ts`
   - Validate input with Zod schema
   - Fetch single room metadata
@@ -106,7 +106,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
 
 ### Phase 3: MCP Tool Integration
 
-- [ ] 9. Add search_room_availability MCP tool definition
+- [x] 9. Add search_room_availability MCP tool definition
   - File: `src/index.ts`
   - Add tool to server.setRequestHandler for tools/list
   - Define inputSchema with startTime, endTime, durationMinutes, minCapacity, building, floor, features
@@ -115,7 +115,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - _Leverage: existing MCP tool patterns in `src/index.ts`_
   - _Requirements: 1.1-1.10_
 
-- [ ] 10. Add check_room_availability MCP tool definition
+- [x] 10. Add check_room_availability MCP tool definition
   - File: `src/index.ts`
   - Add tool to server.setRequestHandler for tools/list
   - Define inputSchema with roomId, startTime, endTime (all required)
@@ -124,7 +124,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - _Leverage: existing MCP tool patterns in `src/index.ts`_
   - _Requirements: 2.1-2.4_
 
-- [ ] 11. Implement search_room_availability tool handler
+- [x] 11. Implement search_room_availability tool handler
   - File: `src/index.ts` (or `src/tools/room/handlers.ts` if tools are split)
   - Instantiate GoogleCalendarRoomService
   - Call searchRoomAvailability with parsed arguments
@@ -134,7 +134,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - _Leverage: existing tool handler patterns_
   - _Requirements: 1.1-1.10_
 
-- [ ] 12. Implement check_room_availability tool handler
+- [x] 12. Implement check_room_availability tool handler
   - File: `src/index.ts` (or `src/tools/room/handlers.ts` if tools are split)
   - Instantiate GoogleCalendarRoomService
   - Call checkRoomAvailability with parsed arguments
@@ -146,7 +146,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
 
 ### Phase 4: Testing
 
-- [ ] 13. Add unit tests for room type validation schemas
+- [x] 13. Add unit tests for room type validation schemas
   - File: `tests/unit/config/validation.test.ts` (or new file)
   - Test roomAvailabilityRequestSchema valid/invalid cases
   - Test checkRoomAvailabilitySchema valid/invalid cases
@@ -155,7 +155,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - _Leverage: existing validation tests in `tests/unit/config/`_
   - _Requirements: 1.1, 1.2, 2.1_
 
-- [ ] 14. Add unit tests for GoogleCalendarRoomService
+- [x] 14. Add unit tests for GoogleCalendarRoomService
   - File: `tests/unit/integrations/google-calendar-room-service.test.ts` (new file)
   - Mock googleapis CalendarList and Freebusy APIs
   - Test fetchRoomResources with various filters
@@ -165,7 +165,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - _Leverage: existing mocking patterns in `tests/unit/integrations/`_
   - _Requirements: 1.1-1.10, 2.1-2.4_
 
-- [ ] 15. Add unit tests for searchRoomAvailability method
+- [x] 15. Add unit tests for searchRoomAvailability method
   - File: `tests/unit/integrations/google-calendar-room-service.test.ts`
   - Test with endTime specified
   - Test with durationMinutes specified
@@ -175,7 +175,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - Purpose: Verify main search functionality
   - _Requirements: 1.1-1.10_
 
-- [ ] 16. Add unit tests for checkRoomAvailability method
+- [x] 16. Add unit tests for checkRoomAvailability method
   - File: `tests/unit/integrations/google-calendar-room-service.test.ts`
   - Test room available case
   - Test room busy case with busy periods
@@ -183,7 +183,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - Purpose: Verify room check functionality
   - _Requirements: 2.1-2.4_
 
-- [ ] 17. Add integration tests for room MCP tools
+- [x] 17. Add integration tests for room MCP tools
   - File: `tests/integration/room-availability.test.ts` (new file)
   - Test search_room_availability tool end-to-end
   - Test check_room_availability tool end-to-end
@@ -194,7 +194,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
 
 ### Phase 5: Integration with Existing Features
 
-- [ ] 18. Update create_calendar_event to support room booking
+- [x] 18. Update create_calendar_event to support room booking
   - File: `src/index.ts` (or relevant handler file)
   - Add optional `roomId` parameter to create_calendar_event inputSchema
   - When roomId specified, add room as attendee with resource type
@@ -203,7 +203,7 @@ Google Calendar の Freebusy API と CalendarList API を活用して、会議�
   - _Leverage: existing create_calendar_event implementation_
   - _Requirements: 3.1, 3.2, 3.3, 3.4_
 
-- [ ] 19. Add tests for room booking in create_calendar_event
+- [x] 19. Add tests for room booking in create_calendar_event
   - File: `tests/unit/` or `tests/integration/` (existing event tests)
   - Test event creation with roomId
   - Test room added as attendee
