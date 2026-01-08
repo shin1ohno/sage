@@ -230,6 +230,11 @@ describe('TaskSynchronizer', () => {
       expect(similarity).toBe(1.0);
     });
 
+    it('should return 1.0 for empty strings', () => {
+      const similarity = synchronizer.calculateSimilarity('', '');
+      expect(similarity).toBe(1.0);
+    });
+
     it('should return high similarity for nearly identical strings', () => {
       const similarity = synchronizer.calculateSimilarity('Hello World', 'Hello World!');
       expect(similarity).toBeGreaterThan(0.8);
@@ -242,6 +247,11 @@ describe('TaskSynchronizer', () => {
 
     it('should be case insensitive', () => {
       const similarity = synchronizer.calculateSimilarity('HELLO WORLD', 'hello world');
+      expect(similarity).toBe(1.0);
+    });
+
+    it('should handle whitespace trimming', () => {
+      const similarity = synchronizer.calculateSimilarity('  Hello  ', '  Hello  ');
       expect(similarity).toBe(1.0);
     });
   });
