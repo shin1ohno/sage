@@ -79,10 +79,7 @@ if (process.env.CI === 'true') {
     'tests/e2e/cli-modes.test.ts',
     // Skip remote auth E2E test (network issues in CI environment)
     'tests/e2e/remote-auth.test.ts',
-    // Skip OAuth persistent store tests (timeout issues in CI environment)
-    'tests/unit/oauth/persistent-client-store.test.ts',
-    'tests/unit/oauth/persistent-session-store.test.ts',
-    'tests/unit/oauth/persistent-refresh-token-store.test.ts',
+    // OAuth persistent store tests now have extended timeouts (30s)
   ];
 }
 

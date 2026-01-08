@@ -16,6 +16,9 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
+// Extend timeout for all tests (CI environment is slower)
+jest.setTimeout(30000);
+
 describe('PersistentClientStore', () => {
   let encryptionService: EncryptionService;
   let clientStore: PersistentClientStore;

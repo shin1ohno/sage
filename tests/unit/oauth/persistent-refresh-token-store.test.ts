@@ -12,6 +12,9 @@ import { existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
+// Extend timeout for all tests (CI environment is slower)
+jest.setTimeout(30000);
+
 describe('PersistentRefreshTokenStore', () => {
   let store: PersistentRefreshTokenStore;
   let encryptionService: EncryptionService;
