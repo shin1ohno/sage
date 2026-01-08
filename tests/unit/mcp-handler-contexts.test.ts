@@ -115,8 +115,8 @@ describe('MCPHandler Context Creation', () => {
 
   describe('TaskToolsContext', () => {
     describe('through analyze_tasks', () => {
-      it('should return error when config is not set', async () => {
-        // Without config, analyze_tasks should return an error response
+      it('should analyze tasks successfully with default config', async () => {
+        // analyze_tasks should work with default config (created by createMCPHandler)
         const request: MCPRequest = {
           jsonrpc: '2.0',
           id: 4,
@@ -139,9 +139,11 @@ describe('MCPHandler Context Creation', () => {
         };
         const parsed = JSON.parse(result.content[0].text);
 
-        // Should return error message about missing config
-        expect(parsed.error).toBe(true);
-        expect(parsed.message).toContain('check_setup_status');
+        // Should return successful analysis result
+        expect(parsed.success).toBe(true);
+        expect(parsed.summary).toBeDefined();
+        expect(parsed.tasks).toBeDefined();
+        expect(Array.isArray(parsed.tasks)).toBe(true);
       });
 
       it('should accept valid task input structure', async () => {
