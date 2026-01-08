@@ -106,5 +106,51 @@ describe('BrowserOpener', () => {
         expect.any(Function)
       );
     });
+
+    describe('platform-specific execution', () => {
+      const originalPlatform = process.platform;
+
+      afterEach(() => {
+        Object.defineProperty(process, 'platform', {
+          value: originalPlatform,
+        });
+      });
+
+      it('should use start command on Windows', async () => {
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        mockExec.mockImplementation((_cmd, callback) => {
+          if (callback) {
+            (callback as any)(null, '', '');
+          }
+          return {} as any;
+        });
+
+        const result = await openBrowser('https://example.com');
+
+        expect(result.success).toBe(true);
+        expect(mockExec).toHaveBeenCalledWith(
+          expect.stringContaining('start'),
+          expect.any(Function)
+        );
+      });
+
+      it('should use xdg-open command on Linux', async () => {
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        mockExec.mockImplementation((_cmd, callback) => {
+          if (callback) {
+            (callback as any)(null, '', '');
+          }
+          return {} as any;
+        });
+
+        const result = await openBrowser('https://example.com');
+
+        expect(result.success).toBe(true);
+        expect(mockExec).toHaveBeenCalledWith(
+          expect.stringContaining('xdg-open'),
+          expect.any(Function)
+        );
+      });
+    });
   });
 });
