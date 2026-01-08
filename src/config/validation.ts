@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-import { validateRecurrenceRules, type ValidationResult as RecurrenceValidationResult } from '../utils/recurrence-validator';
+import { validateRecurrenceRules, type ValidationResult as RecurrenceValidationResult } from '../utils/recurrence-validator.js';
 
 /**
  * EventKit source configuration schema
