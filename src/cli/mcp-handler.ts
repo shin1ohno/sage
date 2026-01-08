@@ -90,6 +90,7 @@ import {
   searchRoomAvailabilityTool,
   checkRoomAvailabilityTool,
   updateCalendarEventTool,
+  deleteCalendarEventTool,
   searchDirectoryPeopleTool,
   checkPeopleAvailabilityTool,
   findCommonAvailabilityTool,
@@ -1300,7 +1301,7 @@ class MCPHandlerImpl implements MCPHandler {
       {
         name: 'create_calendar_event',
         description:
-          'Create a new calendar event with support for Google Calendar event types (OOO, Focus Time, Working Location, etc.).',
+          'Create a new calendar event with support for Google Calendar event types (OOO, Focus Time, Working Location, etc.) and recurring events.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1325,6 +1326,11 @@ class MCPHandlerImpl implements MCPHandler {
               type: 'array',
               items: { type: 'string' },
               description: "Optional: Override default alarms with custom settings (e.g., ['-15m', '-1h']). If omitted, calendar's default alarm settings apply.",
+            },
+            recurrence: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional: Array of RRULE strings for recurring events (e.g., ["FREQ=WEEKLY;BYDAY=MO,WE,FR"]). Google Calendar only. Supports DAILY, WEEKLY, MONTHLY, YEARLY frequencies with optional INTERVAL, COUNT, UNTIL, and BYDAY parameters.',
             },
             eventType: {
               type: 'string',
@@ -1375,6 +1381,7 @@ class MCPHandlerImpl implements MCPHandler {
           location: args.location as string | undefined,
           notes: args.notes as string | undefined,
           calendarName: args.calendarName as string | undefined,
+          recurrence: args.recurrence as string[] | undefined,
           eventType: args.eventType as string | undefined,
           autoDeclineMode: args.autoDeclineMode as string | undefined,
           declineMessage: args.declineMessage as string | undefined,
@@ -1386,29 +1393,20 @@ class MCPHandlerImpl implements MCPHandler {
         })
     );
 
-    // delete_calendar_event
+    // delete_calendar_event - Delete a calendar event
+    // Requirement: recurring-calendar-events 5.1
+    // Uses shared definition from tools/shared/calendar-tools.ts
     this.registerTool(
       {
-        name: 'delete_calendar_event',
-        description: 'Delete a calendar event by its ID.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            eventId: {
-              type: 'string',
-              description: 'Event ID (UUID or full ID from list_calendar_events)',
-            },
-            calendarName: {
-              type: 'string',
-              description: 'Calendar name (searches all calendars if not specified)',
-            },
-          },
-          required: ['eventId'],
-        },
+        name: deleteCalendarEventTool.name,
+        description: deleteCalendarEventTool.description,
+        inputSchema: toJsonSchema(deleteCalendarEventTool.schema),
       },
       async (args) =>
         handleDeleteCalendarEvent(this.createCalendarToolsContext(), {
           eventId: args.eventId as string,
+          deleteScope: args.deleteScope as 'thisEvent' | 'thisAndFuture' | 'allEvents' | undefined,
+          calendarName: args.calendarName as string | undefined,
         })
     );
 

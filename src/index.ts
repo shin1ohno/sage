@@ -82,6 +82,7 @@ import {
   searchRoomAvailabilityTool,
   checkRoomAvailabilityTool,
   updateCalendarEventTool,
+  deleteCalendarEventTool,
   searchDirectoryPeopleTool,
   checkPeopleAvailabilityTool,
   findCommonAvailabilityTool,
@@ -529,7 +530,7 @@ async function createServer(): Promise<McpServer> {
   // create_calendar_event - uses extracted handler
   server.tool(
     "create_calendar_event",
-    "Create a new calendar event with support for Google Calendar event types (OOO, Focus Time, Working Location, etc.).",
+    "Create a new calendar event with support for Google Calendar event types (OOO, Focus Time, Working Location, etc.) and optional recurrence patterns (RRULE).",
     {
       title: z.string().describe("Event title"),
       startDate: z
@@ -584,8 +585,12 @@ async function createServer(): Promise<McpServer> {
         .string()
         .optional()
         .describe("Room calendar ID to book for this event. Use search_room_availability to find available rooms. Requires Google Calendar."),
+      recurrence: z
+        .array(z.string())
+        .optional()
+        .describe("Optional: Array of RRULE strings for recurring events (e.g., ['FREQ=DAILY;COUNT=10']). Google Calendar only. Supports DAILY, WEEKLY, MONTHLY, YEARLY frequencies with optional INTERVAL, COUNT, UNTIL, and BYDAY parameters."),
     },
-    async ({ title, startDate, endDate, location, notes, calendarName, alarms, preferredSource, eventType, autoDeclineMode, declineMessage, chatStatus, workingLocationType, workingLocationLabel, birthdayType, roomId }) =>
+    async ({ title, startDate, endDate, location, notes, calendarName, alarms, preferredSource, eventType, autoDeclineMode, declineMessage, chatStatus, workingLocationType, workingLocationLabel, birthdayType, roomId, recurrence }) =>
       handleCreateCalendarEvent(createCalendarToolsContext(), {
         title,
         startDate,
@@ -603,22 +608,21 @@ async function createServer(): Promise<McpServer> {
         workingLocationLabel,
         birthdayType,
         roomId,
+        recurrence,
       }),
   );
 
-  // delete_calendar_event - uses extracted handler
+  /**
+   * delete_calendar_event - Delete a calendar event
+   * Requirement: recurring-calendar-events 5.1
+   * Uses shared definition from tools/shared/calendar-tools.ts
+   */
   server.tool(
-    "delete_calendar_event",
-    "Delete a calendar event from enabled calendar sources by its ID. If source not specified, attempts deletion from all enabled sources.",
-    {
-      eventId: z.string().describe("Event ID (UUID or full ID from list_calendar_events)"),
-      source: z
-        .enum(['eventkit', 'google'])
-        .optional()
-        .describe("Calendar source to delete from. If not specified, attempts deletion from all enabled sources."),
-    },
-    async ({ eventId, source }) =>
-      handleDeleteCalendarEvent(createCalendarToolsContext(), { eventId, source }),
+    deleteCalendarEventTool.name,
+    deleteCalendarEventTool.description,
+    deleteCalendarEventTool.schema.shape,
+    async ({ eventId, deleteScope, calendarName }) =>
+      handleDeleteCalendarEvent(createCalendarToolsContext(), { eventId, deleteScope, calendarName }),
   );
 
   // delete_calendar_events_batch - uses extracted handler

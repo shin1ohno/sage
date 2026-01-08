@@ -66,6 +66,7 @@ describe('handleUpdateCalendarEvent', () => {
       expect(mockUpdateEvent).toHaveBeenCalledWith(
         'event-123',
         { title: 'Updated Meeting' },
+        undefined,
         undefined
       );
     });
@@ -92,8 +93,8 @@ describe('handleUpdateCalendarEvent', () => {
       expect(mockUpdateEvent).toHaveBeenCalledWith(
         'event-123',
         { description: 'Updated description' },
-        undefined
-      );
+        undefined,
+        undefined);
     });
   });
 
@@ -123,8 +124,8 @@ describe('handleUpdateCalendarEvent', () => {
           start: '2026-01-16T14:00:00+09:00',
           end: '2026-01-16T15:00:00+09:00',
         },
-        undefined
-      );
+        undefined,
+        undefined);
     });
 
     it('should reject when start date is after end date', async () => {
@@ -173,8 +174,8 @@ describe('handleUpdateCalendarEvent', () => {
         {
           attendees: ['user1@example.com', 'user2@example.com', 'room@resource.calendar.google.com'],
         },
-        undefined
-      );
+        undefined,
+        undefined);
     });
 
     it('should replace existing room when adding new room', async () => {
@@ -208,8 +209,8 @@ describe('handleUpdateCalendarEvent', () => {
         {
           attendees: ['user1@example.com', 'new-room@resource.calendar.google.com'],
         },
-        undefined
-      );
+        undefined,
+        undefined);
     });
 
     it('should remove room from event', async () => {
@@ -243,8 +244,8 @@ describe('handleUpdateCalendarEvent', () => {
         {
           attendees: ['user1@example.com'],
         },
-        undefined
-      );
+        undefined,
+        undefined);
     });
   });
 
@@ -369,8 +370,8 @@ describe('handleUpdateCalendarEvent', () => {
             ],
           },
         },
-        undefined
-      );
+        undefined,
+        undefined);
     });
   });
 });

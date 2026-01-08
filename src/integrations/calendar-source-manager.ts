@@ -12,7 +12,7 @@ import type { CalendarEvent, AvailableSlot } from './calendar-service.js';
 import { GoogleCalendarService } from './google-calendar-service.js';
 import type { CreateEventRequest } from './google-calendar-service.js';
 import type { UserConfig } from '../types/config.js';
-import type { SyncResult, SyncStatus, GoogleCalendarEventType, CalendarEvent as GoogleCalendarEventExtended } from '../types/google-calendar-types.js';
+import type { SyncResult, SyncStatus, GoogleCalendarEventType, CalendarEvent as GoogleCalendarEventExtended, RecurrenceScope } from '../types/google-calendar-types.js';
 import type { TimeSlot, WorkingLocationInfo } from '../types/task.js';
 import { calendarLogger } from '../utils/logger.js';
 
@@ -517,6 +517,7 @@ export class CalendarSourceManager {
   /**
    * Create event in preferred calendar source
    * Requirement: 3, 10, 11 (Multi-source event creation with routing and fallback)
+   * Requirement: 1.4 (Recurrence validation - Google Calendar only)
    *
    * Creates an event in the specified source with fallback handling:
    * 1. If preferredSource is specified, try that source first
@@ -525,6 +526,11 @@ export class CalendarSourceManager {
    *
    * Note: EventKit does not support event creation in current implementation,
    * so only Google Calendar is supported for event creation.
+   *
+   * Recurrence handling (Requirement 1.4):
+   * - Recurring events are only supported via Google Calendar
+   * - If recurrence is specified and Google Calendar is not available, returns error
+   * - EventKit does not support recurring event creation
    *
    * @param request - Event creation request
    * @param preferredSource - Preferred source ('eventkit' | 'google')
@@ -540,6 +546,34 @@ export class CalendarSourceManager {
     // Check if any sources are enabled
     if (enabledSources.length === 0) {
       throw new Error('No calendar sources enabled. Please enable at least one source.');
+    }
+
+    // Requirement 1.4: Validate recurrence - only supported by Google Calendar
+    if (request.recurrence && request.recurrence.length > 0) {
+      // Check if Google Calendar service is available
+      if (!this.googleCalendarService) {
+        throw new Error(
+          '繰り返しイベントの作成には Google Calendar が必要です。\n' +
+          'Google Calendar の設定を行ってください。\n\n' +
+          'Recurring events require Google Calendar.\n' +
+          'Please set up Google Calendar integration first.'
+        );
+      }
+
+      // Check if Google Calendar is available (authenticated)
+      const isGoogleAvailable = await this.googleCalendarService.isAvailable();
+      if (!isGoogleAvailable) {
+        throw new Error(
+          '繰り返しイベントの作成には Google Calendar 認証が必要です。\n' +
+          'Google Calendar の認証を完了してください。\n\n' +
+          'Recurring events require Google Calendar authentication.\n' +
+          'Please complete Google Calendar authentication first.'
+        );
+      }
+
+      // Force Google Calendar for recurring events (ignore preferredSource)
+      calendarLogger.info('Recurrence detected - forcing Google Calendar source');
+      preferredSource = 'google';
     }
 
     // Determine source order to try
@@ -610,11 +644,13 @@ export class CalendarSourceManager {
    *
    * @param eventId - Event ID to delete
    * @param source - Optional source ('eventkit' | 'google')
+   * @param scope - Optional recurrence scope ('thisEvent', 'thisAndFuture', 'allEvents')
    * @throws Error if source specified and not available, or all sources fail with non-404 errors
    */
   async deleteEvent(
     eventId: string,
-    source?: 'eventkit' | 'google'
+    source?: 'eventkit' | 'google',
+    scope?: RecurrenceScope
   ): Promise<void> {
     const enabledSources = this.getEnabledSources();
 
@@ -632,7 +668,7 @@ export class CalendarSourceManager {
       }
 
       if (source === 'google' && this.googleCalendarService) {
-        await this.googleCalendarService.deleteEvent(eventId);
+        await this.googleCalendarService.deleteEvent(eventId, undefined, scope);
         return;
       }
 
@@ -650,7 +686,7 @@ export class CalendarSourceManager {
     if (enabledSources.includes('google') && this.googleCalendarService) {
       promises.push(
         this.googleCalendarService
-          .deleteEvent(eventId)
+          .deleteEvent(eventId, undefined, scope)
           .catch((error: Error) => ({ source: 'google', error }))
       );
     }

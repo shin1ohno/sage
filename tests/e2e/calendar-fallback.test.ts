@@ -611,13 +611,23 @@ describe('E2E: Calendar Source Fallback', () => {
 
   describe('Event Deletion Fallback', () => {
     it('should attempt deletion from Google Calendar when source is specified', async () => {
+      // Mock Google Calendar get (for scope determination)
+      mockCalendarClient.events.get.mockResolvedValue({
+        data: {
+          id: 'event-to-delete',
+          summary: 'Test Event',
+          start: { dateTime: '2026-01-15T10:00:00Z' },
+          end: { dateTime: '2026-01-15T11:00:00Z' },
+        },
+      });
       // Mock Google Calendar deletion (success)
       mockCalendarClient.events.delete.mockResolvedValue({ data: {} });
 
       // Execute: Delete event from Google Calendar
       await sourceManager.deleteEvent('event-to-delete', 'google');
 
-      // Verify: Google Calendar deletion was called
+      // Verify: Google Calendar get and deletion were called
+      expect(mockCalendarClient.events.get).toHaveBeenCalled();
       expect(mockCalendarClient.events.delete).toHaveBeenCalled();
     });
 

@@ -364,16 +364,27 @@ export function extractTypeSpecificProperties(
  * Convert Google Calendar Event to unified CalendarEvent format
  * Calls detectEventType() to determine eventType and extractTypeSpecificProperties() for type-specific data
  * Preserves all existing fields for backward compatibility
- * Requirement: 2, 6, 6.2, 6.3, 8.4, 9.3
+ * Requirement: 2, 6, 6.2, 6.3, 8.4, 9.3, recurring-calendar-events 6.1, 6.2, 6.3
  * @param googleEvent Google Calendar API event object
  * @returns Unified CalendarEvent object with eventType and typeSpecificProperties
  */
 export function convertGoogleToCalendarEvent(googleEvent: GoogleCalendarEvent): CalendarEvent {
+  // Import describeRecurrence for generating human-readable recurrence descriptions
+  // Requirement: recurring-calendar-events 6.3
+  const { describeRecurrence } = require('../utils/recurrence-validator');
+
   // Detect event type using helper function
   const eventType = detectEventType(googleEvent);
 
   // Extract type-specific properties using helper function
   const typeSpecificProperties = extractTypeSpecificProperties(googleEvent, eventType);
+
+  // Extract recurrence information
+  // Requirement: recurring-calendar-events 6.1, 6.2, 6.3
+  const recurrence = googleEvent.recurrence; // Array of RRULE strings from parent event
+  const recurringEventId = googleEvent.recurringEventId; // ID of parent event for instances
+  const recurrenceDescription =
+    recurrence && recurrence.length > 0 ? describeRecurrence(recurrence) : undefined;
 
   return {
     // Existing fields (backward compatibility)
@@ -392,6 +403,10 @@ export function convertGoogleToCalendarEvent(googleEvent: GoogleCalendarEvent): 
     // New fields for event type support
     eventType,
     typeSpecificProperties,
+    // Recurrence information (Requirement: recurring-calendar-events 6)
+    recurrence,
+    recurringEventId,
+    recurrenceDescription,
   };
 }
 

@@ -10,6 +10,7 @@ sage の問題を解決するためのガイドです。
 - [カレンダーの問題](#カレンダーの問題)
 - [Notion 統合の問題](#notion-統合の問題)
 - [Remote MCP の問題](#remote-mcp-の問題)
+- [定期イベントの問題](#定期イベントの問題)
 - [パフォーマンスの問題](#パフォーマンスの問題)
 - [ログの確認方法](#ログの確認方法)
 
@@ -568,6 +569,375 @@ openssl s_client -connect your-domain.com:443
 ```bash
 # 開発環境のみ
 export NODE_TLS_REJECT_UNAUTHORIZED=0
+```
+
+---
+
+## 定期イベントの問題
+
+### RRULE の構文エラー
+
+**症状:**
+```
+Invalid RRULE syntax
+FREQ is required in RRULE
+Invalid rule part format
+```
+
+**原因:**
+
+RRULE（Recurrence Rule）は iCalendar RFC5545 の仕様に従った厳密な構文が必要です。
+
+**一般的なエラーと解決策:**
+
+#### 1. FREQ が指定されていない
+
+**エラー例:**
+```
+INTERVAL=2;BYDAY=MO,WE,FR
+```
+
+**解決策:**
+
+FREQ は必須です。必ず含めてください。
+
+```
+# 正しい例
+FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE,FR
+```
+
+#### 2. 無効な FREQ 値
+
+**エラー例:**
+```
+FREQ=DAILY_WORK  # 無効
+FREQ=Week        # 無効（小文字は不可）
+```
+
+**解決策:**
+
+FREQ は以下のいずれかである必要があります（大文字）：
+- `DAILY` - 毎日
+- `WEEKLY` - 毎週
+- `MONTHLY` - 毎月
+- `YEARLY` - 毎年
+
+```
+# 正しい例
+FREQ=DAILY
+FREQ=WEEKLY
+FREQ=MONTHLY
+FREQ=YEARLY
+```
+
+#### 3. 無効な INTERVAL 値
+
+**エラー例:**
+```
+FREQ=WEEKLY;INTERVAL=0      # ゼロは不可
+FREQ=WEEKLY;INTERVAL=-1     # 負の値は不可
+FREQ=WEEKLY;INTERVAL=abc    # 数値でない
+```
+
+**解決策:**
+
+INTERVAL は 1 以上の正の整数である必要があります。
+
+```
+# 正しい例
+FREQ=WEEKLY;INTERVAL=1   # 毎週
+FREQ=WEEKLY;INTERVAL=2   # 2週間ごと
+FREQ=MONTHLY;INTERVAL=3  # 3ヶ月ごと
+```
+
+#### 4. COUNT と UNTIL の併用
+
+**エラー例:**
+```
+FREQ=WEEKLY;COUNT=10;UNTIL=20251231
+```
+
+**エラーメッセージ:**
+```
+COUNT and UNTIL are mutually exclusive
+```
+
+**解決策:**
+
+COUNT（回数指定）と UNTIL（終了日指定）は同時に使用できません。どちらか一方のみを使用してください。
+
+```
+# 正しい例1: 回数指定
+FREQ=WEEKLY;COUNT=10
+
+# 正しい例2: 終了日指定
+FREQ=WEEKLY;UNTIL=20251231
+```
+
+#### 5. 無効な BYDAY 値
+
+**エラー例:**
+```
+FREQ=WEEKLY;BYDAY=Monday      # 英語フルスペルは不可
+FREQ=WEEKLY;BYDAY=MON         # 3文字は不可（2文字のみ）
+FREQ=WEEKLY;BYDAY=Mo          # 小文字は不可
+```
+
+**解決策:**
+
+BYDAY は以下の2文字コードを使用してください（大文字）：
+- `MO` - 月曜日
+- `TU` - 火曜日
+- `WE` - 水曜日
+- `TH` - 木曜日
+- `FR` - 金曜日
+- `SA` - 土曜日
+- `SU` - 日曜日
+
+```
+# 正しい例
+FREQ=WEEKLY;BYDAY=MO              # 毎週月曜日
+FREQ=WEEKLY;BYDAY=MO,WE,FR        # 毎週月水金
+FREQ=MONTHLY;BYDAY=1MO            # 毎月第1月曜日
+FREQ=MONTHLY;BYDAY=-1FR           # 毎月最終金曜日
+```
+
+#### 6. 無効な BYMONTHDAY 値
+
+**エラー例:**
+```
+FREQ=MONTHLY;BYMONTHDAY=0     # ゼロは不可
+FREQ=MONTHLY;BYMONTHDAY=32    # 32日は存在しない
+FREQ=MONTHLY;BYMONTHDAY=-32   # -32は範囲外
+```
+
+**解決策:**
+
+BYMONTHDAY は以下の範囲の値を使用してください：
+- 正の値: 1〜31（月の1日目から31日目）
+- 負の値: -1〜-31（月の最終日から逆算）
+
+```
+# 正しい例
+FREQ=MONTHLY;BYMONTHDAY=15        # 毎月15日
+FREQ=MONTHLY;BYMONTHDAY=1,15      # 毎月1日と15日
+FREQ=MONTHLY;BYMONTHDAY=-1        # 毎月最終日
+```
+
+#### 7. 無効な UNTIL 日付形式
+
+**エラー例:**
+```
+FREQ=DAILY;UNTIL=2025-12-31      # ハイフン付きは不可
+FREQ=DAILY;UNTIL=12/31/2025      # スラッシュ形式は不可
+FREQ=DAILY;UNTIL=2025年12月31日  # 日本語は不可
+```
+
+**解決策:**
+
+UNTIL は以下の形式を使用してください：
+- `YYYYMMDD` 形式（推奨）
+- `YYYYMMDDTHHMMSSZ` 形式（UTC時刻付き）
+- ISO 8601 形式（例：`2025-12-31T23:59:59Z`）
+
+```
+# 正しい例
+FREQ=DAILY;UNTIL=20251231             # YYYYMMDD形式（推奨）
+FREQ=DAILY;UNTIL=20251231T235959Z     # 時刻付き
+FREQ=DAILY;UNTIL=2025-12-31T23:59:59Z # ISO 8601形式
+```
+
+---
+
+### Google Calendar が必要
+
+**症状:**
+```
+Recurring events require Google Calendar authentication
+Google Calendar is not available
+```
+
+**原因:**
+
+定期イベント（RRULE）機能は Google Calendar API を使用します。
+以下の理由により、定期イベントには Google Calendar 認証が必須です：
+
+1. **RRULE 展開の複雑性**: 定期イベントの個々の発生（occurrence）への展開は複雑
+2. **タイムゾーン処理**: 正確なタイムゾーン処理が必要
+3. **例外処理**: 特定日の除外や変更のサポート
+4. **API の限界**: macOS Calendar.app の AppleScript は定期イベントの作成に制限あり
+
+**解決策:**
+
+Google Calendar 認証を実行してください：
+
+```
+authenticate_google を実行してください
+```
+
+認証後、以下の定期イベント機能が利用可能になります：
+
+1. **定期イベントの作成**: `create_calendar_event` に `recurrence` パラメータを指定
+2. **定期イベントの更新**: `update_calendar_event` で RRULE を変更
+3. **個別発生の更新**: 定期イベントの特定日のみを変更（`thisAndFollowing` オプション）
+4. **イベント一覧の取得**: `list_calendar_events` で定期イベントを含む全イベントを取得
+
+**注意事項:**
+
+- Google Calendar 認証なしでも、通常の単発イベントは作成可能です
+- macOS の Calendar.app でも定期イベントは表示されます（Google Calendar と同期済みの場合）
+- 定期イベントの編集には Google Calendar 認証が必要です
+
+---
+
+### singleEvents スコープの動作
+
+**症状:**
+- 定期イベントが1つのイベントとして返される
+- 個別の発生（occurrence）が表示されない
+
+**原因:**
+
+`list_calendar_events` の `singleEvents` パラメータの動作：
+
+- `singleEvents: true`（デフォルト）:
+  - 定期イベントの各発生を個別のイベントとして返す
+  - 例：毎週月曜日の定期イベント → 各月曜日が個別イベントとして返る
+  - ユーザーフレンドリーだが、大量の発生がある場合はパフォーマンスに影響
+
+- `singleEvents: false`:
+  - 定期イベントを1つのイベントとして返す
+  - `recurrence` フィールドに RRULE が含まれる
+  - プログラムで RRULE を処理する場合に使用
+
+**解決策:**
+
+目的に応じて `singleEvents` を設定してください：
+
+```
+# 個別の発生を表示したい場合（推奨）
+list_calendar_events({
+  startDate: "2025-01-01T00:00:00+09:00",
+  endDate: "2025-01-31T23:59:59+09:00",
+  singleEvents: true  // デフォルト
+})
+
+# 定期イベントのルールを取得したい場合
+list_calendar_events({
+  startDate: "2025-01-01T00:00:00+09:00",
+  endDate: "2025-01-31T23:59:59+09:00",
+  singleEvents: false
+})
+```
+
+**ベストプラクティス:**
+
+1. **カレンダー表示**: `singleEvents: true` を使用
+2. **RRULE 編集**: `singleEvents: false` でルールを取得後、`update_calendar_event` で更新
+3. **パフォーマンス**: 長期間（3ヶ月以上）の場合は `singleEvents: false` を検討
+
+---
+
+### 定期イベントの特定発生の変更
+
+**症状:**
+- 定期イベント全体が変更されてしまう
+- 特定日のみを変更したい
+
+**解決策:**
+
+`update_calendar_event` の `updateScope` パラメータを使用してください：
+
+#### 1. 特定日のみ変更
+
+```
+# 特定日の会議時刻を変更（他の発生には影響なし）
+update_calendar_event({
+  eventId: "event-id_20250115T100000Z",  # 特定発生のID（_YYYYMMDDTHHMMSSZサフィックス）
+  startDate: "2025-01-15T11:00:00+09:00", # 新しい開始時刻
+  endDate: "2025-01-15T12:00:00+09:00",
+  updateScope: "thisInstance"  # この発生のみ
+})
+```
+
+#### 2. この日以降すべて変更
+
+```
+# この日以降の会議場所を変更
+update_calendar_event({
+  eventId: "event-id_20250115T100000Z",
+  location: "新しい会議室",
+  updateScope: "thisAndFollowing"  # この発生と以降すべて
+})
+```
+
+#### 3. すべての発生を変更
+
+```
+# 定期イベント全体の時刻を変更
+update_calendar_event({
+  eventId: "event-id",  # 基本イベントID（サフィックスなし）
+  startDate: "2025-01-08T11:00:00+09:00",
+  endDate: "2025-01-08T12:00:00+09:00",
+  updateScope: "allEvents"  # すべての発生
+})
+```
+
+**注意事項:**
+
+- 特定発生の ID は `list_calendar_events` の `recurringEventId` フィールドで確認できます
+- `thisInstance` で変更した発生は、元の定期イベントから独立したイベントになります
+- `thisAndFollowing` は元の定期イベントを分割します
+
+---
+
+### RRULE の例とパターン
+
+**毎日:**
+```
+FREQ=DAILY                        # 毎日
+FREQ=DAILY;INTERVAL=2             # 2日ごと
+FREQ=DAILY;COUNT=30               # 30回（30日間）
+FREQ=DAILY;UNTIL=20251231         # 2025年12月31日まで
+```
+
+**毎週:**
+```
+FREQ=WEEKLY;BYDAY=MO              # 毎週月曜日
+FREQ=WEEKLY;BYDAY=MO,WE,FR        # 毎週月水金
+FREQ=WEEKLY;INTERVAL=2;BYDAY=TU   # 2週間ごとの火曜日
+```
+
+**毎月:**
+```
+FREQ=MONTHLY;BYMONTHDAY=15        # 毎月15日
+FREQ=MONTHLY;BYDAY=1MO            # 毎月第1月曜日
+FREQ=MONTHLY;BYDAY=-1FR           # 毎月最終金曜日
+FREQ=MONTHLY;BYMONTHDAY=-1        # 毎月最終日
+```
+
+**毎年:**
+```
+FREQ=YEARLY                       # 毎年同じ日
+FREQ=YEARLY;BYMONTHDAY=1;BYMONTH=1 # 毎年1月1日
+```
+
+**日本語での説明表示:**
+
+sage は RRULE を日本語で説明します：
+
+```
+FREQ=WEEKLY;BYDAY=MO,WE,FR
+→ "毎週月・水・金曜日"
+
+FREQ=MONTHLY;INTERVAL=2;BYDAY=1MO
+→ "2ヶ月ごとの第1月曜日"
+
+FREQ=DAILY;COUNT=30
+→ "毎日（30回）"
+
+FREQ=WEEKLY;UNTIL=20251231
+→ "毎週（2025年12月31日まで）"
 ```
 
 ---

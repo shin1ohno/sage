@@ -14,7 +14,7 @@ import { defineTool } from './types.js';
  */
 export const updateCalendarEventTool = defineTool(
   'update_calendar_event',
-  'Update an existing calendar event. Can modify title, time, location, attendees, room, and other properties. For room changes, use roomId to add/change a room, or removeRoom to remove an existing room.',
+  'Update an existing calendar event. Can modify title, time, location, attendees, room, and other properties. For recurring events, use updateScope to specify whether to update only this occurrence, this and future occurrences, or all occurrences. For room changes, use roomId to add/change a room, or removeRoom to remove an existing room.',
   z.object({
     eventId: z
       .string()
@@ -71,6 +71,32 @@ export const updateCalendarEventTool = defineTool(
       .string()
       .optional()
       .describe('Calendar name (uses primary calendar if not specified)'),
+    updateScope: z
+      .enum(['this_event', 'this_and_future', 'all_events'])
+      .optional()
+      .describe('For recurring events: scope of the update. "this_event" updates only this occurrence, "this_and_future" updates this and future occurrences, "all_events" updates all occurrences. If not specified, defaults to "this_event" for recurring events.'),
+  })
+);
+
+/**
+ * delete_calendar_event tool
+ * Requirement: recurring-calendar-events 5.1
+ */
+export const deleteCalendarEventTool = defineTool(
+  'delete_calendar_event',
+  'Delete a calendar event by its ID. For recurring events, use deleteScope to specify which occurrences to delete: thisEvent (default for instances) deletes only the selected occurrence, thisAndFuture deletes selected and all future occurrences, allEvents deletes the entire recurring series.',
+  z.object({
+    eventId: z
+      .string()
+      .describe('Event ID (UUID or full ID from list_calendar_events)'),
+    deleteScope: z
+      .enum(['thisEvent', 'thisAndFuture', 'allEvents'])
+      .optional()
+      .describe('For recurring events: thisEvent (default for instances), thisAndFuture, allEvents'),
+    calendarName: z
+      .string()
+      .optional()
+      .describe('Calendar name (searches all calendars if not specified)'),
   })
 );
 
@@ -79,4 +105,5 @@ export const updateCalendarEventTool = defineTool(
  */
 export const calendarTools = [
   updateCalendarEventTool,
+  deleteCalendarEventTool,
 ] as const;

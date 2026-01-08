@@ -24,6 +24,7 @@ import type {
   CommonFreeSlot,
   CommonAvailabilityResult,
   ResolvedParticipant,
+  RecurrenceScope,
 } from '../types/google-calendar-types.js';
 import { convertGoogleToCalendarEvent, detectEventType } from '../types/google-calendar-types.js';
 import { retryWithBackoff } from '../utils/retry.js';
@@ -103,6 +104,82 @@ function validateUpdateFieldsForEventType(
 }
 
 /**
+ * Determine the recurrence scope for an update operation
+ * Requirements: 2.1, 2.4, 3.1, 4.1 - Default scope behavior
+ *
+ * @param scope - Explicitly specified scope (if any)
+ * @param existingEvent - The event being updated
+ * @returns The recurrence scope to use for the operation
+ *
+ * @description
+ * Logic:
+ * 1. If scope is explicitly specified, use it
+ * 2. If event is a recurring instance (has recurringEventId), default to 'thisEvent'
+ * 3. If event is a recurring parent (has recurrence rules), default to 'allEvents'
+ * 4. For non-recurring events, scope is ignored (returned but not used)
+ */
+function determineUpdateScope(
+  scope: RecurrenceScope | undefined,
+  existingEvent: calendar_v3.Schema$Event
+): RecurrenceScope {
+  // If scope explicitly specified, use it
+  if (scope !== undefined) {
+    return scope;
+  }
+
+  // If recurring instance (has recurringEventId), default to 'thisEvent'
+  if (existingEvent.recurringEventId) {
+    return 'thisEvent';
+  }
+
+  // If recurring parent (has recurrence rules), default to 'allEvents'
+  if (existingEvent.recurrence && existingEvent.recurrence.length > 0) {
+    return 'allEvents';
+  }
+
+  // For non-recurring events, default to 'thisEvent' (though it won't be used)
+  return 'thisEvent';
+}
+
+/**
+ * Determine the effective delete scope for a recurring event
+ * Requirement: 5.1, 5.5 (Delete recurring events with scope support)
+ *
+ * @param scope - Explicitly specified scope (if any)
+ * @param existingEvent - The event being deleted
+ * @returns The recurrence scope to use for the deletion operation
+ *
+ * @description
+ * Logic:
+ * 1. If scope is explicitly specified, use it
+ * 2. If event is a recurring instance (has recurringEventId), default to 'thisEvent'
+ * 3. If event is a recurring parent (has recurrence rules), default to 'allEvents'
+ * 4. For non-recurring events, scope is ignored (returned but not used)
+ */
+function determineDeleteScope(
+  scope: RecurrenceScope | undefined,
+  existingEvent: calendar_v3.Schema$Event
+): RecurrenceScope {
+  // If scope explicitly specified, use it
+  if (scope !== undefined) {
+    return scope;
+  }
+
+  // If recurring instance (has recurringEventId), default to 'thisEvent'
+  if (existingEvent.recurringEventId) {
+    return 'thisEvent';
+  }
+
+  // If recurring parent (has recurrence rules), default to 'allEvents'
+  if (existingEvent.recurrence && existingEvent.recurrence.length > 0) {
+    return 'allEvents';
+  }
+
+  // For non-recurring events, default to 'thisEvent' (though it won't be used)
+  return 'thisEvent';
+}
+
+/**
  * Request interface for listing events
  *
  * @property startDate - Start of date range in ISO 8601 (YYYY-MM-DD) or RFC3339 (YYYY-MM-DDTHH:MM:SSZ) format
@@ -153,6 +230,7 @@ export interface CreateEventRequest {
       minutes: number;
     }>;
   };
+  recurrence?: string[]; // RRULE strings for recurring events
   eventType?: GoogleCalendarEventType;
   outOfOfficeProperties?: OutOfOfficeProperties;
   focusTimeProperties?: FocusTimeProperties;
@@ -570,6 +648,11 @@ export class GoogleCalendarService {
         eventBody.reminders = request.reminders;
       }
 
+      // Handle recurrence (for recurring events)
+      if (request.recurrence && request.recurrence.length > 0) {
+        eventBody.recurrence = request.recurrence;
+      }
+
       // Build and merge event type-specific payload
       const eventTypePayload = this.buildEventTypePayload(request);
       Object.assign(eventBody, eventTypePayload);
@@ -674,8 +757,183 @@ export class GoogleCalendarService {
   }
 
   /**
+   * Split a recurring series at a selected instance
+   * Requirement: 3 (Update Recurring Event - This and Future)
+   *
+   * Algorithm:
+   * 1. Fetch the parent recurring event
+   * 2. Determine the end date for the original series (day before selected instance)
+   * 3. Update parent event's RRULE with UNTIL clause (or adjust COUNT)
+   * 4. Create new recurring event starting from selected instance with updated properties
+   *
+   * @param recurringEventId - Parent recurring event ID
+   * @param selectedInstanceStart - Start date/time of the selected instance (ISO 8601)
+   * @param updates - Updates to apply to the new series
+   * @param calendarId - Calendar ID
+   * @returns Created new recurring event
+   * @throws Error if parent event not found or not a recurring event
+   */
+  private async splitRecurringSeries(
+    recurringEventId: string,
+    selectedInstanceStart: string,
+    updates: Partial<CreateEventRequest>,
+    calendarId: string
+  ): Promise<CalendarEvent> {
+    // Step 1: Fetch parent recurring event
+    const parentEvent = await retryWithBackoff(
+      async () => {
+        return (
+          await this.calendarClient!.events.get({
+            calendarId: calendarId,
+            eventId: recurringEventId,
+          })
+        ).data;
+      },
+      {
+        maxAttempts: 3,
+        initialDelay: 1000,
+        shouldRetry: (error: Error) => {
+          const message = error.message.toLowerCase();
+          if (message.includes('not found') || message.includes('404')) {
+            return false;
+          }
+          if (message.includes('unauthorized') || message.includes('401') ||
+              message.includes('forbidden') || message.includes('403')) {
+            return false;
+          }
+          return true;
+        },
+      }
+    );
+
+    // Validate that it's a recurring event
+    if (!parentEvent.recurrence || parentEvent.recurrence.length === 0) {
+      throw new Error('Event is not a recurring event');
+    }
+
+    // Step 2: Calculate the UNTIL date (day before selected instance)
+    const selectedDate = new Date(selectedInstanceStart);
+    const untilDate = new Date(selectedDate);
+    untilDate.setDate(untilDate.getDate() - 1);
+
+    // Format UNTIL date for RRULE (YYYYMMDD format in UTC)
+    const untilString = untilDate.toISOString().split('T')[0].replace(/-/g, '');
+
+    // Step 3: Update parent event's recurrence rules
+    const updatedRecurrence: string[] = parentEvent.recurrence.map(rule => {
+      if (rule.startsWith('RRULE:')) {
+        // Parse existing RRULE
+        const rruleParts = rule.substring(6).split(';');
+        const rruleMap = new Map<string, string>();
+
+        for (const part of rruleParts) {
+          const [key, value] = part.split('=');
+          if (key && value) {
+            rruleMap.set(key, value);
+          }
+        }
+
+        // Remove COUNT if present (UNTIL and COUNT are mutually exclusive)
+        rruleMap.delete('COUNT');
+
+        // Add or update UNTIL
+        rruleMap.set('UNTIL', `${untilString}T235959Z`);
+
+        // Rebuild RRULE
+        const newRuleParts: string[] = [];
+        rruleMap.forEach((value, key) => {
+          newRuleParts.push(`${key}=${value}`);
+        });
+
+        return `RRULE:${newRuleParts.join(';')}`;
+      }
+      return rule;
+    });
+
+    // Update parent event with new RRULE
+    await retryWithBackoff(
+      async () => {
+        await this.calendarClient!.events.patch({
+          calendarId: calendarId,
+          eventId: recurringEventId,
+          requestBody: {
+            recurrence: updatedRecurrence,
+          },
+          sendUpdates: 'none',
+        });
+      },
+      {
+        maxAttempts: 3,
+        initialDelay: 1000,
+        shouldRetry: (error: Error) => {
+          const message = error.message.toLowerCase();
+          if (message.includes('rate limit') || message.includes('429') ||
+              message.includes('500') || message.includes('503') ||
+              message.includes('service unavailable') || message.includes('temporary')) {
+            return true;
+          }
+          return false;
+        },
+      }
+    );
+
+    calendarLogger.info(
+      { recurringEventId, untilDate: untilString },
+      'Updated parent recurring event with UNTIL date'
+    );
+
+    // Step 4: Create new recurring event starting from selected instance
+    // Build new event request with original properties + updates
+    const newEventRequest: CreateEventRequest = {
+      title: updates.title !== undefined ? updates.title : (parentEvent.summary || ''),
+      start: selectedInstanceStart,
+      end: updates.end !== undefined ? updates.end : (parentEvent.end?.dateTime || parentEvent.end?.date || selectedInstanceStart),
+      isAllDay: updates.isAllDay !== undefined ? updates.isAllDay : !!parentEvent.start?.date,
+      location: updates.location !== undefined ? updates.location : (parentEvent.location || undefined),
+      description: updates.description !== undefined ? updates.description : (parentEvent.description || undefined),
+      attendees: updates.attendees !== undefined ? updates.attendees : (parentEvent.attendees?.map((a: calendar_v3.Schema$EventAttendee) => a.email || '') || []),
+      recurrence: parentEvent.recurrence, // Use same recurrence rules (without UNTIL)
+    };
+
+
+    // Handle reminders separately with proper type checking
+    if (updates.reminders !== undefined) {
+      newEventRequest.reminders = updates.reminders;
+    } else if (parentEvent.reminders && parentEvent.reminders.useDefault !== undefined) {
+      newEventRequest.reminders = {
+        useDefault: parentEvent.reminders.useDefault,
+        overrides: parentEvent.reminders.overrides?.map(override => ({
+          method: (override.method as 'email' | 'popup') || 'popup',
+          minutes: override.minutes || 10,
+        })),
+      };
+    }
+    // Remove UNTIL from the new series recurrence rules
+    if (newEventRequest.recurrence) {
+      newEventRequest.recurrence = newEventRequest.recurrence.map(rule => {
+        if (rule.startsWith('RRULE:')) {
+          // Remove UNTIL from the new series (it should continue indefinitely or with original COUNT)
+          return rule.replace(/;UNTIL=[^;]+/, '').replace(/UNTIL=[^;]+;?/, '');
+        }
+        return rule;
+      });
+    }
+
+    calendarLogger.info(
+      { newEventStart: selectedInstanceStart },
+      'Creating new recurring series from selected instance'
+    );
+
+    // Create the new recurring event
+    const newEvent = await this.createEvent(newEventRequest, calendarId);
+
+    return newEvent;
+  }
+
+  /**
    * Update an existing calendar event
    * Requirement: 4, 10 (Calendar event update with retry logic)
+   * Requirements: 2, 3, 4 (Recurring event update with scope support)
    *
    * Supports all-day events, reminders, attendees, and recurring events.
    * Includes retry logic with exponential backoff for transient failures.
@@ -684,13 +942,22 @@ export class GoogleCalendarService {
    * @param eventId - Event ID to update
    * @param updates - Partial CreateEventRequest with fields to update
    * @param calendarId - Calendar ID (optional, defaults to 'primary')
+   * @param scope - Recurrence scope for recurring events (optional)
+   *                - 'thisEvent': Update only this instance
+   *                - 'thisAndFuture': Update this and future instances
+   *                - 'allEvents': Update all instances in the series
+   *                If not specified, defaults are:
+   *                - Recurring instance: 'thisEvent'
+   *                - Recurring parent: 'allEvents'
+   *                - Non-recurring: ignored
    * @returns Updated calendar event
    * @throws Error if authentication fails, API request fails after retries, or disallowed fields are being updated
    */
   async updateEvent(
     eventId: string,
     updates: Partial<CreateEventRequest>,
-    calendarId?: string
+    calendarId?: string,
+    scope?: RecurrenceScope
   ): Promise<CalendarEvent> {
     // Ensure client is authenticated
     if (!this.calendarClient) {
@@ -751,80 +1018,157 @@ export class GoogleCalendarService {
       // Step 3: Validate that the update fields are allowed for this event type
       validateUpdateFieldsForEventType(eventType, updates);
 
+      // Step 4: Determine the update scope for recurring events
+      // Requirements: 2.1, 2.4, 3.1, 4.1 - Default scope behavior
+      const effectiveScope = determineUpdateScope(scope, existingEvent);
+
+      // Step 5: Route to appropriate update logic based on scope
+      // Requirement 2: Update Recurring Event - Single Instance
+      if (effectiveScope === 'thisEvent') {
+        // Requirement 2.1, 2.2, 2.3: Update only the specific occurrence
+        // Use instance eventId directly to patch the specific instance
+        // This creates an exception in the recurring series
+        return await this.updateSingleInstance(
+          targetCalendarId,
+          eventId,
+          updates,
+          eventType
+        );
+      }
+
+      // Requirement 4: Update Recurring Event - All Events
+      // Requirements: 4.1, 4.2, 4.3 - Update parent recurring event
+      if (effectiveScope === 'allEvents' && existingEvent.recurringEventId) {
+        // This is a recurring instance, but user wants to update all events
+        // Get the parent event using recurringEventId
+        const parentEventId = existingEvent.recurringEventId;
+
+        calendarLogger.info(
+          { instanceId: eventId, parentId: parentEventId },
+          'Updating all events in recurring series via parent'
+        );
+
+        // Fetch parent event to ensure it exists
+        await retryWithBackoff(
+          async () => {
+            return (
+              await this.calendarClient!.events.get({
+                calendarId: targetCalendarId,
+                eventId: parentEventId,
+              })
+            ).data;
+          },
+          {
+            maxAttempts: 3,
+            initialDelay: 1000,
+            shouldRetry: (error: Error) => {
+              const message = error.message.toLowerCase();
+              if (
+                message.includes('not found') ||
+                message.includes('404')
+              ) {
+                return false;
+              }
+              if (
+                message.includes('unauthorized') ||
+                message.includes('401') ||
+                message.includes('forbidden') ||
+                message.includes('403')
+              ) {
+                return false;
+              }
+              if (
+                message.includes('rate limit') ||
+                message.includes('429') ||
+                message.includes('500') ||
+                message.includes('503') ||
+                message.includes('service unavailable') ||
+                message.includes('temporary')
+              ) {
+                return true;
+              }
+              return true;
+            },
+          }
+        );
+
+        // Build patch body for parent event
+        const patchBody = this.buildPatchBody(updates);
+
+        // Patch the parent event directly
+        // This applies changes to all instances in the series
+        const response: calendar_v3.Schema$Event = await retryWithBackoff(
+          async () => {
+            return (
+              await this.calendarClient!.events.patch({
+                calendarId: targetCalendarId,
+                eventId: parentEventId,
+                requestBody: patchBody,
+                sendUpdates: updates.attendees !== undefined ? 'all' : 'none',
+              })
+            ).data;
+          },
+          {
+            maxAttempts: 3,
+            initialDelay: 1000,
+            shouldRetry: (error: Error) => {
+              const message = error.message.toLowerCase();
+              if (
+                message.includes('rate limit') ||
+                message.includes('429') ||
+                message.includes('500') ||
+                message.includes('503') ||
+                message.includes('service unavailable') ||
+                message.includes('temporary')
+              ) {
+                return true;
+              }
+              if (
+                message.includes('unauthorized') ||
+                message.includes('401') ||
+                message.includes('forbidden') ||
+                message.includes('403')
+              ) {
+                return false;
+              }
+              if (
+                message.includes('not found') ||
+                message.includes('404')
+              ) {
+                return false;
+              }
+              return true;
+            },
+          }
+        );
+
+        return convertGoogleToCalendarEvent(response as GoogleCalendarEvent);
+      }
+
+      // Requirement 3: Update Recurring Event - This and Future
+      if (effectiveScope === 'thisAndFuture' && existingEvent.recurringEventId) {
+        // Requirement 3.1, 3.2, 3.3, 3.4: Split the series at selected instance
+        const instanceStart = existingEvent.start?.dateTime || existingEvent.start?.date;
+        if (!instanceStart) {
+          throw new Error('Cannot determine instance start time');
+        }
+
+        calendarLogger.info(
+          { eventId, recurringEventId: existingEvent.recurringEventId, instanceStart },
+          'Splitting recurring series for thisAndFuture update'
+        );
+
+        // Split the series and create new series with updates
+        return await this.splitRecurringSeries(
+          existingEvent.recurringEventId,
+          instanceStart,
+          updates,
+          targetCalendarId
+        );
+      }
+
       // Build Google Calendar patch object (only include provided fields)
-      const patchBody: calendar_v3.Schema$Event = {};
-
-      // Handle title
-      if (updates.title !== undefined) {
-        patchBody.summary = updates.title;
-      }
-
-      // Handle location
-      if (updates.location !== undefined) {
-        patchBody.location = updates.location;
-      }
-
-      // Handle description
-      if (updates.description !== undefined) {
-        patchBody.description = updates.description;
-      }
-
-      // Handle date/time updates
-      if (updates.start !== undefined || updates.end !== undefined || updates.isAllDay !== undefined) {
-        // If updating dates, need to handle both start and end consistently
-        if (updates.isAllDay !== undefined && updates.isAllDay) {
-          // All-day event: use 'date' field (YYYY-MM-DD format)
-          if (updates.start !== undefined) {
-            patchBody.start = {
-              date: updates.start.split('T')[0], // Extract date part from ISO 8601
-            };
-          }
-          if (updates.end !== undefined) {
-            patchBody.end = {
-              date: updates.end.split('T')[0],
-            };
-          }
-        } else if (updates.isAllDay !== undefined && !updates.isAllDay) {
-          // Timed event: use 'dateTime' field (ISO 8601 with timezone)
-          if (updates.start !== undefined) {
-            patchBody.start = {
-              dateTime: updates.start,
-            };
-          }
-          if (updates.end !== undefined) {
-            patchBody.end = {
-              dateTime: updates.end,
-            };
-          }
-        } else {
-          // isAllDay not specified, infer from existing format or default to dateTime
-          if (updates.start !== undefined) {
-            patchBody.start = {
-              dateTime: updates.start,
-            };
-          }
-          if (updates.end !== undefined) {
-            patchBody.end = {
-              dateTime: updates.end,
-            };
-          }
-        }
-      }
-
-      // Handle attendees
-      if (updates.attendees !== undefined) {
-        if (updates.attendees.length > 0) {
-          patchBody.attendees = updates.attendees.map(email => ({ email }));
-        } else {
-          // Empty array means remove all attendees
-          patchBody.attendees = [];
-        }
-      }
-
-      // Handle reminders
-      if (updates.reminders !== undefined) {
-        patchBody.reminders = updates.reminders;
-      }
+      const patchBody = this.buildPatchBody(updates);
 
       // Update event with retry logic using patch API
       const response: calendar_v3.Schema$Event = await retryWithBackoff(
@@ -886,59 +1230,47 @@ export class GoogleCalendarService {
   }
 
   /**
-   * Delete a calendar event
-   * Requirement: 5, 10 (Calendar event deletion with retry logic)
+   * Update a single instance of a recurring event
+   * Requirement: 2.1, 2.2, 2.3 - Update only the specific occurrence
    *
-   * Deletes a single event from Google Calendar using the delete API.
-   * Includes retry logic with exponential backoff for transient failures.
-   * Handles 404 errors gracefully (event already deleted).
+   * Updates a specific instance of a recurring event by patching the instance directly.
+   * This creates an exception in the recurring series, leaving other instances unchanged.
    *
-   * @param eventId - Event ID to delete
-   * @param calendarId - Calendar ID (optional, defaults to 'primary')
-   * @throws Error if authentication fails or API request fails after retries (except 404)
+   * @param calendarId - Calendar ID
+   * @param instanceEventId - Event ID of the specific instance
+   * @param updates - Updates to apply
+   * @param _eventType - Event type for validation (not used in single instance updates)
+   * @returns Updated calendar event
+   * @throws Error if patch fails
    */
-  async deleteEvent(eventId: string, calendarId?: string): Promise<void> {
-    // Ensure client is authenticated
-    if (!this.calendarClient) {
-      await this.authenticate();
-    }
-
-    const targetCalendarId = calendarId || 'primary';
+  private async updateSingleInstance(
+    calendarId: string,
+    instanceEventId: string,
+    updates: Partial<CreateEventRequest>,
+    _eventType: GoogleCalendarEventType
+  ): Promise<CalendarEvent> {
+    // Build patch body using the existing logic
+    const patchBody = this.buildPatchBody(updates);
 
     try {
-      // Delete event with retry logic
-      await retryWithBackoff(
+      // Patch the specific instance directly
+      // This creates an exception in the recurring series
+      const response: calendar_v3.Schema$Event = await retryWithBackoff(
         async () => {
-          await this.calendarClient!.events.delete({
-            calendarId: targetCalendarId,
-            eventId: eventId,
-          });
+          return (
+            await this.calendarClient!.events.patch({
+              calendarId: calendarId,
+              eventId: instanceEventId, // Use instance eventId directly
+              requestBody: patchBody,
+              sendUpdates: updates.attendees !== undefined ? 'all' : 'none',
+            })
+          ).data;
         },
         {
           maxAttempts: 3,
           initialDelay: 1000,
           shouldRetry: (error: Error) => {
             const message = error.message.toLowerCase();
-
-            // Don't retry on 404 (event not found / already deleted)
-            if (
-              message.includes('not found') ||
-              message.includes('404')
-            ) {
-              return false;
-            }
-
-            // Don't retry on auth errors (401, 403)
-            if (
-              message.includes('unauthorized') ||
-              message.includes('401') ||
-              message.includes('forbidden') ||
-              message.includes('403')
-            ) {
-              return false;
-            }
-
-            // Retry on rate limit (429) and server errors (500, 503)
             if (
               message.includes('rate limit') ||
               message.includes('429') ||
@@ -949,12 +1281,433 @@ export class GoogleCalendarService {
             ) {
               return true;
             }
-
-            // Default to retryable
+            if (
+              message.includes('unauthorized') ||
+              message.includes('401') ||
+              message.includes('forbidden') ||
+              message.includes('403')
+            ) {
+              return false;
+            }
+            if (
+              message.includes('not found') ||
+              message.includes('404')
+            ) {
+              return false;
+            }
             return true;
           },
         }
       );
+
+      // Convert updated event to CalendarEvent
+      return convertGoogleToCalendarEvent(response as GoogleCalendarEvent);
+    } catch (error) {
+      throw new Error(
+        `Failed to update single instance in Google Calendar: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
+   * Build patch body for event updates
+   * Helper method to construct Google Calendar patch object
+   *
+   * @param updates - Updates to apply
+   * @returns Google Calendar patch body
+   */
+  private buildPatchBody(updates: Partial<CreateEventRequest>): calendar_v3.Schema$Event {
+    const patchBody: calendar_v3.Schema$Event = {};
+
+    // Handle title
+    if (updates.title !== undefined) {
+      patchBody.summary = updates.title;
+    }
+
+    // Handle location
+    if (updates.location !== undefined) {
+      patchBody.location = updates.location;
+    }
+
+    // Handle description
+    if (updates.description !== undefined) {
+      patchBody.description = updates.description;
+    }
+
+    // Handle date/time updates
+    if (updates.start !== undefined || updates.end !== undefined || updates.isAllDay !== undefined) {
+      if (updates.isAllDay !== undefined && updates.isAllDay) {
+        // All-day event: use 'date' field (YYYY-MM-DD format)
+        if (updates.start !== undefined) {
+          patchBody.start = {
+            date: updates.start.split('T')[0],
+          };
+        }
+        if (updates.end !== undefined) {
+          patchBody.end = {
+            date: updates.end.split('T')[0],
+          };
+        }
+      } else if (updates.isAllDay !== undefined && !updates.isAllDay) {
+        // Timed event: use 'dateTime' field (ISO 8601 with timezone)
+        if (updates.start !== undefined) {
+          patchBody.start = {
+            dateTime: updates.start,
+          };
+        }
+        if (updates.end !== undefined) {
+          patchBody.end = {
+            dateTime: updates.end,
+          };
+        }
+      } else {
+        // isAllDay not specified, infer from existing format or default to dateTime
+        if (updates.start !== undefined) {
+          patchBody.start = {
+            dateTime: updates.start,
+          };
+        }
+        if (updates.end !== undefined) {
+          patchBody.end = {
+            dateTime: updates.end,
+          };
+        }
+      }
+    }
+
+    // Handle attendees
+    if (updates.attendees !== undefined) {
+      if (updates.attendees.length > 0) {
+        patchBody.attendees = updates.attendees.map((email: string) => ({ email }));
+      } else {
+        // Empty array means remove all attendees
+        patchBody.attendees = [];
+      }
+    }
+
+    // Handle reminders
+    if (updates.reminders !== undefined) {
+      patchBody.reminders = updates.reminders as calendar_v3.Schema$Event['reminders'];
+    }
+
+    return patchBody;
+  }
+
+  /**
+   * Delete a calendar event
+   * Requirement: 5, 10 (Calendar event deletion with retry logic)
+   * Requirements: 5.1, 5.5 (Recurring event deletion with scope support)
+   *
+   * Deletes a single event from Google Calendar using the delete API.
+   * Includes retry logic with exponential backoff for transient failures.
+   * Handles 404 errors gracefully (event already deleted).
+   * Supports recurring event deletion with scope control.
+   *
+   * @param eventId - Event ID to delete
+   * @param calendarId - Calendar ID (optional, defaults to 'primary')
+   * @param scope - Recurrence scope for recurring events (optional)
+   *                - 'thisEvent': Delete only this instance
+   *                - 'thisAndFuture': Delete this and future instances
+   *                - 'allEvents': Delete all instances in the series
+   *                If not specified, defaults are:
+   *                - Recurring instance: 'thisEvent'
+   *                - Recurring parent: 'allEvents'
+   *                - Non-recurring: ignored
+   * @throws Error if authentication fails or API request fails after retries (except 404)
+   */
+  async deleteEvent(
+    eventId: string,
+    calendarId?: string,
+    scope?: RecurrenceScope
+  ): Promise<void> {
+    // Ensure client is authenticated
+    if (!this.calendarClient) {
+      await this.authenticate();
+    }
+
+    const targetCalendarId = calendarId || 'primary';
+
+    try {
+      // Step 1: Fetch existing event to determine if it's recurring
+      // Requirement: 5.1, 5.5 - Determine delete scope for recurring events
+      const existingEvent = await retryWithBackoff(
+        async () => {
+          return (
+            await this.calendarClient!.events.get({
+              calendarId: targetCalendarId,
+              eventId: eventId,
+            })
+          ).data;
+        },
+        {
+          maxAttempts: 3,
+          initialDelay: 1000,
+          shouldRetry: (error: Error) => {
+            const message = error.message.toLowerCase();
+            if (
+              message.includes('not found') ||
+              message.includes('404')
+            ) {
+              return false;
+            }
+            if (
+              message.includes('unauthorized') ||
+              message.includes('401') ||
+              message.includes('forbidden') ||
+              message.includes('403')
+            ) {
+              return false;
+            }
+            if (
+              message.includes('rate limit') ||
+              message.includes('429') ||
+              message.includes('500') ||
+              message.includes('503') ||
+              message.includes('service unavailable') ||
+              message.includes('temporary')
+            ) {
+              return true;
+            }
+            return true;
+          },
+        }
+      );
+
+      // Step 2: Determine the effective delete scope
+      const effectiveScope = determineDeleteScope(scope, existingEvent);
+
+      // Step 3: Route to appropriate deletion method based on scope
+      // Requirement 5.2: thisEvent - Delete specific instance
+      if (effectiveScope === 'thisEvent') {
+        calendarLogger.info(
+          { eventId, scope: effectiveScope },
+          'Deleting single instance'
+        );
+
+        // Use existing delete logic for single instance
+        await retryWithBackoff(
+          async () => {
+            await this.calendarClient!.events.delete({
+              calendarId: targetCalendarId,
+              eventId: eventId,
+            });
+          },
+          {
+            maxAttempts: 3,
+            initialDelay: 1000,
+            shouldRetry: (error: Error) => {
+              const message = error.message.toLowerCase();
+              if (
+                message.includes('not found') ||
+                message.includes('404')
+              ) {
+                return false;
+              }
+              if (
+                message.includes('unauthorized') ||
+                message.includes('401') ||
+                message.includes('forbidden') ||
+                message.includes('403')
+              ) {
+                return false;
+              }
+              if (
+                message.includes('rate limit') ||
+                message.includes('429') ||
+                message.includes('500') ||
+                message.includes('503') ||
+                message.includes('service unavailable') ||
+                message.includes('temporary')
+              ) {
+                return true;
+              }
+              return true;
+            },
+          }
+        );
+        return;
+      }
+
+      // Requirement 5.3: thisAndFuture - Update parent RRULE with UNTIL
+      if (effectiveScope === 'thisAndFuture' && existingEvent.recurringEventId) {
+        calendarLogger.info(
+          { eventId, recurringEventId: existingEvent.recurringEventId, scope: effectiveScope },
+          'Ending series at selected instance (thisAndFuture)'
+        );
+
+        // Get the instance start date
+        const instanceStart = existingEvent.start?.dateTime || existingEvent.start?.date;
+        if (!instanceStart) {
+          throw new Error('Cannot determine instance start time for thisAndFuture deletion');
+        }
+
+        // Fetch parent event
+        const parentEvent = await retryWithBackoff(
+          async () => {
+            return (
+              await this.calendarClient!.events.get({
+                calendarId: targetCalendarId,
+                eventId: existingEvent.recurringEventId!,
+              })
+            ).data;
+          },
+          {
+            maxAttempts: 3,
+            initialDelay: 1000,
+            shouldRetry: (error: Error) => {
+              const message = error.message.toLowerCase();
+              if (message.includes('not found') || message.includes('404')) {
+                return false;
+              }
+              if (message.includes('unauthorized') || message.includes('401') ||
+                  message.includes('forbidden') || message.includes('403')) {
+                return false;
+              }
+              return true;
+            },
+          }
+        );
+
+        // Validate that it's a recurring event
+        if (!parentEvent.recurrence || parentEvent.recurrence.length === 0) {
+          throw new Error('Parent event is not a recurring event');
+        }
+
+        // Calculate UNTIL date (day before selected instance)
+        const selectedDate = new Date(instanceStart);
+        const untilDate = new Date(selectedDate);
+        untilDate.setDate(untilDate.getDate() - 1);
+
+        // Format UNTIL date for RRULE (YYYYMMDD format in UTC)
+        const untilString = untilDate.toISOString().split('T')[0].replace(/-/g, '');
+
+        // Update parent event's recurrence rules with UNTIL
+        const updatedRecurrence: string[] = parentEvent.recurrence.map(rule => {
+          if (rule.startsWith('RRULE:')) {
+            // Parse existing RRULE
+            const rruleParts = rule.substring(6).split(';');
+            const rruleMap = new Map<string, string>();
+
+            for (const part of rruleParts) {
+              const [key, value] = part.split('=');
+              if (key && value) {
+                rruleMap.set(key, value);
+              }
+            }
+
+            // Remove COUNT if present (UNTIL and COUNT are mutually exclusive)
+            rruleMap.delete('COUNT');
+
+            // Add or update UNTIL
+            rruleMap.set('UNTIL', `${untilString}T235959Z`);
+
+            // Rebuild RRULE
+            const newRuleParts: string[] = [];
+            rruleMap.forEach((value, key) => {
+              newRuleParts.push(`${key}=${value}`);
+            });
+
+            return `RRULE:${newRuleParts.join(';')}`;
+          }
+          return rule;
+        });
+
+        // Update parent event with new RRULE (ending the series)
+        await retryWithBackoff(
+          async () => {
+            await this.calendarClient!.events.patch({
+              calendarId: targetCalendarId,
+              eventId: existingEvent.recurringEventId!,
+              requestBody: {
+                recurrence: updatedRecurrence,
+              },
+              sendUpdates: 'none',
+            });
+          },
+          {
+            maxAttempts: 3,
+            initialDelay: 1000,
+            shouldRetry: (error: Error) => {
+              const message = error.message.toLowerCase();
+              if (message.includes('rate limit') || message.includes('429') ||
+                  message.includes('500') || message.includes('503') ||
+                  message.includes('service unavailable') || message.includes('temporary')) {
+                return true;
+              }
+              return false;
+            },
+          }
+        );
+
+        calendarLogger.info(
+          { recurringEventId: existingEvent.recurringEventId, untilDate: untilString },
+          'Updated parent recurring event with UNTIL date (series ended)'
+        );
+        return;
+      }
+
+      // Requirement 5.4: allEvents - Delete parent event (deletes all instances)
+      if (effectiveScope === 'allEvents') {
+        // Determine the target event ID to delete
+        let targetEventId = eventId;
+
+        // If this is a recurring instance, delete the parent event instead
+        if (existingEvent.recurringEventId) {
+          targetEventId = existingEvent.recurringEventId;
+          calendarLogger.info(
+            { instanceId: eventId, parentId: targetEventId, scope: effectiveScope },
+            'Deleting entire series via parent event'
+          );
+        } else {
+          calendarLogger.info(
+            { eventId, scope: effectiveScope },
+            'Deleting single event (allEvents scope on non-recurring event)'
+          );
+        }
+
+        // Delete the parent event (or single event if not recurring)
+        await retryWithBackoff(
+          async () => {
+            await this.calendarClient!.events.delete({
+              calendarId: targetCalendarId,
+              eventId: targetEventId,
+            });
+          },
+          {
+            maxAttempts: 3,
+            initialDelay: 1000,
+            shouldRetry: (error: Error) => {
+              const message = error.message.toLowerCase();
+              if (
+                message.includes('not found') ||
+                message.includes('404')
+              ) {
+                return false;
+              }
+              if (
+                message.includes('unauthorized') ||
+                message.includes('401') ||
+                message.includes('forbidden') ||
+                message.includes('403')
+              ) {
+                return false;
+              }
+              if (
+                message.includes('rate limit') ||
+                message.includes('429') ||
+                message.includes('500') ||
+                message.includes('503') ||
+                message.includes('service unavailable') ||
+                message.includes('temporary')
+              ) {
+                return true;
+              }
+              return true;
+            },
+          }
+        );
+        return;
+      }
     } catch (error) {
       // Handle 404 gracefully (event already deleted)
       const message = error instanceof Error ? error.message.toLowerCase() : '';

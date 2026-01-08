@@ -924,10 +924,23 @@ describe('GoogleCalendarService', () => {
     });
 
     it('should delete single event successfully', async () => {
+      // Mock the get call to return a non-recurring event
+      mockCalendarClient.events.get.mockResolvedValueOnce({
+        data: {
+          id: 'event-123',
+          summary: 'Test Event',
+          start: { dateTime: '2026-01-15T10:00:00Z' },
+          end: { dateTime: '2026-01-15T11:00:00Z' },
+        },
+      });
       mockCalendarClient.events.delete.mockResolvedValueOnce({});
 
       await service.deleteEvent('event-123');
 
+      expect(mockCalendarClient.events.get).toHaveBeenCalledWith({
+        calendarId: 'primary',
+        eventId: 'event-123',
+      });
       expect(mockCalendarClient.events.delete).toHaveBeenCalledWith({
         calendarId: 'primary',
         eventId: 'event-123',
@@ -956,6 +969,14 @@ describe('GoogleCalendarService', () => {
         return fn();
       });
 
+      mockCalendarClient.events.get.mockResolvedValueOnce({
+        data: {
+          id: 'event-123',
+          summary: 'Test Event',
+          start: { dateTime: '2026-01-15T10:00:00Z' },
+          end: { dateTime: '2026-01-15T11:00:00Z' },
+        },
+      });
       mockCalendarClient.events.delete.mockResolvedValueOnce({});
 
       await service.deleteEvent('event-123');
@@ -964,10 +985,22 @@ describe('GoogleCalendarService', () => {
     });
 
     it('should use custom calendar ID', async () => {
+      mockCalendarClient.events.get.mockResolvedValueOnce({
+        data: {
+          id: 'event-123',
+          summary: 'Test Event',
+          start: { dateTime: '2026-01-15T10:00:00Z' },
+          end: { dateTime: '2026-01-15T11:00:00Z' },
+        },
+      });
       mockCalendarClient.events.delete.mockResolvedValueOnce({});
 
       await service.deleteEvent('event-123', 'custom-calendar-id');
 
+      expect(mockCalendarClient.events.get).toHaveBeenCalledWith({
+        calendarId: 'custom-calendar-id',
+        eventId: 'event-123',
+      });
       expect(mockCalendarClient.events.delete).toHaveBeenCalledWith({
         calendarId: 'custom-calendar-id',
         eventId: 'event-123',
@@ -2560,6 +2593,770 @@ describe('GoogleCalendarService', () => {
         const wlEvent = events.find(e => e.id === 'event-with-type-2');
         expect(wlEvent?.eventType).toBe('workingLocation');
         expect(wlEvent?.typeSpecificProperties?.eventType).toBe('workingLocation');
+      });
+    });
+  });
+
+  // ============================================================
+  // Task 27: Recurring Events Tests
+  // Requirements: 1.1, 2.1, 4.1, 5.1
+  // ============================================================
+  describe('Recurring Events Support', () => {
+    beforeEach(async () => {
+      await service.authenticate();
+      jest.clearAllMocks();
+      const { retryWithBackoff } = require('../../src/utils/retry.js');
+      retryWithBackoff.mockImplementation(async (fn: any) => fn());
+    });
+
+    describe('createEvent() with recurrence', () => {
+      it('should create recurring event with daily recurrence', async () => {
+        // Arrange
+        const mockRecurringEvent: GoogleCalendarEvent = {
+          id: 'recurring-event-123',
+          summary: 'Daily Standup',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T10:30:00Z', timeZone: 'UTC' },
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=10'],
+          iCalUID: 'ical-recurring-123',
+        };
+
+        mockCalendarClient.events.insert.mockResolvedValueOnce({
+          data: mockRecurringEvent,
+        });
+
+        // Act
+        const event = await service.createEvent({
+          title: 'Daily Standup',
+          start: '2026-01-15T10:00:00Z',
+          end: '2026-01-15T10:30:00Z',
+          isAllDay: false,
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=10'],
+        });
+
+        // Assert
+        expect(event.id).toBe('recurring-event-123');
+        expect(event.recurrence).toEqual(['RRULE:FREQ=DAILY;COUNT=10']);
+        expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            requestBody: expect.objectContaining({
+              summary: 'Daily Standup',
+              start: expect.objectContaining({
+                dateTime: '2026-01-15T10:00:00Z',
+              }),
+              end: expect.objectContaining({
+                dateTime: '2026-01-15T10:30:00Z',
+              }),
+              recurrence: ['RRULE:FREQ=DAILY;COUNT=10'],
+            }),
+          })
+        );
+      });
+
+      it('should create recurring event with weekly recurrence on specific days', async () => {
+        // Arrange
+        const mockRecurringEvent: GoogleCalendarEvent = {
+          id: 'recurring-event-456',
+          summary: 'Team Meeting',
+          start: { dateTime: '2026-01-15T14:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T15:00:00Z', timeZone: 'UTC' },
+          recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=20'],
+          iCalUID: 'ical-recurring-456',
+        };
+
+        mockCalendarClient.events.insert.mockResolvedValueOnce({
+          data: mockRecurringEvent,
+        });
+
+        // Act
+        const event = await service.createEvent({
+          title: 'Team Meeting',
+          start: '2026-01-15T14:00:00Z',
+          end: '2026-01-15T15:00:00Z',
+          isAllDay: false,
+          recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=20'],
+        });
+
+        // Assert
+        expect(event.id).toBe('recurring-event-456');
+        expect(event.recurrence).toEqual(['RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=20']);
+        expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            requestBody: expect.objectContaining({
+              recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=20'],
+            }),
+          })
+        );
+      });
+
+      it('should create recurring event with monthly recurrence', async () => {
+        // Arrange
+        const mockRecurringEvent: GoogleCalendarEvent = {
+          id: 'recurring-event-789',
+          summary: 'Monthly Review',
+          start: { dateTime: '2026-01-15T09:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          recurrence: ['RRULE:FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=20261215T090000Z'],
+          iCalUID: 'ical-recurring-789',
+        };
+
+        mockCalendarClient.events.insert.mockResolvedValueOnce({
+          data: mockRecurringEvent,
+        });
+
+        // Act
+        const event = await service.createEvent({
+          title: 'Monthly Review',
+          start: '2026-01-15T09:00:00Z',
+          end: '2026-01-15T10:00:00Z',
+          isAllDay: false,
+          recurrence: ['RRULE:FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=20261215T090000Z'],
+        });
+
+        // Assert
+        expect(event.id).toBe('recurring-event-789');
+        expect(event.recurrence).toEqual([
+          'RRULE:FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=20261215T090000Z',
+        ]);
+      });
+
+      it('should create recurring all-day event', async () => {
+        // Arrange
+        const mockRecurringEvent: GoogleCalendarEvent = {
+          id: 'recurring-allday-123',
+          summary: 'Weekly Day Off',
+          start: { date: '2026-01-15' },
+          end: { date: '2026-01-16' },
+          recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=FR;COUNT=10'],
+          iCalUID: 'ical-recurring-allday-123',
+        };
+
+        mockCalendarClient.events.insert.mockResolvedValueOnce({
+          data: mockRecurringEvent,
+        });
+
+        // Act
+        const event = await service.createEvent({
+          title: 'Weekly Day Off',
+          start: '2026-01-15T00:00:00Z',
+          end: '2026-01-16T00:00:00Z',
+          isAllDay: true,
+          recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=FR;COUNT=10'],
+        });
+
+        // Assert
+        expect(event.id).toBe('recurring-allday-123');
+        expect(event.isAllDay).toBe(true);
+        expect(event.recurrence).toEqual(['RRULE:FREQ=WEEKLY;BYDAY=FR;COUNT=10']);
+        expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            requestBody: expect.objectContaining({
+              start: { date: '2026-01-15' },
+              end: { date: '2026-01-16' },
+              recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=FR;COUNT=10'],
+            }),
+          })
+        );
+      });
+
+      it('should create recurring event with UNTIL date', async () => {
+        // Arrange
+        const mockRecurringEvent: GoogleCalendarEvent = {
+          id: 'recurring-until-123',
+          summary: 'Limited Recurring Event',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T11:00:00Z', timeZone: 'UTC' },
+          recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231T235959Z'],
+          iCalUID: 'ical-recurring-until-123',
+        };
+
+        mockCalendarClient.events.insert.mockResolvedValueOnce({
+          data: mockRecurringEvent,
+        });
+
+        // Act
+        const event = await service.createEvent({
+          title: 'Limited Recurring Event',
+          start: '2026-01-15T10:00:00Z',
+          end: '2026-01-15T11:00:00Z',
+          isAllDay: false,
+          recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231T235959Z'],
+        });
+
+        // Assert
+        expect(event.id).toBe('recurring-until-123');
+        expect(event.recurrence).toEqual(['RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231T235959Z']);
+        expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            requestBody: expect.objectContaining({
+              recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231T235959Z'],
+            }),
+          })
+        );
+      });
+
+      it('should create event without recurrence (non-recurring)', async () => {
+        // Arrange
+        const mockSingleEvent: GoogleCalendarEvent = {
+          id: 'single-event-123',
+          summary: 'One Time Meeting',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T11:00:00Z', timeZone: 'UTC' },
+          iCalUID: 'ical-single-123',
+        };
+
+        mockCalendarClient.events.insert.mockResolvedValueOnce({
+          data: mockSingleEvent,
+        });
+
+        // Act
+        const event = await service.createEvent({
+          title: 'One Time Meeting',
+          start: '2026-01-15T10:00:00Z',
+          end: '2026-01-15T11:00:00Z',
+          isAllDay: false,
+        });
+
+        // Assert
+        expect(event.id).toBe('single-event-123');
+        expect(event.recurrence).toBeUndefined();
+        expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            requestBody: expect.not.objectContaining({
+              recurrence: expect.anything(),
+            }),
+          })
+        );
+      });
+    });
+
+    describe('determineUpdateScope logic', () => {
+      it('should default to "thisEvent" for recurring instance', async () => {
+        // Arrange - Mock recurring instance
+        const mockRecurringInstance: GoogleCalendarEvent = {
+          id: 'instance-123',
+          summary: 'Daily Standup',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T10:30:00Z', timeZone: 'UTC' },
+          recurringEventId: 'parent-event-id',
+          iCalUID: 'ical-instance-123',
+        };
+
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: mockRecurringInstance,
+        });
+
+        mockCalendarClient.events.patch.mockResolvedValueOnce({
+          data: { ...mockRecurringInstance, summary: 'Updated Standup' },
+        });
+
+        // Act - Update without explicit scope
+        const event = await service.updateEvent('instance-123', {
+          title: 'Updated Standup',
+        });
+
+        // Assert - Should update only this instance
+        expect(mockCalendarClient.events.patch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            eventId: 'instance-123',
+          })
+        );
+        expect(event.title).toBe('Updated Standup');
+      });
+
+      it('should default to "allEvents" for recurring parent', async () => {
+        // Arrange - Mock recurring parent event
+        const mockRecurringParent: GoogleCalendarEvent = {
+          id: 'parent-event-id',
+          summary: 'Daily Standup',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T10:30:00Z', timeZone: 'UTC' },
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=10'],
+          iCalUID: 'ical-parent-123',
+        };
+
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: mockRecurringParent,
+        });
+
+        mockCalendarClient.events.patch.mockResolvedValueOnce({
+          data: { ...mockRecurringParent, summary: 'Updated Series' },
+        });
+
+        // Act - Update without explicit scope
+        const event = await service.updateEvent('parent-event-id', {
+          title: 'Updated Series',
+        });
+
+        // Assert - Should update the parent (all events)
+        expect(mockCalendarClient.events.patch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            eventId: 'parent-event-id',
+          })
+        );
+        expect(event.title).toBe('Updated Series');
+      });
+
+      it('should respect explicit scope="thisEvent" for recurring instance', async () => {
+        // Arrange
+        const mockRecurringInstance: GoogleCalendarEvent = {
+          id: 'instance-456',
+          summary: 'Weekly Meeting',
+          start: { dateTime: '2026-01-15T14:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T15:00:00Z', timeZone: 'UTC' },
+          recurringEventId: 'parent-event-id',
+          iCalUID: 'ical-instance-456',
+        };
+
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: mockRecurringInstance,
+        });
+
+        mockCalendarClient.events.patch.mockResolvedValueOnce({
+          data: { ...mockRecurringInstance, location: 'Room 101' },
+        });
+
+        // Act - Update with explicit scope
+        const event = await service.updateEvent(
+          'instance-456',
+          {
+            location: 'Room 101',
+          },
+          undefined,
+          'thisEvent'
+        );
+
+        // Assert
+        expect(mockCalendarClient.events.patch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            eventId: 'instance-456',
+          })
+        );
+        expect(event.location).toBe('Room 101');
+      });
+
+      it('should respect explicit scope="allEvents" for recurring instance', async () => {
+        // Arrange
+        const mockRecurringInstance: GoogleCalendarEvent = {
+          id: 'instance-789',
+          summary: 'Daily Standup',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T10:30:00Z', timeZone: 'UTC' },
+          recurringEventId: 'parent-event-id',
+          iCalUID: 'ical-instance-789',
+        };
+
+        const mockRecurringParent: GoogleCalendarEvent = {
+          id: 'parent-event-id',
+          summary: 'Daily Standup',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T10:30:00Z', timeZone: 'UTC' },
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=10'],
+          iCalUID: 'ical-parent-123',
+        };
+
+        mockCalendarClient.events.get
+          .mockResolvedValueOnce({ data: mockRecurringInstance })
+          .mockResolvedValueOnce({ data: mockRecurringParent });
+
+        mockCalendarClient.events.patch.mockResolvedValueOnce({
+          data: { ...mockRecurringParent, location: 'New Location' },
+        });
+
+        // Act - Update instance with scope=allEvents
+        const event = await service.updateEvent(
+          'instance-789',
+          {
+            location: 'New Location',
+          },
+          undefined,
+          'allEvents'
+        );
+
+        // Assert - Should update parent event
+        expect(mockCalendarClient.events.get).toHaveBeenCalledTimes(2);
+        expect(mockCalendarClient.events.patch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            eventId: 'parent-event-id',
+          })
+        );
+        expect(event.location).toBe('New Location');
+      });
+
+      it('should respect explicit scope="thisAndFuture" for recurring instance', async () => {
+        // Arrange
+        const mockRecurringInstance: GoogleCalendarEvent = {
+          id: 'instance-abc',
+          summary: 'Weekly Meeting',
+          start: { dateTime: '2026-01-22T14:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-22T15:00:00Z', timeZone: 'UTC' },
+          recurringEventId: 'parent-event-id',
+          iCalUID: 'ical-instance-abc',
+        };
+
+        const mockRecurringParent: GoogleCalendarEvent = {
+          id: 'parent-event-id',
+          summary: 'Weekly Meeting',
+          start: { dateTime: '2026-01-15T14:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T15:00:00Z', timeZone: 'UTC' },
+          recurrence: ['RRULE:FREQ=WEEKLY;COUNT=10'],
+          iCalUID: 'ical-parent-weekly-123',
+        };
+
+        const mockNewSeriesEvent: GoogleCalendarEvent = {
+          id: 'new-series-abc',
+          summary: 'Weekly Meeting',
+          start: { dateTime: '2026-01-22T14:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-22T15:00:00Z', timeZone: 'UTC' },
+          recurrence: ['RRULE:FREQ=WEEKLY;COUNT=10'],
+          location: 'New Room',
+          iCalUID: 'ical-new-series-abc',
+        };
+
+        // Mock the sequence: get instance, get parent, patch parent, insert new series
+        mockCalendarClient.events.get
+          .mockResolvedValueOnce({ data: mockRecurringInstance })
+          .mockResolvedValueOnce({ data: mockRecurringParent });
+
+        mockCalendarClient.events.patch.mockResolvedValueOnce({
+          data: {
+            ...mockRecurringParent,
+            recurrence: ['RRULE:FREQ=WEEKLY;UNTIL=20260121T235959Z'],
+          },
+        });
+
+        mockCalendarClient.events.insert.mockResolvedValueOnce({
+          data: mockNewSeriesEvent,
+        });
+
+        // Act - Update with thisAndFuture scope
+        const event = await service.updateEvent(
+          'instance-abc',
+          {
+            location: 'New Room',
+          },
+          undefined,
+          'thisAndFuture'
+        );
+
+        // Assert - Should split the series
+        expect(mockCalendarClient.events.get).toHaveBeenCalledTimes(2);
+        expect(mockCalendarClient.events.patch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            eventId: 'parent-event-id',
+            requestBody: expect.objectContaining({
+              recurrence: expect.arrayContaining([
+                expect.stringContaining('UNTIL=20260121'),
+              ]),
+            }),
+          })
+        );
+        expect(mockCalendarClient.events.insert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            requestBody: expect.objectContaining({
+              summary: 'Weekly Meeting',
+              location: 'New Room',
+              recurrence: expect.any(Array),
+            }),
+          })
+        );
+        expect(event.location).toBe('New Room');
+        expect(event.id).toBe('new-series-abc');
+      });
+
+      it('should use "thisEvent" for non-recurring events', async () => {
+        // Arrange
+        const mockSingleEvent: GoogleCalendarEvent = {
+          id: 'single-event-123',
+          summary: 'One Time Meeting',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T11:00:00Z', timeZone: 'UTC' },
+          iCalUID: 'ical-single-123',
+        };
+
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: mockSingleEvent,
+        });
+
+        mockCalendarClient.events.patch.mockResolvedValueOnce({
+          data: { ...mockSingleEvent, summary: 'Updated Meeting' },
+        });
+
+        // Act
+        const event = await service.updateEvent('single-event-123', {
+          title: 'Updated Meeting',
+        });
+
+        // Assert - Should work normally without scope logic
+        expect(mockCalendarClient.events.patch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            eventId: 'single-event-123',
+          })
+        );
+        expect(event.title).toBe('Updated Meeting');
+      });
+    });
+
+    describe('determineDeleteScope logic', () => {
+      it('should default to "thisEvent" for recurring instance', async () => {
+        // Arrange
+        const mockRecurringInstance: GoogleCalendarEvent = {
+          id: 'instance-delete-123',
+          summary: 'Daily Standup',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T10:30:00Z', timeZone: 'UTC' },
+          recurringEventId: 'parent-event-id',
+          iCalUID: 'ical-instance-delete-123',
+        };
+
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: mockRecurringInstance,
+        });
+
+        mockCalendarClient.events.delete.mockResolvedValueOnce({});
+
+        // Act - Delete without explicit scope
+        await service.deleteEvent('instance-delete-123');
+
+        // Assert - Should delete only this instance
+        expect(mockCalendarClient.events.delete).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            eventId: 'instance-delete-123',
+          })
+        );
+      });
+
+      it('should default to "allEvents" for recurring parent', async () => {
+        // Arrange
+        const mockRecurringParent: GoogleCalendarEvent = {
+          id: 'parent-delete-id',
+          summary: 'Daily Standup',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T10:30:00Z', timeZone: 'UTC' },
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=10'],
+          iCalUID: 'ical-parent-delete-123',
+        };
+
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: mockRecurringParent,
+        });
+
+        mockCalendarClient.events.delete.mockResolvedValueOnce({});
+
+        // Act - Delete parent without explicit scope
+        await service.deleteEvent('parent-delete-id');
+
+        // Assert - Should delete the entire series
+        expect(mockCalendarClient.events.delete).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            eventId: 'parent-delete-id',
+          })
+        );
+      });
+
+      it('should respect explicit scope="thisEvent" for recurring instance', async () => {
+        // Arrange
+        const mockRecurringInstance: GoogleCalendarEvent = {
+          id: 'instance-delete-456',
+          summary: 'Weekly Meeting',
+          start: { dateTime: '2026-01-22T14:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-22T15:00:00Z', timeZone: 'UTC' },
+          recurringEventId: 'parent-event-id',
+          iCalUID: 'ical-instance-delete-456',
+        };
+
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: mockRecurringInstance,
+        });
+
+        mockCalendarClient.events.delete.mockResolvedValueOnce({});
+
+        // Act
+        await service.deleteEvent('instance-delete-456', undefined, 'thisEvent');
+
+        // Assert
+        expect(mockCalendarClient.events.delete).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            eventId: 'instance-delete-456',
+          })
+        );
+      });
+
+      it('should respect explicit scope="allEvents" for recurring instance', async () => {
+        // Arrange
+        const mockRecurringInstance: GoogleCalendarEvent = {
+          id: 'instance-delete-789',
+          summary: 'Daily Standup',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T10:30:00Z', timeZone: 'UTC' },
+          recurringEventId: 'parent-delete-id',
+          iCalUID: 'ical-instance-delete-789',
+        };
+
+        mockCalendarClient.events.get.mockResolvedValueOnce({ data: mockRecurringInstance });
+
+        mockCalendarClient.events.delete.mockResolvedValueOnce({});
+
+        // Act - Delete instance with scope=allEvents
+        await service.deleteEvent('instance-delete-789', undefined, 'allEvents');
+
+        // Assert - Should delete parent event using recurringEventId
+        expect(mockCalendarClient.events.get).toHaveBeenCalledTimes(1);
+        expect(mockCalendarClient.events.delete).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            eventId: 'parent-delete-id',
+          })
+        );
+      });
+
+      it('should respect explicit scope="thisAndFuture" for recurring instance', async () => {
+        // Arrange
+        const mockRecurringInstance: GoogleCalendarEvent = {
+          id: 'instance-delete-abc',
+          summary: 'Weekly Meeting',
+          start: { dateTime: '2026-01-22T14:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-22T15:00:00Z', timeZone: 'UTC' },
+          recurringEventId: 'parent-event-id',
+          iCalUID: 'ical-instance-delete-abc',
+        };
+
+        const mockRecurringParent: GoogleCalendarEvent = {
+          id: 'parent-event-id',
+          summary: 'Weekly Meeting',
+          start: { dateTime: '2026-01-15T14:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T15:00:00Z', timeZone: 'UTC' },
+          recurrence: ['RRULE:FREQ=WEEKLY;COUNT=10'],
+          iCalUID: 'ical-parent-weekly-123',
+        };
+
+        mockCalendarClient.events.get
+          .mockResolvedValueOnce({ data: mockRecurringInstance })
+          .mockResolvedValueOnce({ data: mockRecurringParent });
+
+        mockCalendarClient.events.patch.mockResolvedValueOnce({
+          data: {
+            ...mockRecurringParent,
+            recurrence: ['RRULE:FREQ=WEEKLY;UNTIL=20260121T235959Z'],
+          },
+        });
+
+        // Act - Delete with thisAndFuture scope
+        await service.deleteEvent('instance-delete-abc', undefined, 'thisAndFuture');
+
+        // Assert - Should modify parent with UNTIL (ending series before this instance)
+        expect(mockCalendarClient.events.get).toHaveBeenCalledTimes(2);
+        expect(mockCalendarClient.events.patch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            eventId: 'parent-event-id',
+            requestBody: expect.objectContaining({
+              recurrence: expect.arrayContaining([
+                expect.stringContaining('UNTIL=20260121'),
+              ]),
+            }),
+          })
+        );
+        // thisAndFuture does NOT delete the instance - it modifies the parent RRULE
+        expect(mockCalendarClient.events.delete).not.toHaveBeenCalled();
+      });
+
+      it('should use "thisEvent" for non-recurring events', async () => {
+        // Arrange
+        const mockSingleEvent: GoogleCalendarEvent = {
+          id: 'single-delete-123',
+          summary: 'One Time Meeting',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T11:00:00Z', timeZone: 'UTC' },
+          iCalUID: 'ical-single-delete-123',
+        };
+
+        mockCalendarClient.events.get.mockResolvedValueOnce({
+          data: mockSingleEvent,
+        });
+
+        mockCalendarClient.events.delete.mockResolvedValueOnce({});
+
+        // Act
+        await service.deleteEvent('single-delete-123');
+
+        // Assert - Should delete normally
+        expect(mockCalendarClient.events.delete).toHaveBeenCalledWith(
+          expect.objectContaining({
+            calendarId: 'primary',
+            eventId: 'single-delete-123',
+          })
+        );
+      });
+    });
+
+    describe('listEvents() with recurring events', () => {
+      it('should include recurrence info in listed events', async () => {
+        // Arrange
+        const mockRecurringParent: GoogleCalendarEvent = {
+          id: 'parent-event-123',
+          summary: 'Daily Standup',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T10:30:00Z', timeZone: 'UTC' },
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=10'],
+          iCalUID: 'ical-parent-123',
+        };
+
+        mockCalendarClient.events.list.mockResolvedValueOnce({
+          data: {
+            items: [mockRecurringParent],
+          },
+        });
+
+        // Act
+        const events = await service.listEvents({
+          startDate: '2026-01-15T00:00:00Z',
+          endDate: '2026-01-16T00:00:00Z',
+        });
+
+        // Assert
+        expect(events).toHaveLength(1);
+        expect(events[0].recurrence).toEqual(['RRULE:FREQ=DAILY;COUNT=10']);
+        expect(events[0].recurringEventId).toBeUndefined();
+      });
+
+      it('should include recurringEventId for instances', async () => {
+        // Arrange
+        const mockRecurringInstance: GoogleCalendarEvent = {
+          id: 'instance-123',
+          summary: 'Daily Standup',
+          start: { dateTime: '2026-01-15T10:00:00Z', timeZone: 'UTC' },
+          end: { dateTime: '2026-01-15T10:30:00Z', timeZone: 'UTC' },
+          recurringEventId: 'parent-event-123',
+          iCalUID: 'ical-instance-123',
+        };
+
+        mockCalendarClient.events.list.mockResolvedValueOnce({
+          data: {
+            items: [mockRecurringInstance],
+          },
+        });
+
+        // Act
+        const events = await service.listEvents({
+          startDate: '2026-01-15T00:00:00Z',
+          endDate: '2026-01-16T00:00:00Z',
+        });
+
+        // Assert
+        expect(events).toHaveLength(1);
+        expect(events[0].recurringEventId).toBe('parent-event-123');
+        expect(events[0].recurrence).toBeUndefined();
       });
     });
   });

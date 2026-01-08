@@ -18,6 +18,7 @@ import type {
   GoogleCalendarEventType,
   AutoDeclineMode,
   CalendarEvent as ExtendedCalendarEvent,
+  RecurrenceScope,
 } from '../../types/google-calendar-types.js';
 import { createToolResponse, createErrorFromCatch } from '../registry.js';
 
@@ -146,11 +147,15 @@ export interface CreateCalendarEventInput {
   birthdayType?: string;
   /** Room ID (calendar ID) to book for this event */
   roomId?: string;
+  /** Recurrence rules in RRULE format (e.g., ['FREQ=DAILY;COUNT=10']) */
+  recurrence?: string[];
 }
 
 export interface DeleteCalendarEventInput {
   eventId: string;
   source?: 'eventkit' | 'google';
+  deleteScope?: RecurrenceScope;
+  calendarName?: string;
 }
 
 export interface DeleteCalendarEventsBatchInput {
@@ -175,6 +180,7 @@ export interface DeleteCalendarEventsBatchInput {
  * @property declineMessage - Custom decline message
  * @property chatStatus - For focusTime events
  * @property calendarName - Calendar name (optional)
+ * @property updateScope - Scope for updating recurring events (thisEvent, thisAndFuture, allEvents)
  */
 export interface UpdateCalendarEventInput {
   eventId: string;
@@ -191,6 +197,7 @@ export interface UpdateCalendarEventInput {
   declineMessage?: string;
   chatStatus?: string;
   calendarName?: string;
+  updateScope?: RecurrenceScope;
 }
 
 export interface SetCalendarSourceInput {
@@ -698,6 +705,7 @@ export async function handleCreateCalendarEvent(
     workingLocationLabel,
     birthdayType,
     roomId,
+    recurrence,
   } = args;
   const config = ctx.getConfig();
 
@@ -734,6 +742,20 @@ export async function handleCreateCalendarEvent(
       location,
       description: notes,
     };
+
+    // Handle recurrence - require Google Calendar for recurring events
+    // Requirement: recurring-calendar-events 1.4
+    if (recurrence && recurrence.length > 0) {
+      // Recurrence requires Google Calendar
+      if (!enabledSources.includes('google')) {
+        return createToolResponse({
+          success: false,
+          error: true,
+          message: '繰り返しイベントの作成にはGoogle Calendarが必要です。Google Calendarを有効にしてください。',
+        });
+      }
+      request.recurrence = recurrence;
+    }
 
     // Determine effective event type (default to 'default' if not specified)
     // Input eventType is string | undefined, need to cast to GoogleCalendarEventType
@@ -840,8 +862,8 @@ export async function handleCreateCalendarEvent(
       }
     }
 
-    // Determine source routing: non-default event types must use Google Calendar
-    // because EventKit does not support event types
+    // Determine source routing: non-default event types and recurrence must use Google Calendar
+    // because EventKit does not support event types or recurrence
     let effectivePreferredSource = preferredSource;
     if (effectiveEventType !== 'default') {
       // Force Google Calendar for non-default event types
@@ -852,6 +874,12 @@ export async function handleCreateCalendarEvent(
           message: `${effectiveEventType}イベントの作成にはGoogle Calendarが必要です。Google Calendarを有効にしてください。`,
         });
       }
+      effectivePreferredSource = 'google';
+    }
+
+    // Force Google Calendar for recurring events
+    // Requirement: recurring-calendar-events 1.4
+    if (recurrence && recurrence.length > 0) {
       effectivePreferredSource = 'google';
     }
 
@@ -935,7 +963,7 @@ export async function handleDeleteCalendarEvent(
   ctx: CalendarToolsContext,
   args: DeleteCalendarEventInput
 ) {
-  const { eventId, source } = args;
+  const { eventId, source, deleteScope } = args;
   const config = ctx.getConfig();
 
   if (!config) {
@@ -963,12 +991,13 @@ export async function handleDeleteCalendarEvent(
       });
     }
 
-    await calendarSourceManager!.deleteEvent(eventId, source);
+    await calendarSourceManager!.deleteEvent(eventId, source, deleteScope);
 
     return createToolResponse({
       success: true,
       eventId,
       source: source || 'all enabled sources',
+      deleteScope,
       message: source
         ? `カレンダーイベントを削除しました (ソース: ${source})`
         : `カレンダーイベントを削除しました (全ての有効なソースから)`,
@@ -1079,6 +1108,7 @@ export async function handleUpdateCalendarEvent(
     declineMessage,
     chatStatus,
     calendarName,
+    updateScope,
   } = args;
 
   const config = ctx.getConfig();
@@ -1214,7 +1244,8 @@ export async function handleUpdateCalendarEvent(
     const updatedEvent = await googleCalendarService.updateEvent(
       eventId,
       updateRequest,
-      calendarName
+      calendarName,
+      updateScope
     );
 
     // Build change summary

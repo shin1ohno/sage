@@ -293,7 +293,7 @@ describe('Task 43: End-to-end outOfOffice workflow', () => {
 
     await manager.deleteEvent('ooo-workflow-123', 'google');
 
-    expect(mockGoogleCalendarService.deleteEvent).toHaveBeenCalledWith('ooo-workflow-123');
+    expect(mockGoogleCalendarService.deleteEvent).toHaveBeenCalledWith('ooo-workflow-123', undefined, undefined);
   });
 
   it('should preserve outOfOfficeProperties through event lifecycle', async () => {

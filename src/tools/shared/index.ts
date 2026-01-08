@@ -38,6 +38,7 @@ export {
 // Calendar tools
 export {
   updateCalendarEventTool,
+  deleteCalendarEventTool,
   calendarTools,
 } from './calendar-tools.js';
 
