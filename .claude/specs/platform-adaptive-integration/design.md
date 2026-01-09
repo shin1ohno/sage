@@ -1,14 +1,28 @@
 # Design Document
 
+> **Last Updated:** 2026-01-09
+
 ## Overview
 
-プラットフォーム適応型統合機能は、sage MCP サーバーが接続元のプラットフォーム（iOS/iPad/Mac/Web）を検出し、MCP Sampling を使って Claude に最適な統合戦略を指示する機能です。
+Capability 適応型統合機能は、sage MCP サーバーが **EventKit 利用可否 + Sampling capability** をベースに最適な統合戦略を選択する機能です。
+
+### 統合戦略（Simplified 2026-01-09）
+
+```
+EventKit Available?
+  YES → Use EventKit for Calendar/Reminders
+  NO  → Check Sampling support
+        YES → Use Sampling (Native APIs via Claude)
+        NO  → Use Google Calendar fallback
+```
 
 この機能により：
-- iOS/iPad からは Google Calendar（MCP）+ Apple Calendar（ネイティブ）の両方にアクセス可能
-- macOS からは EventKit（MCP）+ Google Calendar（MCP）の統合アクセス
-- Web からは Google Calendar（MCP）のみの安全なアクセス
+- **EventKit 有効環境**: EventKit（MCP）+ Google Calendar（MCP）の統合アクセス
+- **Sampling 有効環境**: Google Calendar（MCP）+ Apple Calendar（Sampling）の両方にアクセス可能
+- **Fallback 環境**: Google Calendar（MCP）のみの安全なアクセス
 - ユーザーにとっては透過的でシームレスな体験を実現
+
+**注意:** 現在 iOS Claude App は `capabilities.sampling` を送信していないため、Sampling 統合は動作しません。Anthropic 社への実装依頼が必要です。
 
 ## Steering Document Alignment
 
@@ -26,11 +40,11 @@
 
 ファイル配置は structure.md のディレクトリ構造に従います：
 
-- **Platform Detection**: `src/platform/detector.ts`（新規ディレクトリ）
+- **Capability Detection**: `src/platform/detector.ts`（簡略化）
 - **Sampling Service**: `src/services/sampling-service.ts`
 - **Integration Strategy**: `src/services/integration-strategy-manager.ts`
-- **Type Definitions**: `src/types/platform.ts`（新規）
-- **Tool Handlers**: `src/tools/platform/handlers.ts`（新規）
+- **Type Definitions**: `src/types/platform.ts`（簡略化）
+- **Tool Handlers**: `src/tools/platform/handlers.ts`
 - **Tests**: `tests/unit/platform/`, `tests/integration/platform/`
 
 ## Code Reuse Analysis
@@ -160,57 +174,58 @@ sequenceDiagram
 
 ## Components and Interfaces
 
-### Component 1: Platform Detector
+### Component 1: Capability Detector
 
-**Purpose**: MCP initialize メッセージから clientInfo を抽出し、プラットフォームを判別
+**Purpose**: MCP initialize メッセージから Sampling capability を抽出
 
 **Location**: `src/platform/detector.ts`
 
 **Interface**:
 ```typescript
-interface ClientInfo {
-  name: string;
-  version: string;
-}
-
 interface ClientCapabilities {
   sampling?: {};
   roots?: {};
   // ... other capabilities
 }
 
-export interface DetectedPlatform {
-  platform: 'ios' | 'ipados' | 'macos' | 'desktop' | 'web' | 'unknown';
-  clientName: string;
-  clientVersion: string;
+export interface ClientCapabilityInfo {
   supportsSampling: boolean;
-  detectionConfidence: 'high' | 'medium' | 'low';
+  availableIntegrations: {
+    calendar: {
+      google: boolean;
+      eventkit: boolean;
+      sampling: boolean;
+    };
+    reminders: {
+      applescript: boolean;
+      sampling: boolean;
+    };
+  };
 }
 
-export class PlatformDetector {
+export class CapabilityDetector {
   /**
-   * Detect platform from MCP clientInfo
-   * Requirement: 1.1-1.5
+   * Detect Sampling capability from MCP capabilities
+   * Requirement: 1.1-1.4
    */
-  static detectPlatform(
-    clientInfo: ClientInfo,
+  static detectCapabilities(
     capabilities: ClientCapabilities
-  ): DetectedPlatform;
+  ): { supportsSampling: boolean };
 
   /**
-   * Get available integrations for detected platform
+   * Get available integrations based on Sampling support + EventKit availability
    * Requirement: 7.2-7.4
    */
   static getAvailableIntegrations(
-    platform: DetectedPlatform,
+    supportsSampling: boolean,
     config: UserConfig
-  ): PlatformInfo['availableIntegrations'];
+  ): ClientCapabilityInfo['availableIntegrations'];
 }
 ```
 
 **Dependencies**: `UserConfig` from `src/types/config.ts`
 
-**Reuses**: Platform detection logic inspired by existing `CalendarService.detectPlatform()`
+**Simplification**: Removed platform inference logic, only check `capabilities.sampling`
 
 ### Component 2: Sampling Service
 
@@ -285,38 +300,19 @@ export interface IntegrationStrategy {
 
 export class IntegrationStrategyManager {
   /**
-   * Get calendar integration strategy for platform
-   * Requirement: 3.1-3.3
-   */
-  getCalendarStrategy(
-    platform: DetectedPlatform,
-    params: { startDate: string; endDate: string }
-  ): IntegrationStrategy;
-
-  /**
-   * Get reminder integration strategy for platform
-   * Requirement: 4.1-4.3
-   */
-  getReminderStrategy(
-    platform: DetectedPlatform,
-    params: { title: string; dueDate?: string; notes?: string }
-  ): IntegrationStrategy;
-
-  /**
    * Build sampling message for calendar events
    * Requirement: 5.1-5.4
    *
-   * Example output for iOS:
-   * "You are running on iOS platform. Please execute the following steps:
+   * Example output:
+   * "Please execute the following steps:
    *  1. Call the list_calendar_events MCP tool with parameters:
    *     { startDate: '2026-01-01', endDate: '2026-01-31', sources: ['google'] }
-   *  2. Use your native iOS Calendar API to fetch events for the same date range
+   *  2. If native Calendar API is available, fetch events for the same date range
    *  3. Merge both sets of events, removing duplicates by iCalUID
    *  4. Return the merged events as a JSON array with this structure:
    *     [{ id, title, start, end, isAllDay, source: 'google'|'native-ios', iCalUID }]"
    */
   buildCalendarSamplingMessage(
-    platform: DetectedPlatform,
     params: { startDate: string; endDate: string }
   ): string;
 
@@ -324,30 +320,27 @@ export class IntegrationStrategyManager {
    * Build sampling message for reminder creation
    * Requirement: 5.1-5.4
    *
-   * Example output for iOS:
-   * "You are running on iOS platform. Please execute the following:
-   *  1. Create a reminder using your native iOS Reminders API with:
+   * Example output:
+   * "Please execute the following:
+   *  1. If native Reminders API is available, create a reminder with:
    *     - Title: '{params.title}'
    *     - Due Date: '{params.dueDate}' (if provided)
    *     - Notes: '{params.notes}' (if provided)
    *  2. Return the result as JSON: { success: boolean, reminderId?: string, error?: string }"
    */
   buildReminderSamplingMessage(
-    platform: DetectedPlatform,
     params: { title: string; dueDate?: string; notes?: string }
   ): string;
 }
 ```
 
-**Dependencies**:
-- `DetectedPlatform` from `src/platform/detector.ts`
-- `CalendarEvent` from `src/types/google-calendar-types.ts`
+**Dependencies**: `CalendarEvent` from `src/types/google-calendar-types.ts`
 
 **Reuses**: None（新規ロジック）
 
-### Component 4: Platform Context
+### Component 4: Capability Context
 
-**Purpose**: グローバルな Platform 情報を保持し、ツールハンドラに注入
+**Purpose**: グローバルな Capability 情報を保持し、ツールハンドラに注入
 
 **Location**: `src/index.ts`（既存ファイルに追加）
 
@@ -355,12 +348,12 @@ export class IntegrationStrategyManager {
 ```typescript
 // src/index.ts に追加
 
-import { PlatformDetector, DetectedPlatform } from './platform/detector.js';
+import { CapabilityDetector } from './platform/detector.js';
 
 // Global state に追加
-let detectedPlatform: DetectedPlatform | null = null;
+let supportsSampling: boolean = false;
 
-// MCP Server 初期化時に clientInfo を取得
+// MCP Server 初期化時に capabilities を取得
 const server = new McpServer({
   name: SERVER_NAME,
   version: VERSION
@@ -368,18 +361,17 @@ const server = new McpServer({
   capabilities: {}
 });
 
-// Initialize ハンドラを追加してプラットフォーム検出
+// Initialize ハンドラを追加して Capability 検出
 server.setRequestHandler('initialize', async (request) => {
-  const clientInfo = request.params.clientInfo;
   const capabilities = request.params.capabilities;
 
-  // Platform detection
-  detectedPlatform = PlatformDetector.detectPlatform(clientInfo, capabilities);
+  // Capability detection
+  const detected = CapabilityDetector.detectCapabilities(capabilities);
+  supportsSampling = detected.supportsSampling;
+
   mcpLogger.info({
-    platform: detectedPlatform.platform,
-    clientName: detectedPlatform.clientName,
-    supportsSampling: detectedPlatform.supportsSampling
-  }, 'Platform detected on initialize');
+    supportsSampling
+  }, 'Capabilities detected on initialize');
 
   return {
     protocolVersion: '2025-06-18',
@@ -392,26 +384,26 @@ server.setRequestHandler('initialize', async (request) => {
 });
 
 // Context factory に追加
-interface PlatformContext {
-  getPlatformInfo: () => DetectedPlatform | null;
+interface CapabilityContext {
+  getSupportsSampling: () => boolean;
 }
 
-// 既存の Context に PlatformContext を追加
-function createCalendarToolsContext(): CalendarToolsContext & PlatformContext {
+// 既存の Context に CapabilityContext を追加
+function createCalendarToolsContext(): CalendarToolsContext & CapabilityContext {
   return {
     // ... existing methods
-    getPlatformInfo: () => detectedPlatform,
+    getSupportsSampling: () => supportsSampling,
   };
 }
 ```
 
-**Dependencies**: `DetectedPlatform` from `src/platform/detector.ts`
+**Dependencies**: `CapabilityDetector` from `src/platform/detector.ts`
 
 **Reuses**: 既存の Context factory pattern
 
-### Component 5: Platform-Aware Tool Handlers
+### Component 5: Capability-Aware Tool Handlers
 
-**Purpose**: 既存のツールハンドラを拡張し、Platform Context に応じた動作を実装
+**Purpose**: 既存のツールハンドラを拡張し、Capability Context に応じた動作を実装
 
 **Location**:
 - `src/tools/calendar/handlers.ts`（既存ファイルを拡張）
@@ -422,26 +414,26 @@ function createCalendarToolsContext(): CalendarToolsContext & PlatformContext {
 ```typescript
 export async function handleListCalendarEvents(
   args: z.infer<typeof listCalendarEventsSchema>,
-  context: CalendarToolsContext & PlatformContext
+  context: CalendarToolsContext & CapabilityContext
 ): Promise<ToolResponse> {
-  const platform = context.getPlatformInfo();
+  const supportsSampling = context.getSupportsSampling();
+  const isEventKitAvailable = context.isEventKitAvailable();
 
-  // If platform supports Sampling and is iOS/iPad, use Sampling
-  if (platform?.supportsSampling &&
-      (platform.platform === 'ios' || platform.platform === 'ipados')) {
-    return await handleListCalendarEventsWithSampling(args, context, platform);
+  // If Sampling is supported and EventKit is not available, use Sampling
+  if (supportsSampling && !isEventKitAvailable) {
+    return await handleListCalendarEventsWithSampling(args, context);
   }
 
-  // Otherwise, use existing MCP-only logic
+  // Otherwise, use existing MCP-only logic (EventKit + Google Calendar)
   return await handleListCalendarEventsMcpOnly(args, context);
 }
 
 /**
- * Handle calendar events with Sampling (iOS/iPad)
+ * Handle calendar events with Sampling
  *
  * This sends a Sampling request instructing Claude to:
  * 1. Call list_calendar_events MCP tool with sources=['google']
- * 2. Access native iOS Calendar API
+ * 2. Access native Calendar API if available
  * 3. Merge results by iCalUID
  * 4. Return final merged events
  *
@@ -449,14 +441,13 @@ export async function handleListCalendarEvents(
  */
 async function handleListCalendarEventsWithSampling(
   args: z.infer<typeof listCalendarEventsSchema>,
-  context: CalendarToolsContext & PlatformContext,
-  platform: DetectedPlatform
+  context: CalendarToolsContext & CapabilityContext
 ): Promise<ToolResponse> {
   const samplingService = new SamplingService(/* MCP server instance */);
   const strategyManager = new IntegrationStrategyManager();
 
-  // Build instruction message for Claude
-  const instruction = strategyManager.buildCalendarSamplingMessage(platform, {
+  // Build instruction message for Claude (no platform-specific assumptions)
+  const instruction = strategyManager.buildCalendarSamplingMessage({
     startDate: args.startDate,
     endDate: args.endDate
   });
@@ -481,8 +472,8 @@ async function handleListCalendarEventsWithSampling(
       return {
         content: [{
           type: 'text',
-          text: 'Platform-adaptive integration requires your approval. ' +
-                'Operation cancelled. Falling back to MCP-only mode.'
+          text: 'Sampling requires your approval. ' +
+                'Operation cancelled. Falling back to Google Calendar only.'
         }],
         isError: false
       };
@@ -497,32 +488,23 @@ async function handleListCalendarEventsWithSampling(
 // src/tools/platform/handlers.ts
 export async function handleGetPlatformInfo(
   args: {},
-  context: PlatformContext & { getConfig: () => UserConfig | null }
+  context: CapabilityContext & { getConfig: () => UserConfig | null }
 ): Promise<ToolResponse> {
-  const platform = context.getPlatformInfo();
+  const supportsSampling = context.getSupportsSampling();
   const config = context.getConfig();
 
-  if (!platform) {
-    return {
-      content: [{
-        type: 'text',
-        text: 'Platform not detected. Please reconnect to sage MCP server.'
-      }]
-    };
-  }
-
-  const platformInfo: PlatformInfo = {
-    platform: platform.platform,
-    clientName: platform.clientName,
-    clientVersion: platform.clientVersion,
-    supportsSampling: platform.supportsSampling,
-    availableIntegrations: PlatformDetector.getAvailableIntegrations(platform, config!)
+  const capabilityInfo: ClientCapabilityInfo = {
+    supportsSampling,
+    availableIntegrations: CapabilityDetector.getAvailableIntegrations(
+      supportsSampling,
+      config!
+    )
   };
 
   return {
     content: [{
       type: 'text',
-      text: JSON.stringify(platformInfo, null, 2)
+      text: JSON.stringify(capabilityInfo, null, 2)
     }]
   };
 }
@@ -537,26 +519,29 @@ export async function handleGetPlatformInfo(
 
 ## Data Models
 
-### PlatformInfo (from requirements.md)
+### ClientCapabilityInfo (Simplified)
 ```typescript
-interface PlatformInfo {
-  platform: 'ios' | 'ipados' | 'macos' | 'desktop' | 'web' | 'unknown';
-  clientName: string;
-  clientVersion: string;
+// src/types/platform.ts （簡略化）
+export interface ClientCapabilityInfo {
   supportsSampling: boolean;
   availableIntegrations: {
     calendar: {
       google: boolean;
       eventkit: boolean;
-      native: boolean;
+      sampling: boolean;  // Native Calendar via Sampling
     };
     reminders: {
       applescript: boolean;
-      native: boolean;
+      sampling: boolean;  // Native Reminders via Sampling
     };
   };
 }
 ```
+
+**Simplification Rationale:**
+- ❌ Removed: `platform`, `clientName`, `clientVersion`, `detectionConfidence`
+- ✅ Kept: `supportsSampling` (only capability we actually use)
+- ✅ Kept: `availableIntegrations` (determined by `supportsSampling` + `isEventKitAvailable()`)
 
 ### CalendarEvent (extended from existing)
 ```typescript
@@ -564,19 +549,6 @@ interface PlatformInfo {
 interface CalendarEvent {
   // ... existing fields
   source: 'google' | 'eventkit' | 'native-ios';  // 新規フィールド
-  platform?: 'ios' | 'ipados' | 'macos';  // オプション：どのプラットフォームから取得されたか
-}
-```
-
-### DetectedPlatform (new)
-```typescript
-// src/types/platform.ts （新規ファイル）
-export interface DetectedPlatform {
-  platform: 'ios' | 'ipados' | 'macos' | 'desktop' | 'web' | 'unknown';
-  clientName: string;
-  clientVersion: string;
-  supportsSampling: boolean;
-  detectionConfidence: 'high' | 'medium' | 'low';
 }
 ```
 
@@ -752,34 +724,34 @@ try {
 
 ### Unit Testing
 
-#### PlatformDetector Tests (`tests/unit/platform/detector.test.ts`)
+#### CapabilityDetector Tests (`tests/unit/platform/detector.test.ts`)
 ```typescript
-describe('PlatformDetector', () => {
-  describe('detectPlatform', () => {
-    it('should detect iOS from clientInfo.name containing "iOS"', () => {
-      const result = PlatformDetector.detectPlatform(
-        { name: 'Claude iOS', version: '1.0.0' },
-        { sampling: {} }
-      );
-      expect(result.platform).toBe('ios');
+describe('CapabilityDetector', () => {
+  describe('detectCapabilities', () => {
+    it('should detect Sampling capability when capabilities.sampling exists', () => {
+      const result = CapabilityDetector.detectCapabilities({ sampling: {} });
       expect(result.supportsSampling).toBe(true);
     });
 
-    it('should detect macOS from clientInfo.name "claude-ai"', () => {
-      const result = PlatformDetector.detectPlatform(
-        { name: 'claude-ai', version: '0.1.0' },
-        { sampling: {} }
-      );
-      expect(result.platform).toBe('macos');
+    it('should not detect Sampling capability when capabilities.sampling is missing', () => {
+      const result = CapabilityDetector.detectCapabilities({});
+      expect(result.supportsSampling).toBe(false);
+    });
+  });
+
+  describe('getAvailableIntegrations', () => {
+    it('should return eventkit integrations when EventKit is available', () => {
+      const config = { calendar: { sources: { eventkit: { enabled: true } } } };
+      const result = CapabilityDetector.getAvailableIntegrations(false, config);
+      expect(result.calendar.eventkit).toBe(true);
+      expect(result.calendar.sampling).toBe(false);
     });
 
-    it('should return unknown for unrecognized clientInfo', () => {
-      const result = PlatformDetector.detectPlatform(
-        { name: 'unknown-client', version: '1.0.0' },
-        {}
-      );
-      expect(result.platform).toBe('unknown');
-      expect(result.supportsSampling).toBe(false);
+    it('should return sampling integrations when Sampling is supported and EventKit is not available', () => {
+      const config = { calendar: { sources: { eventkit: { enabled: false } } } };
+      const result = CapabilityDetector.getAvailableIntegrations(true, config);
+      expect(result.calendar.eventkit).toBe(false);
+      expect(result.calendar.sampling).toBe(true);
     });
   });
 });
@@ -851,57 +823,50 @@ describe('SamplingService', () => {
 
 ### Integration Testing
 
-#### Platform-Aware Calendar Events (`tests/integration/platform/calendar-events.test.ts`)
+#### Capability-Aware Calendar Events (`tests/integration/platform/calendar-events.test.ts`)
 ```typescript
-describe('Platform-Aware Calendar Events', () => {
-  it('should use Sampling for iOS platform', async () => {
-    // Mock platform as iOS
-    const platform: DetectedPlatform = {
-      platform: 'ios',
-      clientName: 'Claude iOS',
-      clientVersion: '1.0.0',
-      supportsSampling: true,
-      detectionConfidence: 'high'
+describe('Capability-Aware Calendar Events', () => {
+  it('should use Sampling when supportsSampling=true and EventKit unavailable', async () => {
+    // Mock Sampling support, EventKit unavailable
+    const context = {
+      getConfig: () => ({
+        calendar: { sources: { eventkit: { enabled: false } } }
+      }),
+      getSupportsSampling: () => true,
+      isEventKitAvailable: () => false,
+      getCalendarSourceManager: () => mockCalendarSourceManager
     };
 
     // Mock SamplingService
     const mockSamplingService = {
       sendSamplingRequest: jest.fn().mockResolvedValue({
         content: [{ type: 'text', text: JSON.stringify([/* events */]) }]
-      }),
-      parseCalendarEventsResponse: jest.fn().mockReturnValue([/* parsed events */])
+      })
     };
 
     // Test tool handler
     const result = await handleListCalendarEvents(
       { startDate: '2026-01-01', endDate: '2026-01-31' },
-      {
-        getConfig: () => mockConfig,
-        getPlatformInfo: () => platform,
-        getCalendarSourceManager: () => mockCalendarSourceManager
-      }
+      context
     );
 
     expect(mockSamplingService.sendSamplingRequest).toHaveBeenCalled();
     expect(result.isError).toBe(false);
   });
 
-  it('should use MCP-only for macOS platform', async () => {
-    const platform: DetectedPlatform = {
-      platform: 'macos',
-      clientName: 'claude-ai',
-      clientVersion: '0.1.0',
-      supportsSampling: true,
-      detectionConfidence: 'high'
+  it('should use MCP-only when EventKit is available', async () => {
+    const context = {
+      getConfig: () => ({
+        calendar: { sources: { eventkit: { enabled: true } } }
+      }),
+      getSupportsSampling: () => false,
+      isEventKitAvailable: () => true,
+      getCalendarSourceManager: () => mockCalendarSourceManager
     };
 
     const result = await handleListCalendarEvents(
       { startDate: '2026-01-01', endDate: '2026-01-31' },
-      {
-        getConfig: () => mockConfig,
-        getPlatformInfo: () => platform,
-        getCalendarSourceManager: () => mockCalendarSourceManager
-      }
+      context
     );
 
     // Should NOT use Sampling, directly call CalendarSourceManager
@@ -914,41 +879,43 @@ describe('Platform-Aware Calendar Events', () => {
 
 #### Full Workflow Test (`tests/e2e/platform-adaptive-integration.test.ts`)
 ```typescript
-describe('Platform Adaptive Integration E2E', () => {
-  it('should detect platform, use Sampling, and return merged events', async () => {
+describe('Capability Adaptive Integration E2E', () => {
+  it('should detect Sampling capability, use Sampling, and return merged events', async () => {
     // 1. Initialize MCP server
     const server = new McpServer({ name: 'sage', version: VERSION });
 
-    // 2. Mock initialize with iOS clientInfo
+    // 2. Mock initialize with Sampling capability
     const initializeResult = await server.initialize({
       protocolVersion: '2025-06-18',
-      capabilities: { sampling: {} },
-      clientInfo: { name: 'Claude iOS', version: '1.0.0' }
+      capabilities: { sampling: {} }
     });
 
-    // 3. Verify platform detection
-    expect(platformInfo?.platform).toBe('ios');
+    // 3. Verify capability detection
+    expect(supportsSampling).toBe(true);
 
-    // 4. Call list_calendar_events tool
+    // 4. Mock EventKit as unavailable
+    const config = { calendar: { sources: { eventkit: { enabled: false } } } };
+
+    // 5. Call list_calendar_events tool
     const eventsResult = await server.callTool('list_calendar_events', {
       startDate: '2026-01-01',
       endDate: '2026-01-31'
     });
 
-    // 5. Verify Sampling was used (mock internal state)
+    // 6. Verify Sampling was used (mock internal state)
     expect(mockSamplingService.sendSamplingRequest).toHaveBeenCalledWith(
       expect.objectContaining({
         messages: expect.arrayContaining([
           expect.objectContaining({
             content: expect.objectContaining({
-              text: expect.stringContaining('native iOS Calendar API')
+              text: expect.stringContaining('native Calendar API is available')
             })
           })
         ])
       })
     );
 
-    // 6. Verify merged results
+    // 7. Verify merged results
     expect(eventsResult.content[0].text).toContain('source');
   });
 });
@@ -992,43 +959,43 @@ export const mockUserRejectionError = {
 };
 ```
 
-#### Platform Detection Mocks
+#### Capability Detection Mocks
 ```typescript
-// tests/mocks/client-info.ts
-export const iOSClientInfo = {
-  name: 'Claude iOS',
-  version: '1.0.0'
-};
-
-export const macOSClientInfo = {
-  name: 'claude-ai',
-  version: '0.1.0'
-};
-
-export const webClientInfo = {
-  name: 'claude-web',
-  version: '1.0.0'
-};
-
+// tests/mocks/client-capabilities.ts
 export const samplingCapabilities = {
   sampling: {}
 };
 
 export const noSamplingCapabilities = {};
+
+export function createMockCapabilityContext(supportsSampling: boolean, eventKitEnabled: boolean) {
+  return {
+    getSupportsSampling: () => supportsSampling,
+    isEventKitAvailable: () => eventKitEnabled,
+    getConfig: () => ({
+      calendar: {
+        sources: {
+          eventkit: { enabled: eventKitEnabled }
+        }
+      }
+    })
+  };
+}
 ```
 
 ## Performance Considerations
 
 ### Optimization Strategies
 
-1. **Platform Detection Caching**: clientInfo は initialize 時に一度だけ検出し、グローバル state にキャッシュ
-2. **Lazy Sampling Service Initialization**: SamplingService は初回使用時に初期化
-3. **Parallel MCP Calls**: iOS で Google Calendar を MCP 経由で取得する際、他の処理と並列実行可能
-4. **Response Parsing Optimization**: JSON.parse の失敗時のみパターンマッチングにフォールバック
+1. **Capability Detection Caching**: `supportsSampling` は initialize 時に一度だけ検出し、グローバル state にキャッシュ
+2. **EventKit Availability Check**: Config lookup のみ (< 1ms)
+3. **Lazy Sampling Service Initialization**: SamplingService は初回使用時に初期化
+4. **Parallel MCP Calls**: Google Calendar を MCP 経由で取得する際、他の処理と並列実行可能
 
 ### Performance Targets (from requirements.md)
 
-- Platform detection: < 10ms ✓ (メモリ操作のみ)
+- Capability detection: < 5ms ✓ (simple boolean check)
+- EventKit availability check: < 1ms ✓ (config lookup)
 - Sampling request construction: < 50ms ✓ (文字列テンプレート生成)
 - Sampling request send (MCP server side): < 100ms ✓ (network call)
 
@@ -1109,3 +1076,100 @@ async sendSamplingRequest(request: SamplingRequest): Promise<SamplingResponse> {
 4. **Phase 4**: get_platform_info ツールを追加
 
 各フェーズでテストカバレッジ 98% を維持。
+
+---
+
+## EventKit-Based Implementation (Added 2026-01-09)
+
+### Problem Statement
+
+iOS Claude App が `capabilities.sampling` を送信しないため、プラットフォーム推論だけでは判定できない問題が発生。
+
+### Solution: EventKit Availability-Based Dispatch
+
+プラットフォーム推論の複雑さを回避し、**EventKit 利用可否** で統合戦略を決定する。
+
+#### Implementation Location
+
+`src/cli/mcp-handler.ts` の `registerTools()` メソッド内で runtime dispatch を実装：
+
+```typescript
+// Check EventKit availability
+private isEventKitAvailable(): boolean {
+  return this.config?.calendar?.sources?.eventkit?.enabled ?? false;
+}
+
+// Runtime dispatch in tool registration
+async (args) => {
+  // Use Sampling when EventKit is unavailable but Sampling is supported
+  const shouldUseSampling =
+    this.detectedPlatform?.supportsSampling && !this.isEventKitAvailable();
+
+  if (shouldUseSampling) {
+    return handleSetReminderWithSampling(input, context, samplingContext, platform);
+  } else {
+    return handleSetReminder(context, input);
+  }
+}
+```
+
+#### Decision Logic
+
+```
+┌─────────────────────────────────────┐
+│ config.calendar.sources.eventkit   │
+│         .enabled?                   │
+└─────────────────────────────────────┘
+    ↓ true              ↓ false
+┌─────────┐      ┌──────────────────┐
+│ EventKit│      │ Check Sampling?  │
+│ Handler │      └──────────────────┘
+└─────────┘       ↓ true    ↓ false
+            ┌──────────┐ ┌──────────┐
+            │ Sampling │ │ Fallback │
+            │ Handler  │ │ (Google) │
+            └──────────┘ └──────────┘
+```
+
+### Affected Components
+
+1. **mcp-handler.ts**
+   - Added `isEventKitAvailable()` method
+   - Modified `set_reminder` tool registration with runtime dispatch
+   - Modified `list_calendar_events` tool registration with runtime dispatch
+
+2. **Platform Detection**
+   - HTTP + Sampling → iOS inference (optional, not critical)
+   - Primary decision: EventKit availability
+
+### Benefits
+
+- ✅ Avoids platform inference complexity
+- ✅ Config-based control (`eventkit.enabled`)
+- ✅ Works correctly on all platforms (iOS/iPadOS/Desktop/Web)
+- ✅ Future-proof: Auto-enables when iOS sends `sampling: true`
+
+### Current Limitations
+
+- iOS Claude App does not send `capabilities.sampling = true` (as of 2026-01-09)
+- Requires Anthropic to implement MCP capability extension
+- Proposed extension: `capabilities.experimental.nativeIntegrations`
+
+### Recommendation for Anthropic
+
+Submit issue/PR to MCP specification repository:
+- Add `capabilities.experimental.nativeIntegrations` field
+- iOS/iPad clients should send:
+  ```json
+  {
+    "capabilities": {
+      "sampling": {},
+      "experimental": {
+        "nativeIntegrations": {
+          "calendar": true,
+          "reminders": true
+        }
+      }
+    }
+  }
+  ```

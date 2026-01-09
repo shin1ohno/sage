@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-01-09
+
+### New Features
+- **Platform Detection** - Automatic detection of iOS, iPadOS, macOS, and web platforms
+  - New `PlatformDetector` service identifies the runtime environment
+  - Platform capabilities are automatically determined based on detection
+- **MCP Sampling Support** - Native iOS/iPadOS calendar and reminder integration via MCP Sampling protocol
+  - On iOS/iPadOS, calendar and reminder operations use the MCP Sampling protocol
+  - Enables access to native iOS Calendar and Reminders apps through Claude
+  - Seamless fallback to AppleScript on macOS or API-based methods on other platforms
+- **`get_platform_info` Tool** - Query platform capabilities and available integrations
+  - Returns current platform (ios, ipados, macos, web)
+  - Shows available integration methods for calendar and reminders
+  - Indicates whether Sampling is supported
+
+### Enhancements
+- **`list_calendar_events`** - Now supports native iOS calendar via Sampling on iOS/iPadOS
+  - Automatic platform detection determines the best integration method
+  - Falls back to EventKit on macOS or Google Calendar API elsewhere
+- **`set_reminder`** - Now supports native iOS reminders via Sampling on iOS/iPadOS
+  - Uses MCP Sampling to create reminders through the native Reminders app
+  - Falls back to AppleScript on macOS
+
+### Technical
+- Added `PlatformDetector` service for platform identification
+- Added `SamplingService` for MCP Sampling protocol support
+- Added `IntegrationStrategyManager` for platform-specific strategy selection
+
+### Breaking Changes
+- None (fully backward compatible)
+
 ## [0.9.1] - 2026-01-06
 
 ### Fixed

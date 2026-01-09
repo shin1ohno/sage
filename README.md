@@ -142,6 +142,116 @@ From Claude, run the `authenticate_google` tool:
 | Session expired | Complete authentication within 10 minutes |
 | 503 from callback | Verify `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set |
 
+### Platform-Adaptive Integration
+
+sage automatically detects your platform and uses the best available integration method for calendar and reminder access. This ensures you get the most seamless experience regardless of where you're using Claude.
+
+**How it Works**
+
+1. **Platform Detection**: When sage starts, it detects your platform from the MCP client information (iOS, iPadOS, macOS, desktop, or web)
+2. **Strategy Selection**: Based on the detected platform, sage selects the optimal integration strategy for calendar and reminder operations
+3. **MCP Sampling Protocol**: On iOS/iPadOS, sage uses the MCP Sampling protocol to instruct Claude to use native Calendar and Reminders APIs
+4. **Native APIs**: On macOS, sage uses EventKit (calendar) and AppleScript (reminders) for direct system integration
+5. **Fallback**: On web/Linux/Windows, sage uses Google Calendar API for calendar features
+
+**Platform Capabilities**
+
+| Platform | Calendar | Reminders | Integration Method |
+|----------|----------|-----------|-------------------|
+| iOS/iPadOS | Native Calendar + Google Calendar | Native Reminders | MCP Sampling |
+| macOS | EventKit + Google Calendar | AppleScript | Native APIs |
+| Web/Linux/Windows | Google Calendar only | Not available | Google API |
+
+**Key Benefits**
+
+- **True multi-platform support**: No need to run a Mac server for iOS/iPadOS access
+- **Multi-source calendar integration**: Access both Google Calendar and Apple Calendar simultaneously on iOS/iPadOS
+- **Transparent UX**: sage automatically selects the best method - you don't need to configure anything
+- **Graceful degradation**: If native access is unavailable, sage falls back to API-based methods
+
+**Using `get_platform_info`**
+
+Query your current platform and available capabilities:
+
+```
+User: get_platform_info
+
+sage:
+{
+  "platform": "ipados",
+  "clientName": "Claude iOS",
+  "clientVersion": "1.0.0",
+  "supportsSampling": true,
+  "availableIntegrations": {
+    "calendar": {
+      "google": true,
+      "eventkit": false,
+      "native": true
+    },
+    "reminders": {
+      "applescript": false,
+      "native": true
+    }
+  }
+}
+```
+
+**Example: Listing Calendar Events on iOS**
+
+When you call `list_calendar_events` on iOS/iPadOS, sage uses Sampling to instruct Claude to:
+1. Fetch Google Calendar events via the MCP tool
+2. Access native iOS Calendar events via the native Calendar API
+3. Merge both sets of events, removing duplicates by iCalUID
+4. Return the combined results
+
+This happens automatically - you just call the tool normally:
+
+```
+User: list_calendar_events with startDate: "2026-01-09", endDate: "2026-01-16"
+
+sage: (automatically uses Sampling to access both calendars)
+  [Shows merged events from both Google Calendar and Apple Calendar]
+```
+
+**Example: Creating Reminders on iOS**
+
+When you create a reminder on iOS/iPadOS, sage uses Sampling to access the native Reminders app:
+
+```
+User: set_reminder with title: "Review pull requests", dueDate: "2026-01-10T15:00:00"
+
+sage: (uses Sampling to create reminder in native iOS Reminders app)
+  ✓ Reminder created successfully
+  ID: reminder-123
+```
+
+**Troubleshooting**
+
+**Issue**: "Sampling approval required" message appears
+
+**Solution**:
+- This is expected behavior on iOS/iPadOS when sage needs to access native Calendar or Reminders
+- Claude will show a prompt asking for your approval to access these native features
+- Approve the Sampling request to allow sage to access your calendar/reminders
+- Once approved, the operation will complete automatically
+
+**Issue**: Platform-adaptive integration not working
+
+**Checklist**:
+1. Verify your platform supports Sampling (run `get_platform_info`)
+2. Check that you're using a recent version of Claude iOS/iPadOS app
+3. Ensure you've granted Calendar/Reminders permissions in iOS Settings > Privacy
+4. For Google Calendar: Make sure you've authenticated with `authenticate_google`
+
+**Issue**: Calendar events not showing up
+
+**Possible causes**:
+1. Google Calendar not authenticated: Run `authenticate_google` tool
+2. iOS Calendar permissions denied: Check Settings > Privacy > Calendars
+3. Network connectivity issues: Verify you have internet access
+
+**Note**: Platform-adaptive integration requires Claude clients that support MCP Sampling. This includes Claude iOS, Claude iPadOS, and recent versions of Claude Desktop. If your client doesn't support Sampling, sage will automatically fall back to API-based methods.
+
 ### Smart Reminder Routing
 
 Tasks are automatically routed to the appropriate system:

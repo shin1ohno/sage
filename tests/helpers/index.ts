@@ -55,6 +55,13 @@ export {
   createMockReminderTodoContext,
   createMockIntegrationToolsContext,
   createMockDirectoryToolsContext,
+  createMockPlatformToolsContext,
+  createMockReminderContextWithPlatform,
+  createMockSamplingContext,
+  DEFAULT_DETECTED_PLATFORM,
+  IOS_DETECTED_PLATFORM,
+  WEB_DETECTED_PLATFORM,
+  UNKNOWN_DETECTED_PLATFORM,
 } from './mock-contexts.js';
 
 // Mock context types
@@ -65,4 +72,7 @@ export type {
   MockReminderTodoContext,
   MockIntegrationToolsContext,
   MockDirectoryToolsContext,
+  MockPlatformToolsContext,
+  MockReminderContextWithPlatform,
+  SamplingContext,
 } from './mock-contexts.js';

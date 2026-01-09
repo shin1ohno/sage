@@ -8,6 +8,8 @@
 import { VERSION, SERVER_NAME } from '../version.js';
 import { ConfigLoader } from '../config/loader.js';
 import { SetupWizard } from '../setup/wizard.js';
+import { PlatformDetector } from '../platform/detector.js';
+import type { DetectedPlatform } from '../types/platform.js';
 import { ReminderManager } from '../integrations/reminder-manager.js';
 import { CalendarService } from '../integrations/calendar-service.js';
 import { NotionMCPService } from '../integrations/notion-mcp.js';
@@ -58,8 +60,11 @@ import {
 
 import {
   type ReminderTodoContext,
+  type PlatformContext,
+  type SamplingContext,
   handleSetReminder,
   handleListTodos,
+  handleSetReminderWithSampling,
 } from '../tools/reminders/index.js';
 
 import {
@@ -84,6 +89,7 @@ import {
   handleCheckRoomAvailability,
   handleCheckPeopleAvailability,
   handleFindCommonAvailability,
+  handleListCalendarEventsWithSampling,
 } from '../tools/calendar/handlers.js';
 
 // Shared tool definitions
@@ -167,6 +173,11 @@ export interface MCPHandler {
   handleRequest(request: MCPRequest): Promise<MCPResponse>;
   listTools(): ToolDefinition[];
   /**
+   * Get the detected platform information
+   * Requirements: 1.1, 1.6 (platform-adaptive-integration)
+   */
+  getDetectedPlatform(): DetectedPlatform | null;
+  /**
    * Shutdown the handler and release all resources
    * Should be called when the handler is no longer needed (e.g., in tests)
    */
@@ -179,6 +190,7 @@ export interface MCPHandler {
 class MCPHandlerImpl implements MCPHandler {
   private config: UserConfig | null = null;
   private wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
+  private detectedPlatform: DetectedPlatform | null = null;
   private reminderManager: ReminderManager | null = null;
   private calendarService: CalendarService | null = null;
   private notionService: NotionMCPService | null = null;
@@ -204,6 +216,17 @@ class MCPHandlerImpl implements MCPHandler {
 
   constructor() {
     this.registerTools();
+  }
+
+  /**
+   * Get the detected platform information
+   *
+   * Requirements: 1.1, 1.6 (platform-adaptive-integration)
+   *
+   * @returns DetectedPlatform object if platform has been detected, null otherwise
+   */
+  getDetectedPlatform(): DetectedPlatform | null {
+    return this.detectedPlatform;
   }
 
   /**
@@ -523,6 +546,34 @@ class MCPHandlerImpl implements MCPHandler {
   }
 
   /**
+   * Create PlatformContext for platform-adaptive tool handlers
+   */
+  private createPlatformContext(): PlatformContext {
+    return {
+      getPlatformInfo: () => this.detectedPlatform,
+    };
+  }
+
+  /**
+   * Create SamplingContext for Sampling-based tool handlers
+   */
+  private createSamplingContext(): SamplingContext {
+    return {
+      // TODO: Implement MCP Server instance passing for Sampling requests
+      // Currently returns null - Sampling handlers will fall back to non-Sampling behavior
+      getMcpServer: () => null,
+    };
+  }
+
+  /**
+   * Check if EventKit is available and enabled
+   * Returns false if EventKit is disabled or unavailable (non-macOS)
+   */
+  private isEventKitAvailable(): boolean {
+    return this.config?.calendar?.sources?.eventkit?.enabled ?? false;
+  }
+
+  /**
    * Handle an MCP request
    */
   async handleRequest(request: MCPRequest): Promise<MCPResponse> {
@@ -566,8 +617,34 @@ class MCPHandlerImpl implements MCPHandler {
 
   /**
    * Handle initialize request
+   * Requirements: 1.1, 1.6 (platform-adaptive-integration)
+   *
+   * Extracts clientInfo and capabilities from the initialize request to detect
+   * the platform type and available features.
    */
-  private handleInitialize(id: number | string | null, _params?: Record<string, unknown>): MCPResponse {
+  private handleInitialize(id: number | string | null, params?: Record<string, unknown>): MCPResponse {
+    // Extract clientInfo and capabilities from params
+    // MCP initialize request contains: { clientInfo: { name, version }, capabilities: {...} }
+    const clientInfo = params?.clientInfo as { name?: string; version?: string } | undefined;
+    const capabilities = params?.capabilities as Record<string, unknown> | undefined;
+
+    // Detect platform from clientInfo
+    if (clientInfo?.name && clientInfo?.version) {
+      this.detectedPlatform = PlatformDetector.detectPlatform(
+        capabilities ?? {}
+      );
+
+      // Log platform detection (console.log since we don't have mcpLogger here)
+      console.log(
+        `[sage] Platform detected: ${this.detectedPlatform.platform} ` +
+        `(client: ${this.detectedPlatform.clientName} v${this.detectedPlatform.clientVersion}, ` +
+        `confidence: ${this.detectedPlatform.detectionConfidence}, ` +
+        `sampling: ${this.detectedPlatform.supportsSampling})`
+      );
+    } else {
+      console.warn('[sage] No clientInfo available in initialize request');
+    }
+
     return {
       jsonrpc: '2.0',
       id,
@@ -809,11 +886,12 @@ class MCPHandlerImpl implements MCPHandler {
         })
     );
 
-    // set_reminder - uses extracted handler
+    // set_reminder - with platform-based runtime dispatch
     this.registerTool(
       {
         name: 'set_reminder',
-        description: 'Set a reminder for a task in Apple Reminders or Notion.',
+        description:
+          'Set a reminder for a task. Uses native iOS Reminders on iOS/iPad, or AppleScript/Notion on other platforms.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -850,8 +928,13 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['taskTitle'],
         },
       },
-      async (args) =>
-        handleSetReminder(this.createReminderTodoContext(), {
+      async (args) => {
+        // Runtime dispatch: Use Sampling when EventKit is unavailable but Sampling is supported
+        // This covers iOS/iPad (no EventKit) and Web (no EventKit) with Sampling capability
+        const shouldUseSampling =
+          this.detectedPlatform?.supportsSampling && !this.isEventKitAvailable();
+
+        const input = {
           taskTitle: args.taskTitle as string,
           dueDate: args.dueDate as string | undefined,
           reminderType: args.reminderType as
@@ -864,7 +947,19 @@ class MCPHandlerImpl implements MCPHandler {
           list: args.list as string | undefined,
           priority: args.priority as 'P0' | 'P1' | 'P2' | 'P3' | undefined,
           notes: args.notes as string | undefined,
-        })
+        };
+
+        if (shouldUseSampling) {
+          return handleSetReminderWithSampling(
+            input,
+            { ...this.createReminderTodoContext(), ...this.createPlatformContext() },
+            this.createSamplingContext(),
+            this.detectedPlatform!
+          );
+        } else {
+          return handleSetReminder(this.createReminderTodoContext(), input);
+        }
+      }
     );
 
     // find_available_slots - uses extracted handler
@@ -904,12 +999,12 @@ class MCPHandlerImpl implements MCPHandler {
         })
     );
 
-    // list_calendar_events - uses extracted handler
+    // list_calendar_events - with platform-based runtime dispatch
     this.registerTool(
       {
         name: 'list_calendar_events',
         description:
-          'List calendar events for a specified period. Returns events with details including calendar name and location.',
+          'List calendar events for a specified period. Uses native iOS Calendar on iOS/iPad, or EventKit/Google Calendar on other platforms. Returns events with details including calendar name and location.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -929,12 +1024,28 @@ class MCPHandlerImpl implements MCPHandler {
           required: ['startDate', 'endDate'],
         },
       },
-      async (args) =>
-        handleListCalendarEvents(this.createCalendarToolsContext(), {
+      async (args) => {
+        // Runtime dispatch: Use Sampling when EventKit is unavailable but Sampling is supported
+        // This covers iOS/iPad (no EventKit) and Web (no EventKit) with Sampling capability
+        const shouldUseSampling =
+          this.detectedPlatform?.supportsSampling && !this.isEventKitAvailable();
+
+        const input = {
           startDate: args.startDate as string,
           endDate: args.endDate as string,
           calendarId: args.calendarId as string | undefined,
-        })
+        };
+
+        if (shouldUseSampling) {
+          return handleListCalendarEventsWithSampling(
+            input,
+            { ...this.createCalendarToolsContext(), ...this.createPlatformContext() },
+            this.createSamplingContext()
+          );
+        } else {
+          return handleListCalendarEvents(this.createCalendarToolsContext(), input);
+        }
+      }
     );
 
     // sync_to_notion - uses extracted handler

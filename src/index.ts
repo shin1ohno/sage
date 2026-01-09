@@ -12,6 +12,8 @@ import { z } from "zod";
 
 import { ConfigLoader } from "./config/loader.js";
 import { SetupWizard } from "./setup/wizard.js";
+import { PlatformDetector } from "./platform/detector.js";
+import type { DetectedPlatform } from "./types/platform.js";
 import { ReminderManager } from "./integrations/reminder-manager.js";
 import { CalendarService } from "./integrations/calendar-service.js";
 import { CalendarSourceManager } from "./integrations/calendar-source-manager.js";
@@ -55,8 +57,10 @@ import {
 
 import {
   type CalendarToolsContext,
+  type SamplingContext,
   handleFindAvailableSlots,
   handleListCalendarEvents,
+  handleListCalendarEventsWithSampling,
   handleRespondToCalendarEvent,
   handleRespondToCalendarEventsBatch,
   handleCreateCalendarEvent,
@@ -74,7 +78,9 @@ import {
 
 import {
   type ReminderTodoContext,
+  type SamplingContext as ReminderSamplingContext,
   handleSetReminder,
+  handleSetReminderWithSampling,
   handleListTodos,
 } from "./tools/reminders/index.js";
 
@@ -110,9 +116,21 @@ import {
   handleReloadConfig,
 } from "./tools/config/index.js";
 
+import {
+  type PlatformToolsContext,
+  handleGetPlatformInfo,
+} from "./tools/platform/index.js";
+
 // Global state
 let config: UserConfig | null = null;
 let wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
+let detectedPlatform: DetectedPlatform | null = null;
+
+// Transport mode helps distinguish Desktop (Stdio) from Remote (HTTP)
+// Stdio: Local Desktop Claude → Desktop platform
+// HTTP: Remote MCP Server → iOS/iPad/Web platform
+// type TransportMode = 'stdio' | 'http' | 'unknown';
+// let transportMode: TransportMode = 'stdio'; // Default for index.ts (Stdio transport) - Currently unused after simplification
 let reminderManager: ReminderManager | null = null;
 let calendarService: CalendarService | null = null;
 let googleCalendarService: GoogleCalendarService | null = null;
@@ -127,6 +145,24 @@ let workingCadenceService: WorkingCadenceService | null = null;
 // Hot-reload state
 let serviceRegistry: ServiceRegistry | null = null;
 let configReloadService: ConfigReloadService | null = null;
+
+// MCP Server reference for Sampling support
+// Requirements: 1.6 (platform-adaptive-integration)
+let mcpServerRef: McpServer | null = null;
+
+/**
+ * Get the detected platform information
+ *
+ * This function returns the platform information detected during MCP initialization.
+ * The platform is detected by analyzing the clientInfo provided by the MCP client.
+ *
+ * Requirements: 1.1, 1.6 (platform-adaptive-integration)
+ *
+ * @returns DetectedPlatform object if platform has been detected, null otherwise
+ */
+export function getDetectedPlatform(): DetectedPlatform | null {
+  return detectedPlatform;
+}
 
 /**
  * Initialize services with config
@@ -176,6 +212,27 @@ function initializeServices(userConfig: UserConfig): void {
 // Context Factory Functions
 // ============================================
 
+/**
+ * PlatformContext interface for injecting platform info into tool handlers
+ *
+ * This context provides access to the detected platform information
+ * from MCP client initialization. Tool handlers can use this to
+ * adapt their behavior based on the platform.
+ *
+ * Requirements: 1.6 (platform-adaptive-integration)
+ */
+export interface PlatformContext {
+  /**
+   * Get the detected platform information
+   *
+   * Returns the platform detected during MCP initialization,
+   * or null if platform detection has not occurred yet.
+   *
+   * @returns DetectedPlatform object or null
+   */
+  getPlatformInfo: () => DetectedPlatform | null;
+}
+
 function createSetupContext(): SetupContext {
   return {
     getConfig: () => config,
@@ -200,7 +257,15 @@ function createTaskToolsContext(): TaskToolsContext {
   };
 }
 
-function createCalendarToolsContext(): CalendarToolsContext {
+/**
+ * Create calendar tools context with platform information
+ *
+ * Extends CalendarToolsContext with PlatformContext to provide
+ * platform-specific behavior in calendar tool handlers.
+ *
+ * Requirements: 1.6 (platform-adaptive-integration)
+ */
+function createCalendarToolsContext(): CalendarToolsContext & PlatformContext {
   return {
     getConfig: () => config,
     getCalendarSourceManager: () => calendarSourceManager,
@@ -212,15 +277,25 @@ function createCalendarToolsContext(): CalendarToolsContext {
       workingCadenceService = service;
     },
     initializeServices,
+    getPlatformInfo: () => detectedPlatform,
   };
 }
 
-function createReminderTodoContext(): ReminderTodoContext {
+/**
+ * Create reminder/todo tools context with platform information
+ *
+ * Extends ReminderTodoContext with PlatformContext to provide
+ * platform-specific behavior in reminder tool handlers.
+ *
+ * Requirements: 1.6 (platform-adaptive-integration)
+ */
+function createReminderTodoContext(): ReminderTodoContext & PlatformContext {
   return {
     getConfig: () => config,
     getReminderManager: () => reminderManager,
     getTodoListManager: () => todoListManager,
     initializeServices,
+    getPlatformInfo: () => detectedPlatform,
   };
 }
 
@@ -277,6 +352,35 @@ function createDirectoryToolsContext(): DirectoryToolsContext {
 }
 
 /**
+ * Create Sampling context for platform-adaptive integration
+ *
+ * Provides access to the MCP Server for sending Sampling requests
+ * to the host application (Claude iOS/iPad).
+ *
+ * Requirements: 1.6 (platform-adaptive-integration)
+ */
+function createSamplingContext(): SamplingContext {
+  return {
+    getMcpServer: () => mcpServerRef,
+  };
+}
+
+/**
+ * Create platform tools context
+ *
+ * Provides access to detected platform information and configuration
+ * for the get_platform_info tool handler.
+ *
+ * Requirements: 7.1-7.7 (platform-adaptive-integration)
+ */
+function createPlatformToolsContext(): PlatformToolsContext {
+  return {
+    getPlatformInfo: () => detectedPlatform,
+    getConfig: () => config,
+  };
+}
+
+/**
  * Initialize the MCP server with all tools
  */
 async function createServer(): Promise<McpServer> {
@@ -284,6 +388,10 @@ async function createServer(): Promise<McpServer> {
     name: SERVER_NAME,
     version: VERSION,
   });
+
+  // Store server reference for Sampling support
+  // Requirements: 1.6 (platform-adaptive-integration)
+  mcpServerRef = server;
 
   // Try to load existing config
   try {
@@ -294,6 +402,47 @@ async function createServer(): Promise<McpServer> {
   } catch {
     config = null;
   }
+
+  // Setup platform detection on initialization
+  // The oninitialized callback is called after the client sends the initialized notification
+  // At this point, clientInfo and capabilities are available from the underlying server
+  // Requirements: 1.1, 1.6 (platform-adaptive-integration)
+  server.server.oninitialized = () => {
+    const clientVersion = server.server.getClientVersion();
+    const clientCapabilities = server.server.getClientCapabilities();
+
+    if (clientVersion) {
+      detectedPlatform = PlatformDetector.detectPlatform(
+        clientCapabilities ?? {}
+      );
+
+      mcpLogger.info(
+        {
+          platform: detectedPlatform.platform,
+          clientName: detectedPlatform.clientName,
+          clientVersion: detectedPlatform.clientVersion,
+          supportsSampling: detectedPlatform.supportsSampling,
+          detectionConfidence: detectedPlatform.detectionConfidence,
+          rawClientName: clientVersion.name, // Include raw name for debugging
+          capabilities: Object.keys(clientCapabilities ?? {}), // Show available capabilities
+        },
+        'Platform detected from MCP client'
+      );
+
+      // Warn if platform detection has low confidence or is unknown
+      if ((detectedPlatform.detectionConfidence !== undefined && detectedPlatform.detectionConfidence < 0.5) || detectedPlatform.platform === 'unknown') {
+        mcpLogger.warn(
+          {
+            clientName: detectedPlatform.clientName,
+            suggestion: 'Consider reporting this to improve platform detection',
+          },
+          'Platform detection has low confidence or is unknown. Some features may not be available.'
+        );
+      }
+    } else {
+      mcpLogger.warn('No clientInfo available during MCP initialization');
+    }
+  };
 
   // ============================================
   // Setup & Configuration Tools - uses extracted handlers
@@ -366,7 +515,8 @@ async function createServer(): Promise<McpServer> {
     async ({ tasks }) => handleAnalyzeTasks(createTaskToolsContext(), { tasks }),
   );
 
-  // set_reminder - uses extracted handler
+  // set_reminder - uses extracted handler with platform-adaptive Sampling support
+  // Requirements: 2.3, 4.1 (platform-adaptive-integration)
   server.tool(
     "set_reminder",
     "Set a reminder for a task in Apple Reminders or Notion.",
@@ -399,15 +549,78 @@ async function createServer(): Promise<McpServer> {
         .optional()
         .describe("Additional notes for the reminder"),
     },
-    async ({ taskTitle, dueDate, reminderType, list, priority, notes }) =>
-      handleSetReminder(createReminderTodoContext(), {
+    async ({ taskTitle, dueDate, reminderType, list, priority, notes }) => {
+      const reminderContext = createReminderTodoContext();
+      const platformInfo = reminderContext.getPlatformInfo();
+
+      // Check if platform is web - reminders not supported
+      if (platformInfo?.platform === 'web') {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: "platform_not_supported",
+                  message: "リマインダー機能はWebプラットフォームでは利用できません。Claude Desktop、Claude iOS、またはClaude iPadOSをお使いください。",
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      // Check if platform supports Sampling for reminders integration
+      //
+      // Use Sampling for:
+      // - iOS/iPad: Native Reminders API access
+      // - Unknown with HTTP + Sampling: Could be iOS/iPad or Desktop via Remote MCP
+      //   → Try Sampling with graceful fallback to MCP-only
+      //
+      // Desktop (Stdio) uses MCP-only: AppleScript (macOS)
+      if (platformInfo?.supportsSampling &&
+          (platformInfo.platform === 'ios' ||
+           platformInfo.platform === 'ipados' ||
+           platformInfo.platform === 'unknown')) {
+        mcpLogger.info(
+          {
+            platform: platformInfo.platform,
+            clientName: platformInfo.clientName,
+            confidence: platformInfo.detectionConfidence,
+          },
+          platformInfo.platform === 'unknown'
+            ? 'Attempting Sampling-based reminder integration (unknown platform with Sampling support - could be iOS/iPad or Remote Desktop)'
+            : 'Using Sampling-based reminder integration (iOS/iPad with native reminders access)'
+        );
+        return handleSetReminderWithSampling(
+          { taskTitle, dueDate, reminderType, list, priority, notes },
+          reminderContext,
+          createSamplingContext() as ReminderSamplingContext,
+          platformInfo
+        );
+      }
+
+      // Fall back to MCP-only handler for other platforms (macOS with AppleScript)
+      // or platforms without Sampling support
+      mcpLogger.info(
+        {
+          platform: platformInfo?.platform || 'no-platform-info',
+          supportsSampling: platformInfo?.supportsSampling || false,
+        },
+        'Using MCP-only reminder integration (AppleScript)'
+      );
+      return handleSetReminder(reminderContext, {
         taskTitle,
         dueDate,
         reminderType,
         list,
         priority,
         notes,
-      }),
+      });
+    },
   );
 
   // find_available_slots - uses extracted handler
@@ -448,7 +661,8 @@ async function createServer(): Promise<McpServer> {
       }),
   );
 
-  // list_calendar_events - uses extracted handler
+  // list_calendar_events - uses extracted handler with platform-adaptive Sampling support
+  // Requirements: 1.6 (platform-adaptive-integration)
   server.tool(
     "list_calendar_events",
     "List calendar events for a specified period from enabled sources (EventKit, Google Calendar, or both). Returns events with details including calendar name and location.",
@@ -464,12 +678,54 @@ async function createServer(): Promise<McpServer> {
         .optional()
         .describe("Optional: filter events by calendar ID or name"),
     },
-    async ({ startDate, endDate, calendarId }) =>
-      handleListCalendarEvents(createCalendarToolsContext(), {
+    async ({ startDate, endDate, calendarId }) => {
+      const calendarContext = createCalendarToolsContext();
+      const platformInfo = calendarContext.getPlatformInfo();
+
+      // Check if platform supports Sampling for calendar integration
+      //
+      // Use Sampling for:
+      // - iOS/iPad: Native calendar access + Google Calendar merge
+      // - Unknown with HTTP + Sampling: Could be iOS/iPad or Desktop via Remote MCP
+      //   → Try Sampling with graceful fallback to MCP-only
+      //
+      // Desktop (Stdio) uses MCP-only: EventKit (macOS) or Google Calendar
+      if (platformInfo?.supportsSampling &&
+          (platformInfo.platform === 'ios' ||
+           platformInfo.platform === 'ipados' ||
+           platformInfo.platform === 'unknown')) {
+        mcpLogger.info(
+          {
+            platform: platformInfo.platform,
+            clientName: platformInfo.clientName,
+            confidence: platformInfo.detectionConfidence,
+          },
+          platformInfo.platform === 'unknown'
+            ? 'Attempting Sampling-based calendar integration (unknown platform with Sampling support - could be iOS/iPad or Remote Desktop)'
+            : 'Using Sampling-based calendar integration (iOS/iPad with native calendar access)'
+        );
+        return handleListCalendarEventsWithSampling(
+          { startDate, endDate, calendarId },
+          calendarContext,
+          createSamplingContext()
+        );
+      }
+
+      // Fall back to MCP-only handler for other platforms (macos, desktop, web)
+      // or platforms without Sampling support
+      mcpLogger.info(
+        {
+          platform: platformInfo?.platform || 'no-platform-info',
+          supportsSampling: platformInfo?.supportsSampling || false,
+        },
+        'Using MCP-only calendar integration'
+      );
+      return handleListCalendarEvents(calendarContext, {
         startDate,
         endDate,
         calendarId,
-      }),
+      });
+    },
   );
 
   // respond_to_calendar_event - uses extracted handler
@@ -1406,6 +1662,29 @@ async function createServer(): Promise<McpServer> {
         .describe("Force reload even if no changes detected (currently unused, reserved for future use)"),
     },
     async ({ force }) => handleReloadConfig(createReloadContext(), { force }),
+  );
+
+  // ============================================
+  // Platform Tools
+  // Requirements: 7.1-7.7 (platform-adaptive-integration)
+  // ============================================
+
+  /**
+   * get_platform_info - Get detected platform and available integrations
+   * Requirements: 7.1-7.7 (platform-adaptive-integration)
+   *
+   * Returns platform information including:
+   * - Detected platform type (ios, ipados, macos, desktop, web, unknown)
+   * - MCP client name and version
+   * - Sampling support status
+   * - Available calendar and reminder integrations
+   * - Warnings about unavailable features
+   */
+  server.tool(
+    "get_platform_info",
+    "Get detected platform information and available integrations. Shows which calendar and reminder integrations are available on your platform, and any warnings about unavailable features.",
+    {},
+    async () => handleGetPlatformInfo({}, createPlatformToolsContext()),
   );
 
   return server;

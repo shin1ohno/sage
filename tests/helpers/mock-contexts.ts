@@ -7,12 +7,14 @@
  */
 
 import type { UserConfig } from '../../src/types/index.js';
+import type { DetectedPlatform } from '../../src/types/platform.js';
 import type { SetupContext, WizardSession } from '../../src/tools/setup/handlers.js';
 import type { TaskToolsContext } from '../../src/tools/tasks/handlers.js';
 import type { CalendarToolsContext } from '../../src/tools/calendar/handlers.js';
 import type { ReminderTodoContext } from '../../src/tools/reminders/handlers.js';
 import type { IntegrationToolsContext } from '../../src/tools/integrations/handlers.js';
 import type { DirectoryToolsContext } from '../../src/tools/directory/handlers.js';
+import type { PlatformToolsContext } from '../../src/tools/platform/handlers.js';
 import type { TodoListManager } from '../../src/integrations/todo-list-manager.js';
 import type { TaskSynchronizer } from '../../src/integrations/task-synchronizer.js';
 import type { ReminderManager } from '../../src/integrations/reminder-manager.js';
@@ -356,5 +358,201 @@ export function createMockDirectoryToolsContext(
     getConfig: overrides?.getConfig ?? jest.fn(() => state.config),
     getGooglePeopleService:
       overrides?.getGooglePeopleService ?? jest.fn(() => state.googlePeopleService),
+  };
+}
+
+/**
+ * Mock PlatformToolsContext with configurable state
+ */
+export interface MockPlatformToolsContext extends PlatformToolsContext {
+  config: UserConfig | null;
+  platformInfo: DetectedPlatform | null;
+}
+
+/**
+ * Default detected platform for testing (macOS with Sampling support)
+ */
+export const DEFAULT_DETECTED_PLATFORM: DetectedPlatform = {
+  platform: 'macos',
+  clientName: 'claude-desktop',
+  clientVersion: '1.0.0',
+  supportsSampling: true,
+  detectionConfidence: 'high',
+};
+
+/**
+ * iOS detected platform for testing
+ */
+export const IOS_DETECTED_PLATFORM: DetectedPlatform = {
+  platform: 'ios',
+  clientName: 'claude-ios',
+  clientVersion: '1.0.0',
+  supportsSampling: true,
+  detectionConfidence: 'high',
+};
+
+/**
+ * Web detected platform for testing (no Sampling)
+ */
+export const WEB_DETECTED_PLATFORM: DetectedPlatform = {
+  platform: 'web',
+  clientName: 'claude-web',
+  clientVersion: '1.0.0',
+  supportsSampling: false,
+  detectionConfidence: 'high',
+};
+
+/**
+ * Unknown detected platform for testing
+ */
+export const UNKNOWN_DETECTED_PLATFORM: DetectedPlatform = {
+  platform: 'unknown',
+  clientName: 'unknown-client',
+  clientVersion: '1.0.0',
+  supportsSampling: false,
+  detectionConfidence: 'low',
+};
+
+/**
+ * Create a mock PlatformToolsContext
+ *
+ * @param overrides - Optional overrides for context methods and state
+ * @returns Mocked PlatformToolsContext
+ *
+ * @example
+ * ```typescript
+ * const ctx = createMockPlatformToolsContext({
+ *   platformInfo: IOS_DETECTED_PLATFORM,
+ *   config: DEFAULT_TEST_CONFIG,
+ * });
+ * const result = await handleGetPlatformInfo({}, ctx);
+ * ```
+ */
+export function createMockPlatformToolsContext(
+  overrides?: Partial<{
+    config: UserConfig | null;
+    platformInfo: DetectedPlatform | null;
+    getConfig: () => UserConfig | null;
+    getPlatformInfo: () => DetectedPlatform | null;
+  }>
+): MockPlatformToolsContext {
+  const state = {
+    config: overrides?.config !== undefined ? overrides.config : DEFAULT_TEST_CONFIG,
+    platformInfo: overrides?.platformInfo !== undefined ? overrides.platformInfo : DEFAULT_DETECTED_PLATFORM,
+  };
+
+  return {
+    config: state.config,
+    platformInfo: state.platformInfo,
+    getConfig: overrides?.getConfig ?? jest.fn(() => state.config),
+    getPlatformInfo: overrides?.getPlatformInfo ?? jest.fn(() => state.platformInfo),
+  };
+}
+
+/**
+ * Mock ReminderContextWithPlatform with configurable state
+ *
+ * Extends MockReminderTodoContext with platform detection
+ */
+export interface MockReminderContextWithPlatform extends MockReminderTodoContext {
+  getPlatformInfo: () => DetectedPlatform | null;
+}
+
+/**
+ * SamplingContext interface for MCP Server access
+ * Used to send Sampling requests to the host application
+ *
+ * Note: This is typed as `unknown` for flexibility in mocking,
+ * but callers should cast to the appropriate SamplingContext type.
+ */
+export interface SamplingContext {
+  getMcpServer: () => unknown;
+}
+
+/**
+ * Create a mock SamplingContext
+ *
+ * @param overrides - Optional overrides for context methods
+ * @returns Mocked SamplingContext (cast to appropriate type in tests)
+ *
+ * @example
+ * ```typescript
+ * import { SamplingContext } from '../../../src/tools/reminders/handlers.js';
+ * const ctx = createMockSamplingContext() as SamplingContext;
+ * ```
+ */
+export function createMockSamplingContext(
+  overrides?: Partial<{
+    getMcpServer: () => unknown;
+  }>
+): SamplingContext {
+  return {
+    getMcpServer: overrides?.getMcpServer ?? jest.fn(() => ({
+      // Mock MCP Server - SamplingService calls server.server.createMessage()
+      server: {
+        createMessage: jest.fn().mockResolvedValue({
+          content: {
+            type: 'text',
+            text: JSON.stringify({ success: true, reminderId: 'mock-reminder-id' }),
+          },
+          model: 'mock-model',
+          stopReason: 'endTurn',
+        }),
+      },
+    })),
+  };
+}
+
+/**
+ * Create a mock ReminderContextWithPlatform
+ *
+ * Combines ReminderTodoContext with platform detection
+ * for testing handleSetReminderWithSampling.
+ *
+ * @param overrides - Optional overrides for context methods and services
+ * @returns Mocked ReminderContextWithPlatform
+ *
+ * @example
+ * ```typescript
+ * const ctx = createMockReminderContextWithPlatform({
+ *   platform: IOS_DETECTED_PLATFORM,
+ * });
+ * const samplingCtx = createMockSamplingContext();
+ * const result = await handleSetReminderWithSampling(
+ *   { taskTitle: 'Test' },
+ *   ctx,
+ *   samplingCtx,
+ *   IOS_DETECTED_PLATFORM
+ * );
+ * ```
+ */
+export function createMockReminderContextWithPlatform(
+  overrides?: Partial<{
+    config: UserConfig | null;
+    reminderManager: ReminderManager | null;
+    todoListManager: TodoListManager | null;
+    platform: DetectedPlatform;
+    getConfig: () => UserConfig | null;
+    getReminderManager: () => ReminderManager | null;
+    getTodoListManager: () => TodoListManager | null;
+    initializeServices: (config: UserConfig) => void;
+    getPlatformInfo: () => DetectedPlatform | null;
+  }>
+): MockReminderContextWithPlatform {
+  const baseCtx = createMockReminderTodoContext({
+    config: overrides?.config,
+    reminderManager: overrides?.reminderManager,
+    todoListManager: overrides?.todoListManager,
+    getConfig: overrides?.getConfig,
+    getReminderManager: overrides?.getReminderManager,
+    getTodoListManager: overrides?.getTodoListManager,
+    initializeServices: overrides?.initializeServices,
+  });
+
+  const platform = overrides?.platform ?? IOS_DETECTED_PLATFORM;
+
+  return {
+    ...baseCtx,
+    getPlatformInfo: overrides?.getPlatformInfo ?? (() => platform),
   };
 }

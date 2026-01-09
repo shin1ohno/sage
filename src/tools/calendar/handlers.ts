@@ -6,8 +6,10 @@
  * to allow reuse between index.ts and mcp-handler.ts.
  *
  * Requirements: 3.3-3.6, 6.1-6.6, 16-19, 32
+ * Requirements (platform-adaptive-integration): 2.1-2.2, 3.1, 6.2
  */
 
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { UserConfig } from '../../types/index.js';
 import type { CalendarSourceManager } from '../../integrations/calendar-source-manager.js';
 import type { CalendarEventResponseService } from '../../integrations/calendar-event-response.js';
@@ -20,7 +22,10 @@ import type {
   CalendarEvent as ExtendedCalendarEvent,
   RecurrenceScope,
 } from '../../types/google-calendar-types.js';
+import type { DetectedPlatform } from '../../types/platform.js';
 import { createToolResponse, createErrorFromCatch } from '../registry.js';
+import { SamplingService, SamplingError } from '../../services/sampling-service.js';
+import { IntegrationStrategyManager } from '../../services/integration-strategy-manager.js';
 
 /**
  * Calendar context containing shared state and services
@@ -34,6 +39,40 @@ export interface CalendarToolsContext {
   getWorkingCadenceService: () => WorkingCadenceService | null;
   setWorkingCadenceService: (service: WorkingCadenceService) => void;
   initializeServices: (config: UserConfig) => void;
+}
+
+/**
+ * Platform context for accessing detected platform information
+ *
+ * This interface provides access to the platform detected during MCP initialization,
+ * enabling platform-specific behavior in tool handlers.
+ *
+ * Requirements: 1.6 (platform-adaptive-integration)
+ */
+export interface PlatformContext {
+  /**
+   * Get the detected platform information
+   *
+   * @returns DetectedPlatform object or null if not yet detected
+   */
+  getPlatformInfo: () => DetectedPlatform | null;
+}
+
+/**
+ * Sampling context for accessing MCP Sampling capability
+ *
+ * This interface provides access to the MCP Server instance needed
+ * for sending Sampling requests to Claude.
+ *
+ * Requirements: 2.1-2.2 (platform-adaptive-integration)
+ */
+export interface SamplingContext {
+  /**
+   * Get the MCP Server instance for Sampling requests
+   *
+   * @returns McpServer instance or null if not available
+   */
+  getMcpServer: () => McpServer | null;
 }
 
 // ============================================================
@@ -1962,5 +2001,139 @@ export async function handleListCalendarResources(
     });
   } catch (error) {
     return createErrorFromCatch('カレンダーリソースの取得に失敗しました', error);
+  }
+}
+
+// ============================================================
+// Platform-Adaptive Integration Handlers
+// Requirements: 2.1-2.2, 3.1, 6.2 (platform-adaptive-integration)
+// ============================================================
+
+/**
+ * Tool response type for calendar handlers
+ */
+export interface ToolResponse {
+  content: Array<{ type: 'text'; text: string }>;
+  isError: boolean;
+}
+
+/**
+ * Handle list_calendar_events with Sampling for iOS/iPadOS platforms
+ *
+ * This handler uses MCP Sampling to request Claude to fetch calendar events
+ * from both MCP (Google Calendar) and native iOS Calendar, then merge the results.
+ *
+ * On iOS/iPad, Claude can access the native Calendar API directly, so this handler
+ * sends a Sampling request instructing Claude to:
+ * 1. Call the list_calendar_events MCP tool for Google Calendar events
+ * 2. Use native iOS Calendar API for Apple Calendar events
+ * 3. Merge and deduplicate the results
+ * 4. Return the unified event list
+ *
+ * Requirements:
+ * - 2.1-2.2: Sampling-based tool execution on iOS/iPad
+ * - 3.1: Calendar strategy for iOS uses Sampling + MCP + Native
+ * - 6.2: Fallback to MCP-only on user rejection
+ *
+ * @param args - List calendar events input (startDate, endDate, calendarId, eventTypes)
+ * @param context - Calendar tools context for accessing services
+ * @param samplingContext - Sampling context for accessing MCP Server
+ * @param platform - Detected platform information
+ * @returns ToolResponse with Claude's merged calendar events or fallback message
+ *
+ * @example
+ * ```typescript
+ * const response = await handleListCalendarEventsWithSampling(
+ *   { startDate: '2026-01-01', endDate: '2026-01-31' },
+ *   calendarContext,
+ *   samplingContext,
+ *   detectedPlatform
+ * );
+ * ```
+ */
+export async function handleListCalendarEventsWithSampling(
+  args: ListCalendarEventsInput,
+  _context: CalendarToolsContext & PlatformContext,
+  samplingContext: SamplingContext
+): Promise<ToolResponse> {
+  // Get the MCP Server for Sampling
+  const mcpServer = samplingContext.getMcpServer();
+
+  // Initialize services
+  const samplingService = new SamplingService(mcpServer);
+  const strategyManager = new IntegrationStrategyManager();
+
+  // Build the Sampling instruction message for Claude
+  // This tells Claude to fetch events from both MCP (Google) and native iOS Calendar
+  const instruction = strategyManager.buildCalendarSamplingMessage({
+    startDate: args.startDate,
+    endDate: args.endDate,
+  });
+
+  try {
+    // Send Sampling request to Claude
+    // Claude will execute the MCP tool call AND native iOS Calendar access,
+    // then merge the results and return the unified event list
+    const response = await samplingService.sendSamplingRequest({
+      messages: [
+        {
+          role: 'user',
+          content: { type: 'text', text: instruction },
+        },
+      ],
+      maxTokens: 4000,
+      // Include context from this server so Claude can call list_calendar_events
+      includeContext: 'thisServer',
+    });
+
+    // Return Claude's response directly (already merged and formatted)
+    // Claude's response contains the merged events from both sources
+    return {
+      content: [
+        {
+          type: 'text',
+          text: response.content.text,
+        },
+      ],
+      isError: false,
+    };
+  } catch (error) {
+    // Handle user rejection error (code -1)
+    // User explicitly declined the Sampling request
+    if (error instanceof SamplingError && error.isUserRejection()) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              'Platform-adaptive integration requires your approval. ' +
+              'Operation cancelled. Falling back to MCP-only mode.\n\n' +
+              'To use this feature, please approve the Sampling request when prompted. ' +
+              'Alternatively, use the standard list_calendar_events tool which only accesses Google Calendar.',
+          },
+        ],
+        isError: false,
+      };
+    }
+
+    // Handle Sampling not supported error (code -32601)
+    // Client doesn't support Sampling capability
+    if (error instanceof SamplingError && error.isSamplingNotSupported()) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              'Your Claude client does not support platform-adaptive integration (Sampling). ' +
+              'Please use Claude Desktop, Claude iOS, or Claude iPadOS for this feature.\n\n' +
+              'Falling back to MCP-only mode. Use list_calendar_events for Google Calendar access.',
+          },
+        ],
+        isError: false,
+      };
+    }
+
+    // Re-throw other errors to be handled by the caller
+    throw error;
   }
 }
