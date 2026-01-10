@@ -378,7 +378,6 @@ export const DEFAULT_DETECTED_PLATFORM: DetectedPlatform = {
   clientName: 'claude-desktop',
   clientVersion: '1.0.0',
   supportsSampling: false, // Desktop clients don't support Sampling
-  detectionConfidence: 0.9,
 };
 
 /**
@@ -389,7 +388,6 @@ export const IOS_DETECTED_PLATFORM: DetectedPlatform = {
   clientName: 'claude-ios',
   clientVersion: '1.0.0',
   supportsSampling: true,
-  detectionConfidence: 0.9,
 };
 
 /**
@@ -400,7 +398,6 @@ export const WEB_DETECTED_PLATFORM: DetectedPlatform = {
   clientName: 'claude-web',
   clientVersion: '1.0.0',
   supportsSampling: false,
-  detectionConfidence: 0.9,
 };
 
 /**
@@ -411,7 +408,6 @@ export const UNKNOWN_DETECTED_PLATFORM: DetectedPlatform = {
   clientName: 'unknown-client',
   clientVersion: '1.0.0',
   supportsSampling: false,
-  detectionConfidence: 0.3,
 };
 
 /**

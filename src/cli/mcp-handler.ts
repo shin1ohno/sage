@@ -638,7 +638,6 @@ class MCPHandlerImpl implements MCPHandler {
       console.log(
         `[sage] Platform detected: ${this.detectedPlatform.platform} ` +
         `(client: ${this.detectedPlatform.clientName} v${this.detectedPlatform.clientVersion}, ` +
-        `confidence: ${this.detectedPlatform.detectionConfidence}, ` +
         `sampling: ${this.detectedPlatform.supportsSampling})`
       );
     } else {

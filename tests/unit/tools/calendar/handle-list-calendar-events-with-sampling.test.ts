@@ -94,7 +94,6 @@ describe('handleListCalendarEventsWithSampling', () => {
       clientName: 'claude-ios',
       clientVersion: '1.0.0',
       supportsSampling: true,
-      detectionConfidence: 'high',
     };
   });
 
@@ -129,8 +128,7 @@ describe('handleListCalendarEventsWithSampling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -151,8 +149,7 @@ describe('handleListCalendarEventsWithSampling', () => {
       await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(mockMcpServer.server.createMessage).toHaveBeenCalledWith(
@@ -189,8 +186,7 @@ describe('handleListCalendarEventsWithSampling', () => {
       await handleListCalendarEventsWithSampling(
         args,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(mockMcpServer.server.createMessage).toHaveBeenCalledWith(
@@ -220,8 +216,7 @@ describe('handleListCalendarEventsWithSampling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -247,8 +242,7 @@ describe('handleListCalendarEventsWithSampling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -271,8 +265,7 @@ describe('handleListCalendarEventsWithSampling', () => {
         handleListCalendarEventsWithSampling(
           defaultArgs,
           mockCalendarToolsContext,
-          mockSamplingContext,
-          mockPlatform
+          mockSamplingContext
         )
       ).rejects.toThrow('Network failure');
     });
@@ -290,8 +283,7 @@ describe('handleListCalendarEventsWithSampling', () => {
         handleListCalendarEventsWithSampling(
           defaultArgs,
           mockCalendarToolsContext,
-          mockSamplingContext,
-          mockPlatform
+          mockSamplingContext
         )
       ).rejects.toThrow(SamplingError);
     });
@@ -299,14 +291,6 @@ describe('handleListCalendarEventsWithSampling', () => {
 
   describe('platform-specific behavior', () => {
     it('should work with iPadOS platform', async () => {
-      const ipadPlatform: DetectedPlatform = {
-        platform: 'ipados',
-        clientName: 'claude-ipados',
-        clientVersion: '1.0.0',
-        supportsSampling: true,
-        detectionConfidence: 'high',
-      };
-
       const mockResponse = {
         content: { type: 'text' as const, text: '[]' },
         model: 'claude-3-opus',
@@ -318,19 +302,18 @@ describe('handleListCalendarEventsWithSampling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        ipadPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
 
-      // Verify iPadOS-specific message was sent
+      // Verify iOS/iPad message was sent
       expect(mockMcpServer.server.createMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           messages: expect.arrayContaining([
             expect.objectContaining({
               content: expect.objectContaining({
-                text: expect.stringContaining('iPadOS'),
+                text: expect.stringContaining('iOS/iPad'),
               }),
             }),
           ]),
@@ -350,8 +333,7 @@ describe('handleListCalendarEventsWithSampling', () => {
       await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(mockMcpServer.server.createMessage).toHaveBeenCalledWith(
@@ -381,8 +363,7 @@ describe('handleListCalendarEventsWithSampling', () => {
       await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(mockSamplingContext.getMcpServer).toHaveBeenCalled();
@@ -398,8 +379,7 @@ describe('handleListCalendarEventsWithSampling', () => {
         handleListCalendarEventsWithSampling(
           defaultArgs,
           mockCalendarToolsContext,
-          nullServerContext,
-          mockPlatform
+          nullServerContext
         )
       ).rejects.toThrow(SamplingError);
     });

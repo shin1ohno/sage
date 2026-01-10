@@ -122,8 +122,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           endDate: '2026-01-20',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
 
       // Verify Sampling was called
@@ -171,8 +170,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           calendarId: 'primary',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
 
       // Verify createMessage was called
@@ -191,7 +189,6 @@ describe('handleListCalendarEventsWithSampling', () => {
         clientName: 'claude-ipados',
         clientVersion: '1.0.0',
         supportsSampling: true,
-        detectionConfidence: 'high',
       };
 
       const mockServer = createMockMcpServer();
@@ -206,8 +203,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           endDate: '2026-01-20',
         },
         ctx,
-        samplingCtx,
-        ipadosPlatform
+        samplingCtx
       );
 
       expect(result.isError).toBe(false);
@@ -222,7 +218,6 @@ describe('handleListCalendarEventsWithSampling', () => {
         clientName: 'claude-desktop',
         clientVersion: '1.0.0',
         supportsSampling: true,
-        detectionConfidence: 'high',
       };
 
       const mockServer = createMockMcpServer();
@@ -237,8 +232,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           endDate: '2026-01-20',
         },
         ctx,
-        samplingCtx,
-        macosPlatform
+        samplingCtx
       );
 
       // For macOS, we still send Sampling request
@@ -272,8 +266,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           endDate: '2026-01-20',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
 
       expect(result.isError).toBe(false);
@@ -305,8 +298,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           endDate: '2026-01-20',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
 
       const message = result.content[0].text;
@@ -338,8 +330,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           endDate: '2026-01-20',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
 
       expect(result.isError).toBe(false);
@@ -371,8 +362,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           endDate: '2026-01-20',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
 
       const message = result.content[0].text;
@@ -406,8 +396,7 @@ describe('handleListCalendarEventsWithSampling', () => {
             endDate: '2026-01-20',
           },
           ctx,
-          samplingCtx,
-          IOS_DETECTED_PLATFORM
+          samplingCtx
         )
       ).rejects.toThrow('Network timeout');
     });
@@ -431,8 +420,7 @@ describe('handleListCalendarEventsWithSampling', () => {
             endDate: '2026-01-20',
           },
           ctx,
-          samplingCtx,
-          IOS_DETECTED_PLATFORM
+          samplingCtx
         )
       ).rejects.toThrow('Unexpected error');
     });
@@ -493,8 +481,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           endDate: '2026-01-20',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
 
       expect(result.isError).toBe(false);
@@ -536,8 +523,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           endDate: '2026-01-20',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
 
       expect(result.isError).toBe(false);
@@ -574,8 +560,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           endDate: '2026-01-20',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
 
       // Verify createMessage was called
@@ -617,8 +602,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           endDate: '2026-01-20',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
 
       const callArgs = mockCreateMessage.mock.calls[0][0];
@@ -649,8 +633,7 @@ describe('handleListCalendarEventsWithSampling', () => {
           endDate: '2026-01-20',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
 
       const callArgs = mockCreateMessage.mock.calls[0][0];

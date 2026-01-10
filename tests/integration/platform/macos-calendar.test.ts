@@ -29,7 +29,6 @@ describe('macOS Platform Calendar Integration', () => {
       expect(DEFAULT_DETECTED_PLATFORM.platform).toBe('macos');
       expect(DEFAULT_DETECTED_PLATFORM.clientName).toBe('claude-desktop');
       expect(DEFAULT_DETECTED_PLATFORM.supportsSampling).toBe(false); // Desktop doesn't support Sampling
-      expect(DEFAULT_DETECTED_PLATFORM.detectionConfidence).toBe(0.9);
     });
   });
 

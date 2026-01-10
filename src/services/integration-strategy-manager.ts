@@ -116,8 +116,7 @@ export interface ReminderParams {
  *   platform: 'ios',
  *   clientName: 'Claude iOS',
  *   clientVersion: '1.0.0',
- *   supportsSampling: true,
- *   detectionConfidence: 'high'
+ *   supportsSampling: true
  * };
  *
  * const strategy = manager.getCalendarStrategy(platform, {

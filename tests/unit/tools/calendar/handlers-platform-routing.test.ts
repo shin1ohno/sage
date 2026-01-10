@@ -127,8 +127,7 @@ describe('Calendar Handler Platform Routing', () => {
       return calendarHandlers.handleListCalendarEventsWithSampling(
         args,
         calendarContext,
-        samplingContext,
-        platformInfo
+        samplingContext
       );
     }
 
@@ -159,8 +158,7 @@ describe('Calendar Handler Platform Routing', () => {
         }),
         expect.objectContaining({
           getMcpServer: expect.any(Function),
-        }),
-        IOS_DETECTED_PLATFORM
+        })
       );
     });
 
@@ -187,8 +185,7 @@ describe('Calendar Handler Platform Routing', () => {
       expect(handleListCalendarEventsWithSamplingSpy).toHaveBeenCalledWith(
         args,
         expect.any(Object),
-        expect.any(Object),
-        IOS_DETECTED_PLATFORM
+        expect.any(Object)
       );
     });
   });
@@ -199,7 +196,6 @@ describe('Calendar Handler Platform Routing', () => {
       clientName: 'claude-ipados',
       clientVersion: '1.0.0',
       supportsSampling: true,
-      detectionConfidence: 'high',
     };
 
     it('should route to handleListCalendarEventsWithSampling for iPadOS with Sampling support', async () => {
@@ -220,12 +216,11 @@ describe('Calendar Handler Platform Routing', () => {
       expect(handleListCalendarEventsWithSamplingSpy).toHaveBeenCalledWith(
         expect.any(Object),
         expect.any(Object),
-        expect.any(Object),
-        IPADOS_DETECTED_PLATFORM
+        expect.any(Object)
       );
     });
 
-    it('should pass platform info to Sampling handler for iPadOS', async () => {
+    it('should pass correct arguments to Sampling handler for iPadOS', async () => {
       handleListCalendarEventsWithSamplingSpy = jest
         .spyOn(calendarHandlers, 'handleListCalendarEventsWithSampling')
         .mockResolvedValue({
@@ -239,9 +234,9 @@ describe('Calendar Handler Platform Routing', () => {
         () => mockMcpServer as unknown as McpServer
       );
 
-      // Verify the platform passed to the handler
+      // Verify the correct number of arguments (3, not 4)
       const callArgs = handleListCalendarEventsWithSamplingSpy.mock.calls[0];
-      expect(callArgs[3]).toEqual(IPADOS_DETECTED_PLATFORM);
+      expect(callArgs.length).toBe(3);
     });
   });
 
@@ -402,7 +397,6 @@ describe('Calendar Handler Platform Routing', () => {
         clientName: 'claude-ipados',
         clientVersion: '1.0.0',
         supportsSampling: false,
-        detectionConfidence: 'high',
       };
 
       handleListCalendarEventsSpy = jest
@@ -463,7 +457,6 @@ describe('Calendar Handler Platform Routing', () => {
         clientName: 'claude-desktop-windows',
         clientVersion: '1.0.0',
         supportsSampling: true,
-        detectionConfidence: 'high',
       };
 
       handleListCalendarEventsSpy = jest
@@ -549,7 +542,6 @@ describe('Calendar Handler Platform Routing', () => {
             clientName: 'test',
             clientVersion: '1.0.0',
             supportsSampling: true,
-            detectionConfidence: 'high',
           },
           shouldUseSampling: true,
           description: 'iPadOS with Sampling',
@@ -560,7 +552,6 @@ describe('Calendar Handler Platform Routing', () => {
             clientName: 'test',
             clientVersion: '1.0.0',
             supportsSampling: false,
-            detectionConfidence: 'high',
           },
           shouldUseSampling: false,
           description: 'iPadOS without Sampling',

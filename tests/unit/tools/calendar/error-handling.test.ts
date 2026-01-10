@@ -106,7 +106,6 @@ describe('Calendar Platform Integration - Error Handling', () => {
       clientName: 'claude-ios',
       clientVersion: '1.0.0',
       supportsSampling: true,
-      detectionConfidence: 'high',
     };
   });
 
@@ -123,8 +122,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -145,8 +143,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.content[0].text).toContain('Falling back to MCP-only mode');
@@ -165,8 +162,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.content[0].text).toContain('Claude Desktop');
@@ -188,8 +184,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -209,8 +204,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.content[0].text).toContain('Operation cancelled');
@@ -228,8 +222,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.content[0].text).toContain('Falling back to MCP-only mode');
@@ -247,8 +240,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.content[0].text).toContain('approve the Sampling request');
@@ -266,8 +258,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
         handleListCalendarEventsWithSampling(
           defaultArgs,
           mockCalendarToolsContext,
-          nullServerContext,
-          mockPlatform
+          nullServerContext
         )
       ).rejects.toThrow(SamplingError);
     });
@@ -281,8 +272,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
         await handleListCalendarEventsWithSampling(
           defaultArgs,
           mockCalendarToolsContext,
-          nullServerContext,
-          mockPlatform
+          nullServerContext
         );
         fail('Expected error to be thrown');
       } catch (error) {
@@ -296,14 +286,6 @@ describe('Calendar Platform Integration - Error Handling', () => {
 
   describe('4. Platform detection failure', () => {
     it('should still attempt Sampling with unknown platform', async () => {
-      const unknownPlatform: DetectedPlatform = {
-        platform: 'unknown',
-        clientName: 'unknown-client',
-        clientVersion: '1.0.0',
-        supportsSampling: true,
-        detectionConfidence: 'low',
-      };
-
       const mockResponse = {
         content: { type: 'text' as const, text: '[]' },
         model: 'claude-3-opus',
@@ -315,8 +297,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        unknownPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -324,14 +305,6 @@ describe('Calendar Platform Integration - Error Handling', () => {
     });
 
     it('should work with low confidence detection', async () => {
-      const lowConfidencePlatform: DetectedPlatform = {
-        platform: 'ios',
-        clientName: 'claude-ios',
-        clientVersion: '1.0.0',
-        supportsSampling: true,
-        detectionConfidence: 'low',
-      };
-
       const mockResponse = {
         content: { type: 'text' as const, text: '[]' },
         model: 'claude-3-opus',
@@ -343,8 +316,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        lowConfidencePlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -356,7 +328,6 @@ describe('Calendar Platform Integration - Error Handling', () => {
         clientName: 'claude-web',
         clientVersion: '1.0.0',
         supportsSampling: false,
-        detectionConfidence: 'high',
       };
 
       const mockResponse = {
@@ -373,8 +344,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        webPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -394,8 +364,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -415,8 +384,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -435,8 +403,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -455,8 +422,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -477,8 +443,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
         const result = await handleListCalendarEventsWithSampling(
           defaultArgs,
           mockCalendarToolsContext,
-          mockSamplingContext,
-          mockPlatform
+          mockSamplingContext
         );
 
         // Should be handled gracefully, not thrown
@@ -497,8 +462,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
         await handleListCalendarEventsWithSampling(
           defaultArgs,
           mockCalendarToolsContext,
-          mockSamplingContext,
-          mockPlatform
+          mockSamplingContext
         );
 
         // Should only be called once (no retry)
@@ -520,8 +484,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
           handleListCalendarEventsWithSampling(
             defaultArgs,
             mockCalendarToolsContext,
-            mockSamplingContext,
-            mockPlatform
+            mockSamplingContext
           )
         ).rejects.toThrow(SamplingError);
       });
@@ -539,8 +502,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
           await handleListCalendarEventsWithSampling(
             defaultArgs,
             mockCalendarToolsContext,
-            mockSamplingContext,
-            mockPlatform
+            mockSamplingContext
           );
           fail('Expected error to be thrown');
         } catch (error) {
@@ -565,8 +527,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
           handleListCalendarEventsWithSampling(
             defaultArgs,
             mockCalendarToolsContext,
-            mockSamplingContext,
-            mockPlatform
+            mockSamplingContext
           )
         ).rejects.toThrow(SamplingError);
       });
@@ -584,8 +545,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
           await handleListCalendarEventsWithSampling(
             defaultArgs,
             mockCalendarToolsContext,
-            mockSamplingContext,
-            mockPlatform
+            mockSamplingContext
           );
           fail('Expected error to be thrown');
         } catch (error) {
@@ -609,8 +569,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
         const result = await handleListCalendarEventsWithSampling(
           defaultArgs,
           mockCalendarToolsContext,
-          mockSamplingContext,
-          mockPlatform
+          mockSamplingContext
         );
 
         // Message should be actionable and in plain English
@@ -630,8 +589,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
         const result = await handleListCalendarEventsWithSampling(
           defaultArgs,
           mockCalendarToolsContext,
-          mockSamplingContext,
-          mockPlatform
+          mockSamplingContext
         );
 
         // Message should be actionable and in plain English
@@ -651,8 +609,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
         handleListCalendarEventsWithSampling(
           defaultArgs,
           mockCalendarToolsContext,
-          mockSamplingContext,
-          mockPlatform
+          mockSamplingContext
         )
       ).rejects.toThrow('Network connection failed');
     });
@@ -666,8 +623,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
         handleListCalendarEventsWithSampling(
           defaultArgs,
           mockCalendarToolsContext,
-          mockSamplingContext,
-          mockPlatform
+          mockSamplingContext
         )
       ).rejects.toThrow('timeout');
     });
@@ -708,14 +664,6 @@ describe('Calendar Platform Integration - Error Handling', () => {
 
   describe('9. Edge cases', () => {
     it('should handle undefined client version gracefully', async () => {
-      const platformWithUndefinedVersion: DetectedPlatform = {
-        platform: 'ios',
-        clientName: 'claude-ios',
-        clientVersion: undefined as unknown as string,
-        supportsSampling: true,
-        detectionConfidence: 'high',
-      };
-
       const mockResponse = {
         content: { type: 'text' as const, text: '[]' },
         model: 'claude-3-opus',
@@ -727,8 +675,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         defaultArgs,
         mockCalendarToolsContext,
-        mockSamplingContext,
-        platformWithUndefinedVersion
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -748,14 +695,12 @@ describe('Calendar Platform Integration - Error Handling', () => {
         handleListCalendarEventsWithSampling(
           { startDate: '2026-01-01', endDate: '2026-01-15' },
           mockCalendarToolsContext,
-          mockSamplingContext,
-          mockPlatform
+          mockSamplingContext
         ),
         handleListCalendarEventsWithSampling(
           { startDate: '2026-01-16', endDate: '2026-01-31' },
           mockCalendarToolsContext,
-          mockSamplingContext,
-          mockPlatform
+          mockSamplingContext
         ),
       ];
 
@@ -778,8 +723,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         { startDate: '2020-01-01', endDate: '2030-12-31' },
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);
@@ -798,8 +742,7 @@ describe('Calendar Platform Integration - Error Handling', () => {
       const result = await handleListCalendarEventsWithSampling(
         { startDate: '2026-01-01T00:00:00+09:00', endDate: '2026-01-31T23:59:59+09:00' },
         mockCalendarToolsContext,
-        mockSamplingContext,
-        mockPlatform
+        mockSamplingContext
       );
 
       expect(result.isError).toBe(false);

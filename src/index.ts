@@ -422,21 +422,20 @@ async function createServer(): Promise<McpServer> {
           clientName: detectedPlatform.clientName,
           clientVersion: detectedPlatform.clientVersion,
           supportsSampling: detectedPlatform.supportsSampling,
-          detectionConfidence: detectedPlatform.detectionConfidence,
           rawClientName: clientVersion.name, // Include raw name for debugging
           capabilities: Object.keys(clientCapabilities ?? {}), // Show available capabilities
         },
         'Platform detected from MCP client'
       );
 
-      // Warn if platform detection has low confidence or is unknown
-      if ((detectedPlatform.detectionConfidence !== undefined && detectedPlatform.detectionConfidence < 0.5) || detectedPlatform.platform === 'unknown') {
+      // Warn if platform is unknown
+      if (detectedPlatform.platform === 'unknown') {
         mcpLogger.warn(
           {
             clientName: detectedPlatform.clientName,
             suggestion: 'Consider reporting this to improve platform detection',
           },
-          'Platform detection has low confidence or is unknown. Some features may not be available.'
+          'Platform detection returned unknown. Some features may not be available.'
         );
       }
     } else {
@@ -589,7 +588,6 @@ async function createServer(): Promise<McpServer> {
           {
             platform: platformInfo.platform,
             clientName: platformInfo.clientName,
-            confidence: platformInfo.detectionConfidence,
           },
           platformInfo.platform === 'unknown'
             ? 'Attempting Sampling-based reminder integration (unknown platform with Sampling support - could be iOS/iPad or Remote Desktop)'
@@ -698,7 +696,6 @@ async function createServer(): Promise<McpServer> {
           {
             platform: platformInfo.platform,
             clientName: platformInfo.clientName,
-            confidence: platformInfo.detectionConfidence,
           },
           platformInfo.platform === 'unknown'
             ? 'Attempting Sampling-based calendar integration (unknown platform with Sampling support - could be iOS/iPad or Remote Desktop)'

@@ -168,8 +168,6 @@ export interface DetectedPlatform {
   clientName?: string;
   /** Client version */
   clientVersion?: string;
-  /** Detection confidence (0-1) */
-  detectionConfidence?: number;
 }
 
 /**

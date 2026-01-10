@@ -7,12 +7,22 @@
  */
 
 import type {
-  ClientInfo,
   ClientCapabilities,
   DetectedPlatform,
   Platform,
-  DetectionConfidence,
 } from '../../src/types/platform.js';
+
+// ============================================================================
+// Local Type Definitions
+// ============================================================================
+
+/**
+ * Client information (for testing purposes)
+ */
+export interface ClientInfo {
+  name: string;
+  version: string;
+}
 
 // ============================================================================
 // Client Info Mocks
@@ -115,7 +125,6 @@ export const iosDetectedPlatform: DetectedPlatform = {
   clientName: 'claude-ios',
   clientVersion: '1.0.0',
   supportsSampling: true,
-  detectionConfidence: 'high',
 };
 
 /**
@@ -127,7 +136,6 @@ export const ipadosDetectedPlatform: DetectedPlatform = {
   clientName: 'claude-ipados',
   clientVersion: '1.0.0',
   supportsSampling: true,
-  detectionConfidence: 'high',
 };
 
 /**
@@ -139,7 +147,6 @@ export const macosDetectedPlatform: DetectedPlatform = {
   clientName: 'claude-desktop-macos',
   clientVersion: '1.0.0',
   supportsSampling: true,
-  detectionConfidence: 'high',
 };
 
 /**
@@ -151,7 +158,6 @@ export const desktopDetectedPlatform: DetectedPlatform = {
   clientName: 'claude-desktop',
   clientVersion: '1.0.0',
   supportsSampling: true,
-  detectionConfidence: 'high',
 };
 
 /**
@@ -163,7 +169,6 @@ export const webDetectedPlatform: DetectedPlatform = {
   clientName: 'claude-web',
   clientVersion: '1.0.0',
   supportsSampling: false,
-  detectionConfidence: 'high',
 };
 
 /**
@@ -175,7 +180,6 @@ export const unknownDetectedPlatform: DetectedPlatform = {
   clientName: 'unknown-client',
   clientVersion: '1.0.0',
   supportsSampling: false,
-  detectionConfidence: 'low',
 };
 
 // ============================================================================
@@ -192,8 +196,6 @@ export interface CreateMockDetectedPlatformOptions {
   clientVersion?: string;
   /** Whether the client supports MCP Sampling */
   supportsSampling?: boolean;
-  /** Detection confidence level */
-  detectionConfidence?: DetectionConfidence;
 }
 
 /**
@@ -204,38 +206,31 @@ const platformDefaults: Record<
   {
     clientName: string;
     supportsSampling: boolean;
-    detectionConfidence: DetectionConfidence;
   }
 > = {
   ios: {
     clientName: 'claude-ios',
     supportsSampling: true,
-    detectionConfidence: 'high',
   },
   ipados: {
     clientName: 'claude-ipados',
     supportsSampling: true,
-    detectionConfidence: 'high',
   },
   macos: {
     clientName: 'claude-desktop-macos',
     supportsSampling: true,
-    detectionConfidence: 'high',
   },
   desktop: {
     clientName: 'claude-desktop',
     supportsSampling: true,
-    detectionConfidence: 'high',
   },
   web: {
     clientName: 'claude-web',
     supportsSampling: false,
-    detectionConfidence: 'high',
   },
   unknown: {
     clientName: 'unknown-client',
     supportsSampling: false,
-    detectionConfidence: 'low',
   },
 };
 
@@ -264,7 +259,6 @@ const platformDefaults: Record<
  *
  * // Create platform with medium confidence
  * const mediumConfidence = createMockDetectedPlatform('macos', {
- *   detectionConfidence: 'medium',
  * });
  * ```
  */
@@ -279,7 +273,6 @@ export function createMockDetectedPlatform(
     clientName: options?.clientName ?? defaults.clientName,
     clientVersion: options?.clientVersion ?? '1.0.0',
     supportsSampling: options?.supportsSampling ?? defaults.supportsSampling,
-    detectionConfidence: options?.detectionConfidence ?? defaults.detectionConfidence,
   };
 }
 

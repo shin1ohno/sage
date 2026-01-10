@@ -27,7 +27,6 @@ describe('IntegrationStrategyManager', () => {
     clientName: `Claude ${platform}`,
     clientVersion: '1.0.0',
     supportsSampling,
-    detectionConfidence: 'high',
   });
 
   describe('buildCalendarSamplingMessage', () => {
@@ -37,23 +36,22 @@ describe('IntegrationStrategyManager', () => {
     };
 
     describe('iOS platform', () => {
-      it('should include platform name "iOS" for iOS platform', () => {
+      it('should include flexible platform instructions', () => {
         const message = manager.buildCalendarSamplingMessage(params);
 
-        expect(message).toContain('You are running on iOS platform');
+        expect(message).toContain('Please execute the following steps');
       });
 
-      it('should include MCP tool call instructions for Google Calendar', () => {
+      it('should include MCP tool call instructions', () => {
         const message = manager.buildCalendarSamplingMessage(params);
 
         expect(message).toContain('list_calendar_events MCP tool');
-        expect(message).toContain('"sources": ["google"]');
       });
 
-      it('should include native iOS Calendar API instructions', () => {
+      it('should include native Calendar API availability check', () => {
         const message = manager.buildCalendarSamplingMessage(params);
 
-        expect(message).toContain('native iOS Calendar API');
+        expect(message).toContain('native Calendar API');
       });
 
       it('should include date parameters in the message', () => {
@@ -66,7 +64,7 @@ describe('IntegrationStrategyManager', () => {
       it('should include merge instructions with iCalUID deduplication', () => {
         const message = manager.buildCalendarSamplingMessage(params);
 
-        expect(message).toContain('Merge both sets of events');
+        expect(message).toContain('Merge');
         expect(message).toContain('iCalUID');
       });
 
@@ -85,36 +83,35 @@ describe('IntegrationStrategyManager', () => {
         const message = manager.buildCalendarSamplingMessage(params);
 
         expect(message).toContain('If Google Calendar MCP call fails');
-        expect(message).toContain('If native iOS Calendar access fails');
+        expect(message).toContain('If native Calendar access fails');
       });
     });
 
     describe('iPadOS platform', () => {
-      it('should include platform name "iPadOS" for iPadOS platform', () => {
+      it('should include flexible platform instructions for iPad', () => {
         const message = manager.buildCalendarSamplingMessage(params);
 
-        expect(message).toContain('You are running on iPadOS platform');
+        expect(message).toContain('iOS/iPad');
       });
 
-      it('should include native iPadOS Calendar API instructions', () => {
+      it('should include native Calendar API instructions', () => {
         const message = manager.buildCalendarSamplingMessage(params);
 
-        expect(message).toContain('native iPadOS Calendar API');
+        expect(message).toContain('native Calendar API');
       });
     });
 
     describe('macOS platform', () => {
-      it('should include platform name "macOS" for macOS platform', () => {
+      it('should include Desktop via Remote MCP reference', () => {
         const message = manager.buildCalendarSamplingMessage(params);
 
-        expect(message).toContain('You are running on macOS platform');
+        expect(message).toContain('Desktop via Remote MCP');
       });
 
-      it('should reference MCP tool for all sources on macOS', () => {
+      it('should reference MCP tool for calendar access', () => {
         const message = manager.buildCalendarSamplingMessage(params);
 
         expect(message).toContain('list_calendar_events MCP tool');
-        expect(message).toContain('enabled sources');
       });
     });
 
@@ -169,16 +166,16 @@ describe('IntegrationStrategyManager', () => {
     };
 
     describe('iOS platform', () => {
-      it('should include platform name "iOS" for iOS platform', () => {
+      it('should include flexible platform instructions', () => {
         const message = manager.buildReminderSamplingMessage(basicParams);
 
-        expect(message).toContain('You are running on iOS platform');
+        expect(message).toContain('native Reminders API');
       });
 
-      it('should include native iOS Reminders API instructions', () => {
+      it('should include native Reminders API availability check', () => {
         const message = manager.buildReminderSamplingMessage(basicParams);
 
-        expect(message).toContain('native iOS Reminders API');
+        expect(message).toContain('Check if you have access to native Reminders API');
       });
 
       it('should include the reminder title', () => {
@@ -211,10 +208,13 @@ describe('IntegrationStrategyManager', () => {
         expect(message).toContain('List: Shopping');
       });
 
-      it('should indicate no optional fields when only title is provided', () => {
+      it('should not include optional fields when only title is provided', () => {
         const message = manager.buildReminderSamplingMessage(basicParams);
 
-        expect(message).toContain('No optional fields provided');
+        expect(message).not.toContain('Due Date:');
+        expect(message).not.toContain('Notes:');
+        expect(message).not.toContain('Priority:');
+        expect(message).not.toContain('List:');
       });
 
       it('should include JSON response structure', () => {
@@ -228,8 +228,8 @@ describe('IntegrationStrategyManager', () => {
       it('should include error handling instructions', () => {
         const message = manager.buildReminderSamplingMessage(basicParams);
 
-        expect(message).toContain('If reminder creation fails');
-        expect(message).toContain('success: false');
+        expect(message).toContain('If native API not available');
+        expect(message).toContain('"success": false');
       });
 
       it('should include priority mapping instructions', () => {
@@ -243,36 +243,36 @@ describe('IntegrationStrategyManager', () => {
     });
 
     describe('iPadOS platform', () => {
-      it('should include platform name "iPadOS" for iPadOS platform', () => {
+      it('should include flexible platform instructions for iPad', () => {
         const message = manager.buildReminderSamplingMessage(basicParams);
 
-        expect(message).toContain('You are running on iPadOS platform');
+        expect(message).toContain('iOS/iPad');
       });
 
-      it('should include native iPadOS Reminders API instructions', () => {
+      it('should include native Reminders API instructions', () => {
         const message = manager.buildReminderSamplingMessage(basicParams);
 
-        expect(message).toContain('native iPadOS Reminders API');
+        expect(message).toContain('native Reminders API');
       });
     });
 
     describe('macOS platform', () => {
-      it('should include platform name "macOS" for macOS platform', () => {
+      it('should include macOS Desktop platform reference', () => {
         const message = manager.buildReminderSamplingMessage(basicParams);
 
-        expect(message).toContain('You are running on macOS platform');
+        expect(message).toContain('macOS Desktop');
       });
 
-      it('should reference set_reminder MCP tool on macOS', () => {
+      it('should reference Remote MCP for Desktop', () => {
         const message = manager.buildReminderSamplingMessage(basicParams);
 
-        expect(message).toContain('set_reminder MCP tool');
+        expect(message).toContain('Desktop via Remote MCP');
       });
 
-      it('should mention AppleScript backend on macOS', () => {
+      it('should mention platform limitation handling', () => {
         const message = manager.buildReminderSamplingMessage(basicParams);
 
-        expect(message).toContain('AppleScript');
+        expect(message).toContain('works on any platform');
       });
     });
 
@@ -372,6 +372,7 @@ describe('IntegrationStrategyManager', () => {
     const params = { startDate: '2026-01-01', endDate: '2026-01-31' };
 
     it('should return Sampling strategy for iOS with Sampling support', () => {
+      const platform = createMockPlatform('ios');
       const strategy = manager.getCalendarStrategy(platform, params);
 
       expect(strategy.useSampling).toBe(true);
@@ -381,6 +382,7 @@ describe('IntegrationStrategyManager', () => {
     });
 
     it('should return MCP-only strategy for macOS', () => {
+      const platform = createMockPlatform('macos');
       const strategy = manager.getCalendarStrategy(platform, params);
 
       expect(strategy.useSampling).toBe(false);
@@ -390,6 +392,7 @@ describe('IntegrationStrategyManager', () => {
     });
 
     it('should return MCP-only strategy for web', () => {
+      const platform = createMockPlatform('web');
       const strategy = manager.getCalendarStrategy(platform, params);
 
       expect(strategy.useSampling).toBe(false);
@@ -401,6 +404,7 @@ describe('IntegrationStrategyManager', () => {
     const params = { title: 'Test reminder' };
 
     it('should return Sampling strategy for iOS with Sampling support', () => {
+      const platform = createMockPlatform('ios');
       const strategy = manager.getReminderStrategy(platform, params);
 
       expect(strategy.useSampling).toBe(true);
@@ -409,6 +413,7 @@ describe('IntegrationStrategyManager', () => {
     });
 
     it('should return MCP-only strategy for macOS', () => {
+      const platform = createMockPlatform('macos');
       const strategy = manager.getReminderStrategy(platform, params);
 
       expect(strategy.useSampling).toBe(false);
@@ -416,6 +421,7 @@ describe('IntegrationStrategyManager', () => {
     });
 
     it('should return empty strategy for web (reminders not supported)', () => {
+      const platform = createMockPlatform('web');
       const strategy = manager.getReminderStrategy(platform, params);
 
       expect(strategy.useSampling).toBe(false);

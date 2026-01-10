@@ -117,8 +117,7 @@ describe('iOS Platform Calendar Integration', () => {
       const response = await handleListCalendarEventsWithSampling(
         { startDate: '2026-01-15', endDate: '2026-01-20' },
         calendarContext,
-        mockSamplingContext,
-        IOS_DETECTED_PLATFORM
+        mockSamplingContext
       );
 
       // Verify response structure
@@ -180,8 +179,7 @@ describe('iOS Platform Calendar Integration', () => {
       await handleListCalendarEventsWithSampling(
         { startDate: '2026-01-15', endDate: '2026-01-20' },
         calendarContext,
-        mockSamplingContext,
-        IOS_DETECTED_PLATFORM
+        mockSamplingContext
       );
 
       // Verify createMessage was called
@@ -189,12 +187,12 @@ describe('iOS Platform Calendar Integration', () => {
 
       // Verify the Sampling message contains expected instructions
       expect(capturedMessage).toBeDefined();
-      expect(capturedMessage).toContain('iOS');
+      expect(capturedMessage).toContain('iOS/iPad');
       expect(capturedMessage).toContain('list_calendar_events');
       expect(capturedMessage).toContain('2026-01-15');
       expect(capturedMessage).toContain('2026-01-20');
       expect(capturedMessage).toContain('native');
-      expect(capturedMessage).toContain('merge');
+      expect(capturedMessage).toContain('Merge');
     });
 
     it('should verify Sampling request is sent with correct parameters', async () => {
@@ -225,8 +223,7 @@ describe('iOS Platform Calendar Integration', () => {
       await handleListCalendarEventsWithSampling(
         { startDate: '2026-01-15', endDate: '2026-01-20' },
         calendarContext,
-        mockSamplingContext,
-        IOS_DETECTED_PLATFORM
+        mockSamplingContext
       );
 
       // Verify Sampling request parameters
@@ -259,13 +256,13 @@ describe('iOS Platform Calendar Integration', () => {
       });
 
       // Verify message contains all required instructions
-      expect(message).toContain('iOS');
+      expect(message).toContain('iOS/iPad');
       expect(message).toContain('list_calendar_events');
       expect(message).toContain('"startDate": "2026-01-15"');
       expect(message).toContain('"endDate": "2026-01-20"');
-      expect(message).toContain('native iOS Calendar API');
+      expect(message).toContain('native Calendar API');
       expect(message).toContain('iCalUID');
-      expect(message).toContain('merge');
+      expect(message).toContain('Merge');
       expect(message).toContain('"source"');
     });
 
@@ -282,7 +279,7 @@ describe('iOS Platform Calendar Integration', () => {
       });
 
       expect(strategy.useSampling).toBe(true);
-      expect(strategy.samplingMessage).toContain('iPadOS');
+      expect(strategy.samplingMessage).toContain('iOS/iPad');
     });
   });
 
@@ -310,8 +307,7 @@ describe('iOS Platform Calendar Integration', () => {
       const response = await handleListCalendarEventsWithSampling(
         { startDate: '2026-01-15', endDate: '2026-01-20' },
         calendarContext,
-        mockSamplingContext,
-        IOS_DETECTED_PLATFORM
+        mockSamplingContext
       );
 
       // Verify graceful handling of user rejection
@@ -344,8 +340,7 @@ describe('iOS Platform Calendar Integration', () => {
       const response = await handleListCalendarEventsWithSampling(
         { startDate: '2026-01-15', endDate: '2026-01-20' },
         calendarContext,
-        mockSamplingContext,
-        IOS_DETECTED_PLATFORM
+        mockSamplingContext
       );
 
       // Verify graceful handling of unsupported Sampling
@@ -376,8 +371,7 @@ describe('iOS Platform Calendar Integration', () => {
         handleListCalendarEventsWithSampling(
           { startDate: '2026-01-15', endDate: '2026-01-20' },
           calendarContext,
-          mockSamplingContext,
-          IOS_DETECTED_PLATFORM
+          mockSamplingContext
         )
       ).rejects.toThrow();
     });
@@ -433,8 +427,7 @@ describe('iOS Platform Calendar Integration', () => {
       const response = await handleListCalendarEventsWithSampling(
         { startDate: '2026-01-15', endDate: '2026-01-20' },
         calendarContext,
-        mockSamplingContext,
-        IOS_DETECTED_PLATFORM
+        mockSamplingContext
       );
 
       const responseData = JSON.parse(response.content[0].text);
@@ -474,8 +467,7 @@ describe('iOS Platform Calendar Integration', () => {
       const response = await handleListCalendarEventsWithSampling(
         { startDate: '2026-01-15', endDate: '2026-01-20' },
         calendarContext,
-        mockSamplingContext,
-        IOS_DETECTED_PLATFORM
+        mockSamplingContext
       );
 
       const responseData = JSON.parse(response.content[0].text);
@@ -488,7 +480,6 @@ describe('iOS Platform Calendar Integration', () => {
     it('should correctly identify iOS platform for Sampling', () => {
       expect(IOS_DETECTED_PLATFORM.platform).toBe('ios');
       expect(IOS_DETECTED_PLATFORM.supportsSampling).toBe(true);
-      expect(IOS_DETECTED_PLATFORM.detectionConfidence).toBe('high');
     });
 
     it('should use Sampling when platform supports it', async () => {
@@ -518,8 +509,7 @@ describe('iOS Platform Calendar Integration', () => {
       await handleListCalendarEventsWithSampling(
         { startDate: '2026-01-15', endDate: '2026-01-20' },
         calendarContext,
-        mockSamplingContext,
-        IOS_DETECTED_PLATFORM
+        mockSamplingContext
       );
 
       // Verify Sampling was used

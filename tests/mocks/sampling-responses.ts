@@ -186,7 +186,6 @@ export const sampleReminderResultData = {
     clientName: 'claude-ios',
     clientVersion: '1.0.0',
     supportsSampling: true,
-    detectionConfidence: 'high',
   },
   reminderDetails: {
     title: 'Complete quarterly report',
@@ -228,7 +227,6 @@ export const sampleReminderFailedData = {
     clientName: 'claude-ios',
     clientVersion: '1.0.0',
     supportsSampling: true,
-    detectionConfidence: 'high',
   },
 };
 

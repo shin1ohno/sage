@@ -64,7 +64,6 @@ export class CapabilityDetector {
       supportsSampling,
       clientName: 'Unknown',
       clientVersion: undefined,
-      detectionConfidence: 0.5,
     };
   }
 

@@ -41,7 +41,6 @@ describe('Platform Tool Handlers', () => {
         expect(response.clientName).toBe('claude-desktop');
         expect(response.clientVersion).toBe('1.0.0');
         expect(response.supportsSampling).toBe(false); // Desktop doesn't support Sampling
-        expect(response.detectionConfidence).toBe(0.9);
 
         // Available integrations (capability-based)
         expect(response.availableIntegrations.calendar.google).toBe(true);
@@ -154,15 +153,11 @@ describe('Platform Tool Handlers', () => {
 
         // Core platform info
         expect(response.platform).toBe('unknown');
-        expect(response.detectionConfidence).toBe(0.3); // Numeric confidence (low = 0.3)
 
         // Warnings should include unknown platform warning
         expect(response.warnings).toBeDefined();
         expect(response.warnings).toContainEqual(
           expect.stringContaining('Unknown platform detected')
-        );
-        expect(response.warnings).toContainEqual(
-          expect.stringContaining('confidence is low')
         );
       });
     });

@@ -124,13 +124,6 @@ function buildWarnings(
     );
   }
 
-  // Low confidence detection warning
-  if (platform.detectionConfidence !== undefined && platform.detectionConfidence < 0.5) {
-    warnings.push(
-      `Platform detection confidence is low. Some integrations may not work correctly.`
-    );
-  }
-
   // Google Calendar not authenticated (Requirement 7.7)
   const googleEnabled = config?.integrations?.googleCalendar?.enabled ?? false;
   if (!googleEnabled) {
@@ -183,7 +176,6 @@ function getPlatformSummary(platform: DetectedPlatform['platform']): string {
  * - clientName: MCP client application name
  * - clientVersion: MCP client version
  * - supportsSampling: Whether Sampling is available
- * - detectionConfidence: Confidence level of platform detection
  * - availableIntegrations: Calendar and reminders integration status
  * - integrationSummary: Human-readable integration summary
  * - warnings: Array of warning messages
@@ -246,7 +238,6 @@ export async function handleGetPlatformInfo(
     clientName: platformInfo.clientName,
     clientVersion: platformInfo.clientVersion,
     supportsSampling: platformInfo.supportsSampling,
-    detectionConfidence: platform.detectionConfidence,
 
     // Structured integration status
     availableIntegrations: platformInfo.availableIntegrations,
