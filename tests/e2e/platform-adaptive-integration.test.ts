@@ -69,7 +69,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
           sampling: {},
         };
 
-        const detected = PlatformDetector.detectPlatform(clientInfo, capabilities);
+        const detected = PlatformDetector.detectPlatform(capabilities);
 
         expect(detected.platform).toBe('ios');
         expect(detected.clientName).toBe('claude-ios');
@@ -87,7 +87,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
           sampling: {},
         };
 
-        const detected = PlatformDetector.detectPlatform(clientInfo, capabilities);
+        const detected = PlatformDetector.detectPlatform(capabilities);
 
         expect(detected.platform).toBe('ipados');
         expect(detected.clientName).toBe('claude-ipados');
@@ -106,7 +106,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
           sampling: {},
         };
 
-        const detected = PlatformDetector.detectPlatform(clientInfo, capabilities);
+        const detected = PlatformDetector.detectPlatform(capabilities);
 
         // claude-desktop is detected as 'desktop' platform (high confidence)
         expect(detected.platform).toBe('desktop');
@@ -124,7 +124,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
           sampling: {},
         };
 
-        const detected = PlatformDetector.detectPlatform(clientInfo, capabilities);
+        const detected = PlatformDetector.detectPlatform(capabilities);
 
         // claude-code is detected as 'macos' platform (medium confidence)
         expect(detected.platform).toBe('macos');
@@ -140,7 +140,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
         };
         const capabilities: ClientCapabilities = {};
 
-        const detected = PlatformDetector.detectPlatform(clientInfo, capabilities);
+        const detected = PlatformDetector.detectPlatform(capabilities);
 
         expect(detected.platform).toBe('desktop');
         expect(detected.supportsSampling).toBe(false);
@@ -155,7 +155,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
         };
         const capabilities: ClientCapabilities = {};
 
-        const detected = PlatformDetector.detectPlatform(clientInfo, capabilities);
+        const detected = PlatformDetector.detectPlatform(capabilities);
 
         expect(detected.platform).toBe('web');
         expect(detected.clientName).toBe('claude-web');
@@ -172,7 +172,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
         };
         const capabilities: ClientCapabilities = {};
 
-        const detected = PlatformDetector.detectPlatform(clientInfo, capabilities);
+        const detected = PlatformDetector.detectPlatform(capabilities);
 
         expect(detected.platform).toBe('unknown');
         expect(detected.detectionConfidence).toBe('low');
@@ -689,7 +689,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
       };
 
       // Step 2: Verify platform detection
-      const detectedPlatform = PlatformDetector.detectPlatform(clientInfo, capabilities);
+      const detectedPlatform = PlatformDetector.detectPlatform(capabilities);
 
       expect(detectedPlatform).toBeDefined();
       expect(detectedPlatform.platform).toBe('ios');
@@ -850,7 +850,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
         sampling: {},
       };
 
-      const detectedPlatform = PlatformDetector.detectPlatform(clientInfo, capabilities);
+      const detectedPlatform = PlatformDetector.detectPlatform(capabilities);
 
       // Mock MCP server that rejects Sampling request
       const mockMcpServer = {
@@ -909,7 +909,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
           sampling: {},
         };
 
-        const detectedPlatform = PlatformDetector.detectPlatform(clientInfo, capabilities);
+        const detectedPlatform = PlatformDetector.detectPlatform(capabilities);
         expect(detectedPlatform.platform).toBe('ios');
         expect(detectedPlatform.supportsSampling).toBe(true);
 
@@ -957,7 +957,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
           sampling: {},
         };
 
-        const detectedPlatform = PlatformDetector.detectPlatform(clientInfo, capabilities);
+        const detectedPlatform = PlatformDetector.detectPlatform(capabilities);
         expect(detectedPlatform.platform).toBe('desktop');
         expect(detectedPlatform.supportsSampling).toBe(true);
 
@@ -1013,7 +1013,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
         };
         const capabilities: ClientCapabilities = {};
 
-        const detectedPlatform = PlatformDetector.detectPlatform(clientInfo, capabilities);
+        const detectedPlatform = PlatformDetector.detectPlatform(capabilities);
         expect(detectedPlatform.platform).toBe('web');
         expect(detectedPlatform.supportsSampling).toBe(false);
 
