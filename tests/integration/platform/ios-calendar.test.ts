@@ -253,7 +253,7 @@ describe('iOS Platform Calendar Integration', () => {
     });
 
     it('should build correct Sampling message for iOS calendar', () => {
-      const message = strategyManager.buildCalendarSamplingMessage(IOS_DETECTED_PLATFORM, {
+      const message = strategyManager.buildCalendarSamplingMessage({
         startDate: '2026-01-15',
         endDate: '2026-01-20',
       });
