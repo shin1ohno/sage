@@ -208,3 +208,36 @@ export interface RemindersIntegrations {
   native: boolean;
   sampling?: boolean;
 }
+
+/**
+ * Configuration storage interface (legacy, moved from platform/types.ts)
+ * Different platforms use different storage mechanisms
+ * @deprecated Consider moving to src/types/storage.ts
+ */
+export interface ConfigStorage {
+  /**
+   * Load configuration from storage
+   */
+  load(): Promise<Record<string, unknown> | null>;
+
+  /**
+   * Save configuration to storage
+   */
+  save(config: Record<string, unknown>): Promise<void>;
+
+  /**
+   * Check if configuration exists
+   */
+  exists(): Promise<boolean>;
+
+  /**
+   * Delete configuration
+   */
+  delete(): Promise<void>;
+}
+
+/**
+ * Platform type enumeration (legacy, from platform/types.ts)
+ * @deprecated Not used in new capability-based system
+ */
+export type PlatformType = 'desktop_mcp' | 'remote_mcp';

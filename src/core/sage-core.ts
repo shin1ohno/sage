@@ -10,8 +10,14 @@
  * 注意: Remote MCP Server も macOS 上で実行する必要があります（AppleScript のため）
  */
 
-import type { PlatformAdapter, PlatformInfo, FeatureSet } from '../platform/types.js';
+// Legacy imports - TODO: Refactor sage-core to not depend on these
+// import type { PlatformAdapter, PlatformInfo, FeatureSet } from '../platform/types.js';
 import type { Task, UserConfig } from '../types/index.js';
+
+// Temporary type definitions for sage-core (legacy)
+type PlatformAdapter = any;
+type PlatformInfo = any;
+type FeatureSet = any;
 import { TaskAnalyzer } from '../tools/analyze-tasks.js';
 import type { AnalysisResult } from '../tools/analyze-tasks.js';
 import { DEFAULT_CONFIG } from '../types/config.js';
