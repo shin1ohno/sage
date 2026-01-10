@@ -1,12 +1,12 @@
 /**
  * IntegrationStrategyManager
  *
- * Manages platform-specific integration strategies for calendar and reminder operations.
+ * Manages integration strategies for calendar and reminder operations.
  * Uses the Strategy Pattern to determine the optimal integration approach based on
- * the detected platform (iOS/iPad/macOS/web).
+ * whether the client supports MCP Sampling.
  *
  * This component is responsible for:
- * 1. Determining which integration strategy to use for each platform
+ * 1. Determining which integration strategy to use (Sampling vs MCP-only)
  * 2. Building Sampling messages that instruct Claude on how to execute operations
  * 3. Sanitizing user input before including in Sampling messages
  *
@@ -14,8 +14,6 @@
  * @see requirements.md 4.1-4.3 (Reminder Strategy)
  * @see design.md Component 3: Integration Strategy Manager
  */
-
-import type { DetectedPlatform } from '../types/platform.js';
 
 /**
  * Describes the integration strategy for a specific operation
@@ -158,40 +156,20 @@ export class IntegrationStrategyManager {
    * ```
    */
   getCalendarStrategy(
-    platform: DetectedPlatform,
+    supportsSampling: boolean,
     params: CalendarParams
   ): IntegrationStrategy {
-    const { platform: platformType, supportsSampling } = platform;
-
-    // iOS/iPad: Use Sampling for MCP (Google) + Native (Apple Calendar)
-    if (this.isIOSPlatform(platformType) && supportsSampling) {
+    // Sampling supported: Use Sampling for native + MCP calendars
+    if (supportsSampling) {
       return {
         useSampling: true,
         samplingMessage: this.buildCalendarSamplingMessage(params),
         mcpToolsToCall: ['list_calendar_events'],
-        nativeIntegrations: ['ios-calendar'],
+        nativeIntegrations: ['native-calendar'],
       };
     }
 
-    // macOS: Use MCP directly for both EventKit and Google Calendar
-    if (platformType === 'macos') {
-      return {
-        useSampling: false,
-        mcpToolsToCall: ['list_calendar_events'],
-        nativeIntegrations: [],
-      };
-    }
-
-    // Web: MCP for Google Calendar only
-    if (platformType === 'web') {
-      return {
-        useSampling: false,
-        mcpToolsToCall: ['list_calendar_events'],
-        nativeIntegrations: [],
-      };
-    }
-
-    // Desktop/Unknown: Fallback to MCP-only mode
+    // Sampling not supported: Use MCP directly
     return {
       useSampling: false,
       mcpToolsToCall: ['list_calendar_events'],
@@ -228,41 +206,21 @@ export class IntegrationStrategyManager {
    * ```
    */
   getReminderStrategy(
-    platform: DetectedPlatform,
+    supportsSampling: boolean,
     params: ReminderParams
   ): IntegrationStrategy {
-    const { platform: platformType, supportsSampling } = platform;
-
-    // iOS/iPad: Use Sampling for native iOS Reminders API
-    if (this.isIOSPlatform(platformType) && supportsSampling) {
+    // Sampling supported: Use Sampling for native reminders
+    if (supportsSampling) {
       return {
         useSampling: true,
         samplingMessage: this.buildReminderSamplingMessage(params),
         mcpToolsToCall: [],
-        nativeIntegrations: ['ios-reminders'],
+        nativeIntegrations: ['native-reminders'],
       };
     }
 
-    // macOS: Use existing AppleScript-based MCP tool
-    if (platformType === 'macos') {
-      return {
-        useSampling: false,
-        mcpToolsToCall: ['set_reminder'],
-        nativeIntegrations: [],
-      };
-    }
-
-    // Web: Reminders not supported
-    if (platformType === 'web') {
-      return {
-        useSampling: false,
-        mcpToolsToCall: [],
-        nativeIntegrations: [],
-        // Note: Caller should handle this case by returning an error to the user
-      };
-    }
-
-    // Desktop/Unknown: Try AppleScript-based MCP tool
+    // Sampling not supported: Use AppleScript-based MCP tool if on macOS
+    // Server environment check (process.platform) is done by the reminder service
     return {
       useSampling: false,
       mcpToolsToCall: ['set_reminder'],
@@ -459,16 +417,6 @@ Important:
 - This approach works on any platform`;
 
     return message;
-  }
-
-  /**
-   * Check if the platform is iOS or iPadOS
-   *
-   * @param platformType - The platform type string
-   * @returns True if the platform is iOS or iPadOS
-   */
-  private isIOSPlatform(platformType: string): boolean {
-    return platformType === 'ios' || platformType === 'ipados';
   }
 
   /**
