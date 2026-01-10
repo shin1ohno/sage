@@ -24,12 +24,12 @@ import type { CalendarEvent, CalendarEventDetailed } from '../../../src/integrat
 
 describe('macOS Platform Calendar Integration', () => {
   describe('Platform Detection', () => {
-    it.skip('should identify macOS platform with DEFAULT_DETECTED_PLATFORM [TODO: Update for capability-based system]', () => {
+    it('should identify macOS platform with DEFAULT_DETECTED_PLATFORM', () => {
       // Verify the DEFAULT_DETECTED_PLATFORM is macOS
       expect(DEFAULT_DETECTED_PLATFORM.platform).toBe('macos');
       expect(DEFAULT_DETECTED_PLATFORM.clientName).toBe('claude-desktop');
-      expect(DEFAULT_DETECTED_PLATFORM.supportsSampling).toBe(true);
-      expect(DEFAULT_DETECTED_PLATFORM.detectionConfidence).toBe('high');
+      expect(DEFAULT_DETECTED_PLATFORM.supportsSampling).toBe(false); // Desktop doesn't support Sampling
+      expect(DEFAULT_DETECTED_PLATFORM.detectionConfidence).toBe(0.9);
     });
   });
 
@@ -100,7 +100,7 @@ describe('macOS Platform Calendar Integration', () => {
       // but the routing decision in index.ts checks for platform === 'ios' || platform === 'ipados'
       // So macOS always uses the MCP-only path
 
-      expect(DEFAULT_DETECTED_PLATFORM.supportsSampling).toBe(true);
+      expect(DEFAULT_DETECTED_PLATFORM.supportsSampling).toBe(false) // Desktop does not support Sampling;
       expect(DEFAULT_DETECTED_PLATFORM.platform).toBe('macos');
 
       // Verify macOS is NOT ios or ipados (which are the Sampling platforms)

@@ -23,7 +23,7 @@ describe('Platform Tool Handlers', () => {
 
   describe('handleGetPlatformInfo', () => {
     describe('when platform is detected successfully', () => {
-      it.skip('should return macOS platform info with all integrations [TODO: Update for capability-based system]', async () => {
+      it('should return macOS platform info with all integrations', async () => {
         const ctx = createMockPlatformToolsContext({
           platformInfo: DEFAULT_DETECTED_PLATFORM,
           config: createTestConfig({
@@ -40,15 +40,15 @@ describe('Platform Tool Handlers', () => {
         expect(response.platform).toBe('macos');
         expect(response.clientName).toBe('claude-desktop');
         expect(response.clientVersion).toBe('1.0.0');
-        expect(response.supportsSampling).toBe(true);
-        expect(response.detectionConfidence).toBe('high');
+        expect(response.supportsSampling).toBe(false); // Desktop doesn't support Sampling
+        expect(response.detectionConfidence).toBe(0.9);
 
-        // Available integrations
+        // Available integrations (capability-based)
         expect(response.availableIntegrations.calendar.google).toBe(true);
         expect(response.availableIntegrations.calendar.eventkit).toBe(true);
-        expect(response.availableIntegrations.calendar.native).toBe(false);
+        expect(response.availableIntegrations.calendar.native).toBe(false); // No Sampling on desktop
         expect(response.availableIntegrations.reminders.applescript).toBe(true);
-        expect(response.availableIntegrations.reminders.native).toBe(false);
+        expect(response.availableIntegrations.reminders.native).toBe(false); // No Sampling on desktop
 
         // Human-readable integration lists
         expect(response.calendarIntegrations).toContain('Google Calendar (MCP)');
@@ -58,11 +58,14 @@ describe('Platform Tool Handlers', () => {
         // Platform summary (Requirement 7.3)
         expect(response.integrationSummary).toContain('macOS');
 
-        // No warnings when everything is configured
-        expect(response.warnings).toBeUndefined();
+        // Warning about no Sampling support on desktop
+        expect(response.warnings).toBeDefined();
+        expect(response.warnings).toContain(
+          'Platform-adaptive integration unavailable: Your Claude client does not support Sampling.'
+        );
       });
 
-      it.skip('should return iOS platform info with native integrations [TODO: Fix for capability-based system] (Requirement 7.2)', async () => {
+      it('should return iOS platform info with native integrations (Requirement 7.2)', async () => {
         const ctx = createMockPlatformToolsContext({
           platformInfo: IOS_DETECTED_PLATFORM,
           config: createTestConfig({
@@ -80,12 +83,14 @@ describe('Platform Tool Handlers', () => {
         expect(response.clientName).toBe('claude-ios');
         expect(response.supportsSampling).toBe(true);
 
-        // Available integrations (Requirement 7.2)
+        // Available integrations (Requirement 7.2) - capability-based
         expect(response.availableIntegrations.calendar.google).toBe(true);
-        expect(response.availableIntegrations.calendar.native).toBe(true);
-        expect(response.availableIntegrations.calendar.eventkit).toBe(false);
-        expect(response.availableIntegrations.reminders.native).toBe(true);
-        expect(response.availableIntegrations.reminders.applescript).toBe(false);
+        expect(response.availableIntegrations.calendar.native).toBe(true); // Sampling support
+        // Note: eventkit/applescript depend on actual process.platform, not detected platform
+        const isMacOS = process.platform === 'darwin';
+        expect(response.availableIntegrations.calendar.eventkit).toBe(isMacOS); // Runtime platform check
+        expect(response.availableIntegrations.reminders.native).toBe(true); // Sampling support
+        expect(response.availableIntegrations.reminders.applescript).toBe(isMacOS); // Runtime platform check
 
         // Human-readable integration lists
         expect(response.calendarIntegrations).toContain('Google Calendar (MCP)');
@@ -98,7 +103,7 @@ describe('Platform Tool Handlers', () => {
         expect(response.integrationSummary).toContain('Apple Calendar (native)');
       });
 
-      it.skip('should return web platform info with limited integrations (Requirement 7.4)', async () => {
+      it('should return web platform info with limited integrations (Requirement 7.4)', async () => {
         const ctx = createMockPlatformToolsContext({
           platformInfo: WEB_DETECTED_PLATFORM,
           config: createTestConfig({
@@ -115,12 +120,14 @@ describe('Platform Tool Handlers', () => {
         expect(response.platform).toBe('web');
         expect(response.supportsSampling).toBe(false);
 
-        // Available integrations (Requirement 7.4)
+        // Available integrations (Requirement 7.4) - capability-based
         expect(response.availableIntegrations.calendar.google).toBe(true);
-        expect(response.availableIntegrations.calendar.native).toBe(false);
-        expect(response.availableIntegrations.calendar.eventkit).toBe(false);
-        expect(response.availableIntegrations.reminders.native).toBe(false);
-        expect(response.availableIntegrations.reminders.applescript).toBe(false);
+        expect(response.availableIntegrations.calendar.native).toBe(false); // No Sampling on web
+        // Note: eventkit/applescript depend on actual process.platform
+        const isMacOS = process.platform === 'darwin';
+        expect(response.availableIntegrations.calendar.eventkit).toBe(isMacOS); // Runtime platform check
+        expect(response.availableIntegrations.reminders.native).toBe(false); // No Sampling on web
+        expect(response.availableIntegrations.reminders.applescript).toBe(isMacOS); // Runtime platform check
 
         // Reminders warning for web
         expect(response.remindersIntegrations).toContain('Reminders not supported on web platform');
@@ -136,7 +143,7 @@ describe('Platform Tool Handlers', () => {
         );
       });
 
-      it.skip('should return unknown platform info with warnings [TODO: Update for capability-based system]', async () => {
+      it('should return unknown platform info with warnings', async () => {
         const ctx = createMockPlatformToolsContext({
           platformInfo: UNKNOWN_DETECTED_PLATFORM,
           config: DEFAULT_TEST_CONFIG,
@@ -147,7 +154,7 @@ describe('Platform Tool Handlers', () => {
 
         // Core platform info
         expect(response.platform).toBe('unknown');
-        expect(response.detectionConfidence).toBe('low');
+        expect(response.detectionConfidence).toBe(0.3); // Numeric confidence (low = 0.3)
 
         // Warnings should include unknown platform warning
         expect(response.warnings).toBeDefined();

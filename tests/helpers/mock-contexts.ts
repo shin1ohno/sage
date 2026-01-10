@@ -370,13 +370,14 @@ export interface MockPlatformToolsContext extends PlatformToolsContext {
 }
 
 /**
- * Default detected platform for testing (macOS with Sampling support)
+ * Default detected platform for testing (macOS without Sampling support)
+ * Claude Desktop on macOS does not support Sampling
  */
 export const DEFAULT_DETECTED_PLATFORM: DetectedPlatform = {
   platform: 'macos',
   clientName: 'claude-desktop',
   clientVersion: '1.0.0',
-  supportsSampling: true,
+  supportsSampling: false, // Desktop clients don't support Sampling
   detectionConfidence: 0.9,
 };
 

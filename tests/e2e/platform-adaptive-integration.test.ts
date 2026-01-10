@@ -539,7 +539,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
     });
 
     describe('iOS platform info (Requirement 7.2)', () => {
-      it.skip('should return iOS platform info with native integrations [TODO: Fix for capability-based system]', async () => {
+      it('should return iOS platform info with native integrations', async () => {
         const ctx = createMockPlatformToolsContext({
           platformInfo: IOS_DETECTED_PLATFORM,
           config: createTestConfig({
@@ -573,7 +573,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
     });
 
     describe('Web platform info (Requirement 7.4)', () => {
-      it.skip('should return web platform info with limited integrations [TODO: Fix for capability-based system]', async () => {
+      it('should return web platform info with limited integrations', async () => {
         const ctx = createMockPlatformToolsContext({
           platformInfo: WEB_DETECTED_PLATFORM,
           config: createTestConfig({
