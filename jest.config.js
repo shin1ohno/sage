@@ -11,6 +11,7 @@ const config = {
       'ts-jest',
       {
         useESM: true,
+        isolatedModules: true,
         tsconfig: {
           module: 'ESNext',
           moduleResolution: 'bundler',
