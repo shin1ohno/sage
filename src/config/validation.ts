@@ -11,6 +11,7 @@ import { validateRecurrenceRules, type ValidationResult as RecurrenceValidationR
  */
 export const EventKitSourceConfigSchema = z.object({
   enabled: z.boolean(),
+  selectedCalendars: z.array(z.string()).optional(),
 });
 
 /**
@@ -20,6 +21,7 @@ export const GoogleCalendarSourceConfigSchema = z.object({
   enabled: z.boolean(),
   defaultCalendar: z.string().default('primary'),
   excludedCalendars: z.array(z.string()).default([]),
+  selectedCalendars: z.array(z.string()).optional(),
   syncInterval: z.number().min(60).max(3600).default(300),
   enableNotifications: z.boolean().default(true),
 });
@@ -72,6 +74,42 @@ export function validateCalendarSources(sources: unknown): {
 export type ValidatedCalendarSources = z.infer<typeof CalendarSourcesSchema>;
 export type ValidatedEventKitSourceConfig = z.infer<typeof EventKitSourceConfigSchema>;
 export type ValidatedGoogleCalendarSourceConfig = z.infer<typeof GoogleCalendarSourceConfigSchema>;
+
+// ============================================================
+// Calendar Resource Schema
+// Requirement: multi-calendar-resources 1.3
+// ============================================================
+
+/**
+ * Calendar Source Schema
+ */
+export const CalendarSourceSchema = z.enum(['eventkit', 'google']);
+
+/**
+ * Calendar Resource Schema
+ * Validates calendar resource objects
+ * Requirement: multi-calendar-resources 1.3
+ */
+export const CalendarResourceSchema = z.object({
+  id: z.string().min(1, 'Calendar ID is required'),
+  name: z.string().min(1, 'Calendar name is required'),
+  source: CalendarSourceSchema,
+  color: z.string().optional(),
+  isPrimary: z.boolean().optional(),
+  isWritable: z.boolean().optional(),
+  accessRole: z.enum(['owner', 'writer', 'reader', 'freeBusyReader']).optional(),
+});
+
+/**
+ * Type export for validated calendar resource
+ */
+export type ValidatedCalendarResource = z.infer<typeof CalendarResourceSchema>;
+
+/**
+ * Calendar IDs array schema for filtering
+ * Requirement: multi-calendar-resources 3.1, 5.2
+ */
+export const CalendarIdsSchema = z.array(z.string()).optional();
 
 // ============================================================
 // Google Calendar Event Type Schemas

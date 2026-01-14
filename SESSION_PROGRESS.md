@@ -1,6 +1,101 @@
 # Session Progress - sage
 
-## Current Session: 2026-01-15 - テストパフォーマンス最適化
+## Current Session: 2026-01-15 - Multi-Calendar Resources実装
+
+### 完了タスク
+
+#### 複数カレンダーリソース参照機能 ✅
+
+**仕様ファイル**: `.claude/specs/multi-calendar-resources/`
+
+**目的**: EventKitとGoogle Calendarの両方から個別のカレンダーリソースを列挙し、特定のカレンダーでフィルタリングできるようにする
+
+### 実装タスク完了状況: 20/20タスク完了 ✅
+
+#### Phase 1: Type Definitions ✅
+- **Task 1-4**: 型定義追加
+  - `CalendarResource` interface追加 (`src/types/calendar.ts`)
+  - `CalendarEvent`に`calendarId`, `calendarName`, `calendarColor`フィールド追加
+  - 設定型に`selectedCalendars?: string[]`追加 (`src/types/config.ts`)
+  - Zod validation schema追加 (`src/config/validation.ts`)
+
+#### Phase 2: CalendarService Extension ✅
+- **Task 5**: `listCalendars()`メソッド追加 (`src/integrations/calendar-service.ts`)
+  - AppleScriptObjCでEventKitからカレンダー一覧を取得
+  - `parseListCalendarsResult()`でパース
+
+- **Task 6**: ユニットテスト追加 (`tests/unit/calendar-service.test.ts`)
+  - 9テスト追加（listCalendars, parseListCalendarsResult）
+
+#### Phase 3: CalendarSourceManager Extension ✅
+- **Task 7-11**: CalendarSourceManager拡張
+  - `listCalendarResources(forceRefresh?: boolean)`メソッド追加
+  - 5分TTLキャッシュ実装
+  - `getSelectedCalendarIds()`メソッド追加
+  - `updateSelectedCalendarIds()`メソッド追加
+  - `getEvents()`を`calendarIds?: string[]`パラメータ対応に拡張
+  - ソースタイプ別フィルタリング（`@`含むID→Google、その他→EventKit）
+
+- **Task 12**: ユニットテスト追加 (`tests/integrations/calendar-source-manager.test.ts`)
+  - 7テスト追加（listCalendarResources）
+  - 既存テストを新しいAPI仕様に合わせて修正
+
+#### Phase 4: MCP Tool Implementation ✅
+- **Task 13-18**: MCPツール実装
+  - `list_calendar_resources`ツール追加 (`src/index.ts`, `src/cli/mcp-handler.ts`)
+  - `handleListCalendarResources()`ハンドラー追加 (`src/tools/calendar/handlers.ts`)
+  - `list_calendar_events`の`calendarId`パラメータを`calendarIds`配列に対応
+  - `find_available_slots`の`calendarIds`パラメータ対応
+
+#### Phase 5: Testing ✅
+- **Task 19-20**: 統合テスト追加 (`tests/unit/mcp-handler-tools.test.ts`)
+  - 5テスト追加（list_calendar_resources MCP tool）
+  - Tool Definition検証テスト追加
+
+### テスト結果
+
+```
+Test Suites: 96 passed, 96 total
+Tests:       2 skipped, 2258 passed, 2260 total
+```
+
+### 新規・変更ファイル
+
+**新規/変更 - 型定義:**
+- `src/types/calendar.ts` - `CalendarResource`, `CalendarSource`追加
+- `src/types/config.ts` - `selectedCalendars`追加
+- `src/config/validation.ts` - `CalendarResourceSchema`, `CalendarIdsSchema`追加
+
+**変更 - サービス:**
+- `src/integrations/calendar-service.ts` - `listCalendars()`, `buildListCalendarsScript()`, `parseListCalendarsResult()`追加
+- `src/integrations/calendar-source-manager.ts` - `listCalendarResources()`, キャッシュ機能、`getSelectedCalendarIds()`, `updateSelectedCalendarIds()`, `getEvents()`拡張
+
+**変更 - ツールハンドラー:**
+- `src/tools/calendar/handlers.ts` - `handleListCalendarResources()`追加、他ハンドラーの`calendarIds`対応
+- `src/tools/calendar/index.ts` - エクスポート追加
+
+**変更 - MCP登録:**
+- `src/index.ts` - `list_calendar_resources`ツール登録
+- `src/cli/mcp-handler.ts` - `list_calendar_resources`ツール登録
+
+**変更 - テスト:**
+- `tests/unit/calendar-service.test.ts` - 9テスト追加
+- `tests/integrations/calendar-source-manager.test.ts` - 10テスト追加/修正
+- `tests/unit/mcp-handler-tools.test.ts` - 5テスト追加
+
+### 主要機能
+
+- ✅ EventKit/Google Calendarの個別カレンダー列挙
+- ✅ カレンダーリソースのキャッシュ（5分TTL）
+- ✅ 特定カレンダーでのイベントフィルタリング
+- ✅ ソースタイプ自動判定（`@`含むID→Google）
+- ✅ `list_calendar_resources` MCPツール
+- ✅ `list_calendar_events`の`calendarId`パラメータ対応
+- ✅ `find_available_slots`の`calendarIds`パラメータ対応
+
+---
+
+## Previous Session: 2026-01-15 - テストパフォーマンス最適化
 
 ### 完了タスク
 

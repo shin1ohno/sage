@@ -44,12 +44,16 @@ export interface CalendarSources {
 
 export interface EventKitSourceConfig {
   enabled: boolean;
+  /** Explicitly selected calendars (empty means all calendars) - Requirement: multi-calendar-resources 2.3 */
+  selectedCalendars?: string[];
 }
 
 export interface GoogleCalendarSourceConfig {
   enabled: boolean;
   defaultCalendar: string;
   excludedCalendars: string[];
+  /** Explicitly selected calendars (empty means all calendars) - Requirement: multi-calendar-resources 2.3 */
+  selectedCalendars?: string[];
   syncInterval: number;
   enableNotifications: boolean;
 }

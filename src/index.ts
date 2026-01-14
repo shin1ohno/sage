@@ -64,6 +64,7 @@ import {
   handleDeleteCalendarEventsBatch,
   handleUpdateCalendarEvent,
   handleListCalendarSources,
+  handleListCalendarResources,
   handleGetWorkingCadence,
   handleSearchRoomAvailability,
   handleCheckRoomAvailability,
@@ -811,6 +812,20 @@ async function createServer(): Promise<McpServer> {
     "List available and enabled calendar sources (EventKit, Google Calendar) with their health status. Shows which sources can be used and their current state.",
     {},
     async () => handleListCalendarSources(createCalendarToolsContext()),
+  );
+
+  // list_calendar_resources - list individual calendars from all sources
+  // Requirement: multi-calendar-resources 1.1
+  server.tool(
+    "list_calendar_resources",
+    "List all available calendar resources (individual calendars) from enabled sources. Returns calendar names, IDs, colors, and write permissions. Use this to see which calendars are available before filtering events by calendar.",
+    {
+      source: z
+        .enum(['eventkit', 'google', 'all'])
+        .optional()
+        .describe("Filter by source type: 'eventkit', 'google', or 'all' (default: 'all')"),
+    },
+    async ({ source }) => handleListCalendarResources(createCalendarToolsContext(), { source }),
   );
 
   /**

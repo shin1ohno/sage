@@ -11,6 +11,7 @@ export type {
   CalendarToolsContext,
   FindAvailableSlotsInput,
   ListCalendarEventsInput,
+  ListCalendarResourcesInput,
   RespondToCalendarEventInput,
   RespondToCalendarEventsBatchInput,
   CreateCalendarEventInput,
@@ -28,6 +29,7 @@ export type {
 export {
   handleFindAvailableSlots,
   handleListCalendarEvents,
+  handleListCalendarResources,
   handleRespondToCalendarEvent,
   handleRespondToCalendarEventsBatch,
   handleCreateCalendarEvent,

@@ -69,6 +69,8 @@ export interface FindAvailableSlotsInput {
   preferredWorkingLocation?: 'homeOffice' | 'officeLocation' | 'any';
   /** Whether to respect blocking event types (outOfOffice, focusTime). Default: true */
   respectBlockingEventTypes?: boolean;
+  /** Specific calendar IDs to consider for availability. Requirement: multi-calendar-resources 5.2 */
+  calendarIds?: string[];
 }
 
 /**
@@ -87,6 +89,16 @@ export interface ListCalendarEventsInput {
   endDate: string;
   calendarId?: string;
   eventTypes?: string[];
+}
+
+/**
+ * Input for listing calendar resources
+ * Requirement: multi-calendar-resources 1.1
+ *
+ * @property source - Optional filter by source type ('eventkit', 'google', or 'all')
+ */
+export interface ListCalendarResourcesInput {
+  source?: 'eventkit' | 'google' | 'all';
 }
 
 export interface RespondToCalendarEventInput {
@@ -238,6 +250,7 @@ export async function handleFindAvailableSlots(
     preferDeepWork,
     minDurationMinutes,
     maxDurationMinutes,
+    calendarIds,
   } = args;
   const config = ctx.getConfig();
 
@@ -285,6 +298,7 @@ export async function handleFindAvailableSlots(
       minDurationMinutes: minDuration,
       maxDurationMinutes: maxDuration,
       workingHours,
+      calendarIds,
     });
 
     const filteredSlots = preferDeepWork
@@ -384,10 +398,12 @@ export async function handleListCalendarEvents(
     // Note: CalendarSourceManager returns events with these fields populated from Google Calendar,
     // but the base CalendarEvent type from calendar-service.ts doesn't include them yet.
     // The ExtendedCalendarEvent type from google-calendar-types.ts includes these fields.
+    // Convert single calendarId to array for new getEvents signature
+    const calendarIds = calendarId ? [calendarId] : undefined;
     let events = (await calendarSourceManager!.getEvents(
       startDate,
       endDate,
-      calendarId
+      calendarIds
     )) as ExtendedCalendarEvent[];
 
     // Filter by event types if specified
@@ -1880,5 +1896,71 @@ export async function handleFindCommonAvailability(
     });
   } catch (error) {
     return createErrorFromCatch('共通空き時間の検索に失敗しました', error);
+  }
+}
+
+/**
+ * list_calendar_resources handler
+ *
+ * List all available calendar resources from enabled sources.
+ * Requirement: multi-calendar-resources 1.1, 1.2, 1.3
+ */
+export async function handleListCalendarResources(
+  ctx: CalendarToolsContext,
+  args: ListCalendarResourcesInput
+) {
+  const config = ctx.getConfig();
+
+  if (!config) {
+    return createToolResponse({
+      error: true,
+      message:
+        'sageが設定されていません。check_setup_statusを実行してください。',
+    });
+  }
+
+  let calendarSourceManager = ctx.getCalendarSourceManager();
+  if (!calendarSourceManager) {
+    ctx.initializeServices(config);
+    calendarSourceManager = ctx.getCalendarSourceManager();
+  }
+
+  try {
+    const { source } = args;
+
+    // Get all calendar resources
+    const resources = await calendarSourceManager!.listCalendarResources();
+
+    // Filter by source if specified
+    const filteredResources = source && source !== 'all'
+      ? resources.filter((r) => r.source === source)
+      : resources;
+
+    // Get source availability status
+    const availableSources = await calendarSourceManager!.detectAvailableSources();
+    const enabledSources = calendarSourceManager!.getEnabledSources();
+
+    const sourceStatus = {
+      eventkit: {
+        available: availableSources.eventkit,
+        enabled: enabledSources.includes('eventkit'),
+        count: filteredResources.filter((r) => r.source === 'eventkit').length,
+      },
+      google: {
+        available: availableSources.google,
+        enabled: enabledSources.includes('google'),
+        count: filteredResources.filter((r) => r.source === 'google').length,
+      },
+    };
+
+    return createToolResponse({
+      success: true,
+      resources: filteredResources,
+      sources: sourceStatus,
+      totalCount: filteredResources.length,
+      message: `${filteredResources.length}件のカレンダーリソースが見つかりました`,
+    });
+  } catch (error) {
+    return createErrorFromCatch('カレンダーリソースの取得に失敗しました', error);
   }
 }

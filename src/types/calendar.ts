@@ -49,3 +49,29 @@ export const CALENDAR_RETRY_OPTIONS = {
   initialDelay: 500,
   maxDelay: 5000,
 } as const;
+
+/**
+ * Calendar source type for multi-calendar resource support
+ */
+export type CalendarSource = 'eventkit' | 'google';
+
+/**
+ * Calendar resource representing an individual calendar from any source
+ * Requirement: multi-calendar-resources 1.3, 4.1
+ */
+export interface CalendarResource {
+  /** Unique identifier for the calendar */
+  id: string;
+  /** Display name of the calendar */
+  name: string;
+  /** Source type (eventkit or google) */
+  source: CalendarSource;
+  /** Calendar color in hex format (e.g., "#4285f4") */
+  color?: string;
+  /** Whether this is the primary/default calendar */
+  isPrimary?: boolean;
+  /** Whether events can be created on this calendar */
+  isWritable?: boolean;
+  /** Access role for Google Calendar */
+  accessRole?: 'owner' | 'writer' | 'reader' | 'freeBusyReader';
+}

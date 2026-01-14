@@ -225,6 +225,51 @@ describe('MCPHandler Tool Handlers', () => {
         expect(parsed).toBeDefined();
       });
     });
+
+    describe('list_calendar_resources', () => {
+      it('should return proper MCP response format', async () => {
+        const response = await callTool('list_calendar_resources', {});
+
+        expect(response.jsonrpc).toBe('2.0');
+        expect(response.result).toBeDefined();
+
+        const result = response.result as { content: Array<{ type: string; text: string }> };
+        expect(result.content).toBeDefined();
+        expect(result.content[0].type).toBe('text');
+      });
+
+      it('should handle missing config gracefully', async () => {
+        const response = await callTool('list_calendar_resources', {});
+
+        const parsed = parseToolResponse(response);
+        expect(parsed).toBeDefined();
+        // Should contain either resources or an error message
+      });
+
+      it('should support source filter parameter', async () => {
+        const response = await callTool('list_calendar_resources', {
+          source: 'eventkit',
+        });
+
+        expect(response.jsonrpc).toBe('2.0');
+        expect(response.result).toBeDefined();
+
+        const parsed = parseToolResponse(response);
+        expect(parsed).toBeDefined();
+      });
+
+      it('should accept "all" as source filter', async () => {
+        const response = await callTool('list_calendar_resources', {
+          source: 'all',
+        });
+
+        expect(response.jsonrpc).toBe('2.0');
+        expect(response.result).toBeDefined();
+
+        const parsed = parseToolResponse(response);
+        expect(parsed).toBeDefined();
+      });
+    });
   });
 
   describe('Reminder Tools', () => {
@@ -718,6 +763,16 @@ describe('MCPHandler Tool Definitions', () => {
       expect(tool?.inputSchema.required).toContain('endDate');
       expect(tool?.inputSchema.properties).toHaveProperty('eventType');
       expect(tool?.inputSchema.properties).toHaveProperty('autoDeclineMode');
+    });
+
+    it('should include list_calendar_resources with correct schema', () => {
+      const tools = handler.listTools();
+      const tool = tools.find((t) => t.name === 'list_calendar_resources');
+
+      expect(tool).toBeDefined();
+      expect(tool?.description).toContain('calendar resources');
+      expect(tool?.inputSchema.type).toBe('object');
+      expect(tool?.inputSchema.properties).toHaveProperty('source');
     });
   });
 

@@ -357,4 +357,137 @@ describe('CalendarService', () => {
       expect(prompt).toContain('2025-01-20');
     });
   });
+
+  describe('listCalendars', () => {
+    it('should list calendars via EventKit on macOS', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+
+      const runAppleScriptModule = require('run-applescript');
+      // EventKit format: calendarId|title|isWritable|calType
+      runAppleScriptModule.runAppleScript.mockResolvedValue(
+        'calendar-1|Work|true|0\n' +
+        'calendar-2|Personal|true|1\n' +
+        'calendar-3|Holidays|false|4'
+      );
+
+      const calendars = await service.listCalendars();
+
+      expect(calendars).toHaveLength(3);
+      expect(calendars[0]).toEqual({
+        id: 'calendar-1',
+        name: 'Work',
+        source: 'eventkit',
+        isWritable: true,
+        isPrimary: true, // First calendar with type 0 is primary
+      });
+      expect(calendars[1]).toEqual({
+        id: 'calendar-2',
+        name: 'Personal',
+        source: 'eventkit',
+        isWritable: true,
+        isPrimary: false,
+      });
+      expect(calendars[2]).toEqual({
+        id: 'calendar-3',
+        name: 'Holidays',
+        source: 'eventkit',
+        isWritable: false,
+        isPrimary: false,
+      });
+
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    });
+
+    it('should return empty array on non-Apple platform', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+
+      const calendars = await service.listCalendars();
+
+      expect(calendars).toHaveLength(0);
+
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    });
+
+    it('should handle EventKit errors gracefully', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+
+      const runAppleScriptModule = require('run-applescript');
+      runAppleScriptModule.runAppleScript.mockRejectedValue(new Error('Calendar access denied'));
+
+      const calendars = await service.listCalendars();
+
+      expect(calendars).toHaveLength(0);
+
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    });
+
+    it('should handle empty EventKit output', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+
+      const runAppleScriptModule = require('run-applescript');
+      runAppleScriptModule.runAppleScript.mockResolvedValue('');
+
+      const calendars = await service.listCalendars();
+
+      expect(calendars).toHaveLength(0);
+
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    });
+  });
+
+  describe('parseListCalendarsResult', () => {
+    it('should parse EventKit calendar list correctly', () => {
+      const output = 'calendar-1|Work Calendar|true|0\ncalendar-2|Personal|false|1';
+      // Access private method for testing
+      const calendars = (service as any).parseListCalendarsResult(output);
+
+      expect(calendars).toHaveLength(2);
+      expect(calendars[0].id).toBe('calendar-1');
+      expect(calendars[0].name).toBe('Work Calendar');
+      expect(calendars[0].isWritable).toBe(true);
+      expect(calendars[0].isPrimary).toBe(true);
+      expect(calendars[0].source).toBe('eventkit');
+      expect(calendars[1].isPrimary).toBe(false);
+    });
+
+    it('should handle empty output', () => {
+      const calendars = (service as any).parseListCalendarsResult('');
+      expect(calendars).toHaveLength(0);
+    });
+
+    it('should handle malformed lines', () => {
+      const output = 'calendar-1|Work\ncalendar-2|Personal|true|0';
+      const calendars = (service as any).parseListCalendarsResult(output);
+
+      // Only valid line should be parsed
+      expect(calendars).toHaveLength(1);
+      expect(calendars[0].id).toBe('calendar-2');
+    });
+
+    it('should handle output without calendar type', () => {
+      const output = 'calendar-1|Work|true';
+      const calendars = (service as any).parseListCalendarsResult(output);
+
+      expect(calendars).toHaveLength(1);
+      expect(calendars[0].id).toBe('calendar-1');
+      expect(calendars[0].isWritable).toBe(true);
+      // Without type info, defaults to isPrimary: true for first item
+      expect(calendars[0].isPrimary).toBe(true);
+    });
+
+    it('should mark only first local calendar as primary', () => {
+      // Multiple calendars of type 0 (local)
+      const output = 'cal-1|First|true|0\ncal-2|Second|true|0\ncal-3|Third|true|1';
+      const calendars = (service as any).parseListCalendarsResult(output);
+
+      expect(calendars).toHaveLength(3);
+      expect(calendars[0].isPrimary).toBe(true);
+      expect(calendars[1].isPrimary).toBe(false);
+      expect(calendars[2].isPrimary).toBe(false);
+    });
+  });
 });

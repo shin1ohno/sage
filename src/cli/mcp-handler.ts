@@ -71,6 +71,7 @@ import {
 import {
   type CalendarToolsContext,
   handleListCalendarSources,
+  handleListCalendarResources,
   handleListCalendarEvents,
   handleFindAvailableSlots,
   handleCreateCalendarEvent,
@@ -1493,6 +1494,30 @@ class MCPHandlerImpl implements MCPHandler {
         },
       },
       async () => handleListCalendarSources(this.createCalendarToolsContext())
+    );
+
+    // list_calendar_resources - list individual calendars from all sources
+    // Requirement: multi-calendar-resources 1.1
+    this.registerTool(
+      {
+        name: 'list_calendar_resources',
+        description:
+          'List all available calendar resources (individual calendars) from enabled sources. Returns calendar names, IDs, colors, and write permissions.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            source: {
+              type: 'string',
+              enum: ['eventkit', 'google', 'all'],
+              description: "Filter by source type: 'eventkit', 'google', or 'all' (default: 'all')",
+            },
+          },
+        },
+      },
+      async (args) =>
+        handleListCalendarResources(this.createCalendarToolsContext(), {
+          source: args.source as 'eventkit' | 'google' | 'all' | undefined,
+        })
     );
 
     // search_room_availability - Search for available meeting rooms

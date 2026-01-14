@@ -61,6 +61,7 @@ describe('CalendarSourceManager', () => {
       detectPlatform: jest.fn(),
       isAvailable: jest.fn(),
       listEvents: jest.fn(),
+      listCalendars: jest.fn(),
       fetchEvents: jest.fn(),
       fetchEventsDetailed: jest.fn(),
       findAvailableSlotsFromEvents: jest.fn(),
@@ -565,7 +566,7 @@ describe('CalendarSourceManager', () => {
       ).rejects.toThrow('All calendar sources failed');
     });
 
-    it('should handle calendar ID filter', async () => {
+    it('should handle EventKit-style calendar ID filter (no @)', async () => {
       mockConfig.calendar.sources!.eventkit.enabled = true;
       mockConfig.calendar.sources!.google.enabled = true;
 
@@ -574,7 +575,7 @@ describe('CalendarSourceManager', () => {
         period: { start: '2026-01-15', end: '2026-01-16' },
         totalEvents: 1,
       });
-      mockGoogleCalendarService.listEvents.mockResolvedValueOnce([googleEvent]);
+      // Google Calendar should not be called for EventKit-style calendar IDs
 
       await manager.getEvents(
         '2026-01-15T00:00:00Z',
@@ -582,17 +583,184 @@ describe('CalendarSourceManager', () => {
         'custom-calendar'
       );
 
+      // EventKit should receive the calendar filter
       expect(mockCalendarService.listEvents).toHaveBeenCalledWith({
         startDate: '2026-01-15T00:00:00Z',
         endDate: '2026-01-16T00:00:00Z',
         calendarName: 'custom-calendar',
       });
 
+      // Google Calendar should not be called (calendar ID without @ is EventKit-style)
+      expect(mockGoogleCalendarService.listEvents).not.toHaveBeenCalled();
+    });
+
+    it('should handle Google-style calendar ID filter (with @)', async () => {
+      mockConfig.calendar.sources!.eventkit.enabled = true;
+      mockConfig.calendar.sources!.google.enabled = true;
+
+      mockGoogleCalendarService.listEvents.mockResolvedValueOnce([googleEvent]);
+
+      await manager.getEvents(
+        '2026-01-15T00:00:00Z',
+        '2026-01-16T00:00:00Z',
+        'user@example.com'
+      );
+
+      // EventKit should not be called for Google-style calendar IDs
+      expect(mockCalendarService.listEvents).not.toHaveBeenCalled();
+
+      // Google Calendar should receive the calendar filter
       expect(mockGoogleCalendarService.listEvents).toHaveBeenCalledWith({
         startDate: '2026-01-15T00:00:00Z',
         endDate: '2026-01-16T00:00:00Z',
-        calendarId: 'custom-calendar',
+        calendarId: 'user@example.com',
       });
+    });
+
+    it('should handle "primary" calendar ID as Google-style', async () => {
+      mockConfig.calendar.sources!.eventkit.enabled = true;
+      mockConfig.calendar.sources!.google.enabled = true;
+
+      mockGoogleCalendarService.listEvents.mockResolvedValueOnce([googleEvent]);
+
+      await manager.getEvents(
+        '2026-01-15T00:00:00Z',
+        '2026-01-16T00:00:00Z',
+        'primary'
+      );
+
+      // EventKit should not be called for 'primary'
+      expect(mockCalendarService.listEvents).not.toHaveBeenCalled();
+
+      // Google Calendar should receive the 'primary' calendar filter
+      expect(mockGoogleCalendarService.listEvents).toHaveBeenCalledWith({
+        startDate: '2026-01-15T00:00:00Z',
+        endDate: '2026-01-16T00:00:00Z',
+        calendarId: 'primary',
+      });
+    });
+  });
+
+  describe('listCalendarResources', () => {
+    it('should list calendars from EventKit only when only eventkit enabled', async () => {
+      mockConfig.calendar.sources!.eventkit.enabled = true;
+      mockConfig.calendar.sources!.google.enabled = false;
+
+      const eventkitCalendars = [
+        { id: 'cal-1', name: 'Work', source: 'eventkit' as const, isWritable: true, isPrimary: true },
+        { id: 'cal-2', name: 'Personal', source: 'eventkit' as const, isWritable: true, isPrimary: false },
+      ];
+      mockCalendarService.listCalendars.mockResolvedValueOnce(eventkitCalendars);
+
+      const result = await manager.listCalendarResources();
+
+      expect(result).toHaveLength(2);
+      expect(result[0].source).toBe('eventkit');
+      expect(result[1].source).toBe('eventkit');
+      expect(mockCalendarService.listCalendars).toHaveBeenCalled();
+      expect(mockGoogleCalendarService.listCalendars).not.toHaveBeenCalled();
+    });
+
+    it('should list calendars from Google only when only google enabled', async () => {
+      mockConfig.calendar.sources!.eventkit.enabled = false;
+      mockConfig.calendar.sources!.google.enabled = true;
+
+      // GoogleCalendarService.listCalendars returns CalendarInfo[]
+      const googleCalendars = [
+        { id: 'primary', name: 'user@example.com', color: '#4285f4', isPrimary: true, accessRole: 'owner' as const },
+        { id: 'work@example.com', name: 'Work', color: '#7986cb', isPrimary: false, accessRole: 'writer' as const },
+      ];
+      mockGoogleCalendarService.listCalendars.mockResolvedValueOnce(googleCalendars);
+
+      const result = await manager.listCalendarResources();
+
+      expect(result).toHaveLength(2);
+      expect(result[0].source).toBe('google');
+      expect(result[1].source).toBe('google');
+      expect(mockGoogleCalendarService.listCalendars).toHaveBeenCalled();
+      expect(mockCalendarService.listCalendars).not.toHaveBeenCalled();
+    });
+
+    it('should aggregate calendars from both sources when both enabled', async () => {
+      mockConfig.calendar.sources!.eventkit.enabled = true;
+      mockConfig.calendar.sources!.google.enabled = true;
+
+      const eventkitCalendars = [
+        { id: 'cal-1', name: 'Work', source: 'eventkit' as const, isWritable: true, isPrimary: true },
+      ];
+      const googleCalendars = [
+        { id: 'primary', name: 'user@example.com', color: '#4285f4', isPrimary: true, accessRole: 'owner' as const },
+      ];
+      mockCalendarService.listCalendars.mockResolvedValueOnce(eventkitCalendars);
+      mockGoogleCalendarService.listCalendars.mockResolvedValueOnce(googleCalendars);
+
+      const result = await manager.listCalendarResources();
+
+      expect(result).toHaveLength(2);
+      expect(result.filter(c => c.source === 'eventkit')).toHaveLength(1);
+      expect(result.filter(c => c.source === 'google')).toHaveLength(1);
+    });
+
+    it('should return empty array when no sources enabled', async () => {
+      mockConfig.calendar.sources!.eventkit.enabled = false;
+      mockConfig.calendar.sources!.google.enabled = false;
+
+      const result = await manager.listCalendarResources();
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('should bypass cache when forceRefresh is true', async () => {
+      mockConfig.calendar.sources!.eventkit.enabled = true;
+      mockConfig.calendar.sources!.google.enabled = false;
+
+      const eventkitCalendars = [
+        { id: 'cal-1', name: 'Work', source: 'eventkit' as const, isWritable: true, isPrimary: true },
+      ];
+      mockCalendarService.listCalendars.mockResolvedValue(eventkitCalendars);
+
+      // First call
+      await manager.listCalendarResources();
+      expect(mockCalendarService.listCalendars).toHaveBeenCalledTimes(1);
+
+      // Second call with forceRefresh - should fetch again
+      await manager.listCalendarResources(true);
+      expect(mockCalendarService.listCalendars).toHaveBeenCalledTimes(2);
+    });
+
+    it('should cache calendar resources and reuse within TTL', async () => {
+      mockConfig.calendar.sources!.eventkit.enabled = true;
+      mockConfig.calendar.sources!.google.enabled = false;
+
+      const eventkitCalendars = [
+        { id: 'cal-1', name: 'Work', source: 'eventkit' as const, isWritable: true, isPrimary: true },
+      ];
+      mockCalendarService.listCalendars.mockResolvedValue(eventkitCalendars);
+
+      // First call - should fetch from source
+      await manager.listCalendarResources();
+      expect(mockCalendarService.listCalendars).toHaveBeenCalledTimes(1);
+
+      // Second call - should use cache
+      await manager.listCalendarResources();
+      expect(mockCalendarService.listCalendars).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle errors gracefully', async () => {
+      mockConfig.calendar.sources!.eventkit.enabled = true;
+      mockConfig.calendar.sources!.google.enabled = true;
+
+      mockCalendarService.listCalendars.mockRejectedValueOnce(new Error('EventKit error'));
+      const googleCalendars = [
+        { id: 'primary', name: 'user@example.com', color: '#4285f4', isPrimary: true, accessRole: 'owner' as const },
+      ];
+      mockGoogleCalendarService.listCalendars.mockResolvedValueOnce(googleCalendars);
+
+      const result = await manager.listCalendarResources();
+
+      // Should still return Google calendars even if EventKit fails
+      expect(result).toHaveLength(1);
+      expect(result[0].source).toBe('google');
     });
   });
 

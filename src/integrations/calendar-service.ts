@@ -11,6 +11,7 @@
 
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
 import { calendarLogger } from '../utils/logger.js';
+import type { CalendarResource } from '../types/calendar.js';
 
 // Declare window for browser environment detection
 declare const window: any;
@@ -51,6 +52,12 @@ export interface CalendarEvent {
   iCalUID?: string;
   attendees?: string[];
   status?: 'confirmed' | 'tentative' | 'cancelled';
+  /** Source calendar ID - Requirement: multi-calendar-resources 4.1 */
+  calendarId?: string;
+  /** Source calendar display name - Requirement: multi-calendar-resources 4.1 */
+  calendarName?: string;
+  /** Source calendar color in hex format - Requirement: multi-calendar-resources 4.2 */
+  calendarColor?: string;
 }
 
 /**
@@ -214,6 +221,116 @@ export class CalendarService {
   async isAvailable(): Promise<boolean> {
     const platform = await this.detectPlatform();
     return platform.hasNativeAccess;
+  }
+
+  /**
+   * List available calendars from EventKit
+   * Requirement: multi-calendar-resources 1.1, 1.2, 1.3
+   */
+  async listCalendars(): Promise<CalendarResource[]> {
+    const platform = await this.detectPlatform();
+
+    if (platform.recommendedMethod !== 'eventkit') {
+      calendarLogger.warn('listCalendars is only supported on macOS with EventKit');
+      return [];
+    }
+
+    try {
+      // Lazy load run-applescript
+      if (!this.runAppleScript) {
+        const module = await import('run-applescript');
+        this.runAppleScript = module.runAppleScript;
+      }
+
+      const script = this.buildListCalendarsScript();
+
+      const result = await retryWithBackoff(
+        async () => {
+          return await this.runAppleScript!(script);
+        },
+        {
+          ...RETRY_OPTIONS,
+          onRetry: (error, attempt) => {
+            calendarLogger.error({ err: error, attempt }, 'EventKit listCalendars retry attempt');
+          },
+        }
+      );
+
+      return this.parseListCalendarsResult(result);
+    } catch (error) {
+      calendarLogger.error({ err: error }, 'Failed to list calendars from EventKit');
+      return [];
+    }
+  }
+
+  /**
+   * Build AppleScriptObjC script for listing calendars
+   * Requirement: multi-calendar-resources 1.1
+   */
+  private buildListCalendarsScript(): string {
+    return `
+use AppleScript version "2.7"
+use framework "Foundation"
+use framework "EventKit"
+use scripting additions
+
+-- Create EventKit store
+set theStore to current application's EKEventStore's alloc()'s init()
+
+-- Request calendar access
+theStore's requestFullAccessToEventsWithCompletion:(missing value)
+delay 0.5
+
+-- Get all calendars for events
+set theCalendars to theStore's calendarsForEntityType:0
+
+-- Build result string
+set calendarList to ""
+repeat with aCal in theCalendars
+  set calTitle to (aCal's title()) as text
+  set calId to (aCal's calendarIdentifier()) as text
+  set isWritable to (aCal's allowsContentModifications()) as boolean
+
+  -- Calendar type: 0=local, 1=CalDAV, 2=Exchange, 3=Birthday, 4=Subscription
+  set calType to (aCal's |type|()) as integer
+
+  set calInfo to calId & "|" & calTitle & "|" & (isWritable as string) & "|" & (calType as string)
+  set calendarList to calendarList & calInfo & linefeed
+end repeat
+
+return calendarList`;
+  }
+
+  /**
+   * Parse list calendars result
+   * Format: id|name|isWritable|type
+   * Requirement: multi-calendar-resources 1.3
+   */
+  private parseListCalendarsResult(output: string): CalendarResource[] {
+    if (!output || output.trim() === '') {
+      return [];
+    }
+
+    const calendars: CalendarResource[] = [];
+    const lines = output.trim().split('\n');
+
+    for (const line of lines) {
+      const parts = line.split('|');
+      if (parts.length >= 3) {
+        const calType = parts.length >= 4 ? parseInt(parts[3], 10) : 0;
+
+        calendars.push({
+          id: parts[0],
+          name: parts[1],
+          source: 'eventkit',
+          isWritable: parts[2].toLowerCase() === 'true',
+          // Calendar type 0 (local) is typically the primary calendar
+          isPrimary: calType === 0 && calendars.length === 0,
+        });
+      }
+    }
+
+    return calendars;
   }
 
   /**

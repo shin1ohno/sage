@@ -14,6 +14,7 @@ import type { CreateEventRequest } from './google-calendar-service.js';
 import type { UserConfig } from '../types/config.js';
 import type { SyncResult, SyncStatus, GoogleCalendarEventType, CalendarEvent as GoogleCalendarEventExtended, RecurrenceScope } from '../types/google-calendar-types.js';
 import type { TimeSlot, WorkingLocationInfo } from '../types/task.js';
+import type { CalendarResource } from '../types/calendar.js';
 import { calendarLogger } from '../utils/logger.js';
 
 /**
@@ -50,6 +51,12 @@ export interface FindSlotsRequest {
    * Requirement: 7.5
    */
   respectBlockingEventTypes?: boolean;
+  /**
+   * Specific calendar IDs to consider for slot detection
+   * If not specified, uses getSelectedCalendarIds() or all enabled calendars
+   * Requirement: multi-calendar-resources 5.2
+   */
+  calendarIds?: string[];
 }
 
 /**
@@ -70,10 +77,25 @@ export interface CalendarSourceManagerOptions {
  * - Fallback handling for source failures
  * - Event deduplication across sources
  */
+/**
+ * Cache entry for calendar resources
+ * Requirement: multi-calendar-resources NFR Performance
+ */
+interface CalendarResourceCache {
+  data: CalendarResource[];
+  timestamp: number;
+}
+
 export class CalendarSourceManager {
   private calendarService?: CalendarService;
   private googleCalendarService?: GoogleCalendarService;
   private config?: UserConfig;
+
+  /** Cache TTL in milliseconds (5 minutes) */
+  private static readonly CACHE_TTL_MS = 5 * 60 * 1000;
+
+  /** Calendar resource cache */
+  private resourceCache?: CalendarResourceCache;
 
   /**
    * Constructor
@@ -84,6 +106,156 @@ export class CalendarSourceManager {
     this.calendarService = options?.calendarService;
     this.googleCalendarService = options?.googleCalendarService;
     this.config = options?.config;
+  }
+
+  /**
+   * List all available calendar resources from enabled sources
+   * Requirement: multi-calendar-resources 1.1, 1.2, 1.3
+   *
+   * @param forceRefresh - If true, bypass cache and fetch fresh data
+   * @returns Array of CalendarResource from all enabled sources
+   */
+  async listCalendarResources(forceRefresh = false): Promise<CalendarResource[]> {
+    // Check cache validity
+    if (!forceRefresh && this.resourceCache) {
+      const cacheAge = Date.now() - this.resourceCache.timestamp;
+      if (cacheAge < CalendarSourceManager.CACHE_TTL_MS) {
+        calendarLogger.debug('Returning cached calendar resources');
+        return this.resourceCache.data;
+      }
+    }
+
+    const enabledSources = this.getEnabledSources();
+    const allResources: CalendarResource[] = [];
+    const errors: Array<{ source: string; error: Error }> = [];
+
+    // Fetch from both sources in parallel
+    const promises: Promise<void>[] = [];
+
+    if (enabledSources.includes('eventkit') && this.calendarService) {
+      promises.push(
+        (async () => {
+          try {
+            const calendars = await this.calendarService!.listCalendars();
+            allResources.push(...calendars);
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            errors.push({ source: 'eventkit', error: err });
+            calendarLogger.error({ err }, 'Failed to list EventKit calendars');
+          }
+        })()
+      );
+    }
+
+    if (enabledSources.includes('google') && this.googleCalendarService) {
+      promises.push(
+        (async () => {
+          try {
+            const calendars = await this.googleCalendarService!.listCalendars();
+            // Convert GoogleCalendarService format to CalendarResource
+            const googleResources: CalendarResource[] = calendars.map((cal) => ({
+              id: cal.id,
+              name: cal.name,
+              source: 'google' as const,
+              color: cal.color,
+              isPrimary: cal.isPrimary,
+              isWritable: cal.accessRole === 'owner' || cal.accessRole === 'writer',
+              accessRole: cal.accessRole,
+            }));
+            allResources.push(...googleResources);
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            errors.push({ source: 'google', error: err });
+            calendarLogger.error({ err }, 'Failed to list Google calendars');
+          }
+        })()
+      );
+    }
+
+    await Promise.all(promises);
+
+    // Update cache
+    this.resourceCache = {
+      data: allResources,
+      timestamp: Date.now(),
+    };
+
+    return allResources;
+  }
+
+  /**
+   * Invalidate calendar resource cache
+   * Call when configuration changes or OAuth re-authentication occurs
+   */
+  invalidateResourceCache(): void {
+    this.resourceCache = undefined;
+    calendarLogger.debug('Calendar resource cache invalidated');
+  }
+
+  /**
+   * Get selected calendar IDs from configuration
+   * Requirement: multi-calendar-resources 2.2
+   *
+   * @returns Array of selected calendar IDs (empty means all calendars)
+   */
+  getSelectedCalendarIds(): string[] {
+    const selectedIds: string[] = [];
+
+    if (this.config?.calendar?.sources?.eventkit?.selectedCalendars) {
+      selectedIds.push(...this.config.calendar.sources.eventkit.selectedCalendars);
+    }
+
+    if (this.config?.calendar?.sources?.google?.selectedCalendars) {
+      selectedIds.push(...this.config.calendar.sources.google.selectedCalendars);
+    }
+
+    return selectedIds;
+  }
+
+  /**
+   * Update selected calendar IDs in configuration
+   * Note: Config persistence is caller's responsibility (ConfigManager.save())
+   * Requirement: multi-calendar-resources 2.3
+   *
+   * @param calendarIds - Array of calendar IDs to select
+   */
+  updateSelectedCalendarIds(calendarIds: string[]): void {
+    if (!this.config) {
+      throw new Error('Config not available. Cannot update selected calendars.');
+    }
+
+    // Ensure calendar.sources exists
+    if (!this.config.calendar.sources) {
+      this.config.calendar.sources = {
+        eventkit: { enabled: false },
+        google: {
+          enabled: false,
+          defaultCalendar: 'primary',
+          excludedCalendars: [],
+          syncInterval: 300,
+          enableNotifications: true,
+        },
+      };
+    }
+
+    // Separate calendar IDs by source (simple heuristic: email-like = google)
+    const eventkitIds: string[] = [];
+    const googleIds: string[] = [];
+
+    for (const id of calendarIds) {
+      // Google Calendar IDs typically contain @ or are 'primary'
+      if (id.includes('@') || id === 'primary') {
+        googleIds.push(id);
+      } else {
+        eventkitIds.push(id);
+      }
+    }
+
+    this.config.calendar.sources.eventkit.selectedCalendars = eventkitIds;
+    this.config.calendar.sources.google.selectedCalendars = googleIds;
+
+    // Invalidate cache since selection changed
+    this.invalidateResourceCache();
   }
 
   /**
@@ -245,6 +417,7 @@ export class CalendarSourceManager {
   /**
    * Get events from enabled calendar sources
    * Requirement: 7, 10, 11 (Multi-source event retrieval with deduplication and fallback)
+   * Requirement: multi-calendar-resources 3.1, 3.2
    *
    * Fetches events from all enabled sources with fallback handling and deduplication.
    * - Task 17a: Basic parallel fetching
@@ -255,13 +428,13 @@ export class CalendarSourceManager {
    *
    * @param startDate - Start date (ISO 8601)
    * @param endDate - End date (ISO 8601)
-   * @param calendarId - Optional calendar ID filter
+   * @param calendarIds - Optional array of calendar IDs to filter (empty = all calendars)
    * @returns Array of deduplicated calendar events from all enabled sources
    */
   async getEvents(
     startDate: string,
     endDate: string,
-    calendarId?: string
+    calendarIds?: string[] | string
   ): Promise<CalendarEvent[]> {
     const enabledSources = this.getEnabledSources();
 
@@ -273,15 +446,45 @@ export class CalendarSourceManager {
     const allEvents: CalendarEvent[] = [];
     const errors: Error[] = [];
 
+    // Determine which calendar IDs to use
+    // Support both single string (backward compatibility) and array
+    const calendarIdArray = typeof calendarIds === 'string'
+      ? [calendarIds]
+      : calendarIds || [];
+    const selectedCalendarIds = this.getSelectedCalendarIds();
+    const effectiveCalendarIds = calendarIdArray.length > 0
+      ? calendarIdArray
+      : selectedCalendarIds;
+
+    // Separate calendar IDs by source (only if specific calendars are requested)
+    const eventkitCalendarIds = effectiveCalendarIds.length > 0
+      ? effectiveCalendarIds.filter((id) => !id.includes('@') && id !== 'primary')
+      : [];
+    const googleCalendarIds = effectiveCalendarIds.length > 0
+      ? effectiveCalendarIds.filter((id) => id.includes('@') || id === 'primary')
+      : [];
+
     // Try EventKit with fallback handling
     if (enabledSources.includes('eventkit') && this.calendarService) {
       try {
-        const eventkitResponse = await this.calendarService.listEvents({
-          startDate,
-          endDate,
-          calendarName: calendarId,
-        });
-        allEvents.push(...eventkitResponse.events);
+        // If specific EventKit calendars are requested, filter by each
+        if (eventkitCalendarIds.length > 0) {
+          for (const calName of eventkitCalendarIds) {
+            const eventkitResponse = await this.calendarService.listEvents({
+              startDate,
+              endDate,
+              calendarName: calName,
+            });
+            allEvents.push(...eventkitResponse.events);
+          }
+        } else if (effectiveCalendarIds.length === 0) {
+          // No specific calendars requested - fetch all
+          const eventkitResponse = await this.calendarService.listEvents({
+            startDate,
+            endDate,
+          });
+          allEvents.push(...eventkitResponse.events);
+        }
       } catch (error) {
         calendarLogger.error({ err: error }, 'EventKit failed');
         errors.push(error instanceof Error ? error : new Error(String(error)));
@@ -291,12 +494,24 @@ export class CalendarSourceManager {
     // Try Google Calendar with fallback handling
     if (enabledSources.includes('google') && this.googleCalendarService) {
       try {
-        const googleEvents = await this.googleCalendarService.listEvents({
-          startDate,
-          endDate,
-          calendarId,
-        });
-        allEvents.push(...googleEvents);
+        // If specific Google calendars are requested, fetch from each
+        if (googleCalendarIds.length > 0) {
+          for (const calId of googleCalendarIds) {
+            const googleEvents = await this.googleCalendarService.listEvents({
+              startDate,
+              endDate,
+              calendarId: calId,
+            });
+            allEvents.push(...googleEvents);
+          }
+        } else if (effectiveCalendarIds.length === 0) {
+          // No specific calendars requested - fetch from primary
+          const googleEvents = await this.googleCalendarService.listEvents({
+            startDate,
+            endDate,
+          });
+          allEvents.push(...googleEvents);
+        }
       } catch (error) {
         calendarLogger.error({ err: error }, 'Google Calendar failed');
         errors.push(error instanceof Error ? error : new Error(String(error)));
@@ -752,7 +967,8 @@ export class CalendarSourceManager {
     request: FindSlotsRequest
   ): Promise<AvailableSlot[]> {
     // Step 1: Get all events from enabled sources (already merged/deduplicated by getEvents)
-    const events = await this.getEvents(request.startDate, request.endDate);
+    // Use calendarIds from request if specified, otherwise getEvents will use selected calendars
+    const events = await this.getEvents(request.startDate, request.endDate, request.calendarIds);
 
     // Step 2: Filter blocking events based on respectBlockingEventTypes parameter
     // Default to true for backward compatibility with event type blocking semantics
