@@ -1,6 +1,62 @@
 # Session Progress - sage
 
-## Current Session: 2026-01-07 - E2Eテスト修正 (Bug Fix)
+## Current Session: 2026-01-15 - テストパフォーマンス最適化
+
+### 完了タスク
+
+#### テストパフォーマンス最適化 ✅
+
+**仕様ファイル**: `.claude/specs/test-performance-optimization/`
+
+**目的**: `npm run test` の実行時間・CPU・メモリ負荷を削減
+
+### 測定結果比較表
+
+| 施策 | 実行時間 | 改善率 | 互換性 | 推奨 |
+|------|---------|--------|--------|------|
+| **ベースライン** (キャッシュなし) | 840.8s | - | ✅ | - |
+| **isolatedModules** | 18.0s | **97.9%** | ✅ | ⭐ **最推奨** |
+| **@swc/jest** | 17.6s | **97.9%** | ✅ | ⭐ 推奨 |
+| maxWorkers=50% | 69.8s | 91.7% | ✅ | △ |
+| maxWorkers=2 | 119.1s | 85.8% | ✅ | × |
+| runInBand (直列) | 182.8s | 78.3% | ✅ | × |
+| **Vitest** | 10.7s* | - | ❌ | 要移行作業 |
+
+*Vitest: `jest.*` API非互換で247/1125テスト失敗。完全移行には全テストファイルの修正が必要。
+
+### 推奨アクション
+
+**即座に適用可能（1分で98%改善）**:
+
+```javascript
+// jest.config.js の transform セクションに追加
+{
+  useESM: true,
+  isolatedModules: true,  // ← これを追加
+  tsconfig: { ... }
+}
+```
+
+### 技術的背景
+
+**なぜts-jestが遅かったのか**:
+1. デフォルトでTypeScriptの型チェックを実行
+2. googlepis（109MB）のロード
+3. ESM変換オーバーヘッド
+
+**isolatedModulesが効果的な理由**:
+- 型チェックをスキップし単純な構文変換のみ
+- 型検証は `npm run build` やIDEで代替可能
+
+### 結論
+
+**`isolatedModules: true` を追加するだけで、テスト実行時間を14分→18秒に短縮可能**
+
+tech.md の目標「Test Time < 30 seconds」を達成。
+
+---
+
+## Previous Session: 2026-01-07 - E2Eテスト修正 (Bug Fix)
 
 ### 完了タスク
 
