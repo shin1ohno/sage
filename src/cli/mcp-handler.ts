@@ -8,7 +8,6 @@
 import { VERSION, SERVER_NAME } from '../version.js';
 import { ConfigLoader } from '../config/loader.js';
 import { SetupWizard } from '../setup/wizard.js';
-import { type ClientInfo, detectClientInfo } from '../types/sampling.js';
 import { ReminderManager } from '../integrations/reminder-manager.js';
 import { CalendarService } from '../integrations/calendar-service.js';
 import { NotionMCPService } from '../integrations/notion-mcp.js';
@@ -59,7 +58,6 @@ import {
 
 import {
   type ReminderTodoContext,
-  type PlatformContext,
   type SamplingContext,
   handleSetReminder,
   handleListTodos,
@@ -172,11 +170,6 @@ export interface MCPHandler {
   handleRequest(request: MCPRequest): Promise<MCPResponse>;
   listTools(): ToolDefinition[];
   /**
-   * Get the client information
-   * Requirements: 1.1, 1.6 (platform-adaptive-integration)
-   */
-  getClientInfo(): ClientInfo | null;
-  /**
    * Shutdown the handler and release all resources
    * Should be called when the handler is no longer needed (e.g., in tests)
    */
@@ -189,7 +182,7 @@ export interface MCPHandler {
 class MCPHandlerImpl implements MCPHandler {
   private config: UserConfig | null = null;
   private wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
-  private clientInfo: ClientInfo | null = null;
+  private supportsSampling = false;
   private reminderManager: ReminderManager | null = null;
   private calendarService: CalendarService | null = null;
   private notionService: NotionMCPService | null = null;
@@ -215,17 +208,6 @@ class MCPHandlerImpl implements MCPHandler {
 
   constructor() {
     this.registerTools();
-  }
-
-  /**
-   * Get the client information
-   *
-   * Requirements: 1.1, 1.6 (platform-adaptive-integration)
-   *
-   * @returns ClientInfo object if client info has been detected, null otherwise
-   */
-  getClientInfo(): ClientInfo | null {
-    return this.clientInfo;
   }
 
   /**
@@ -545,15 +527,6 @@ class MCPHandlerImpl implements MCPHandler {
   }
 
   /**
-   * Create PlatformContext for capability-adaptive tool handlers
-   */
-  private createPlatformContext(): PlatformContext {
-    return {
-      getClientInfo: () => this.clientInfo,
-    };
-  }
-
-  /**
    * Create SamplingContext for Sampling-based tool handlers
    */
   private createSamplingContext(): SamplingContext {
@@ -615,21 +588,16 @@ class MCPHandlerImpl implements MCPHandler {
    */
   private handleInitialize(id: number | string | null, params?: Record<string, unknown>): MCPResponse {
     // Extract clientInfo and capabilities from params
-    // MCP initialize request contains: { clientInfo: { name, version }, capabilities: {...} }
-    const mcpClientInfo = params?.clientInfo as { name?: string; version?: string } | undefined;
+    const clientInfo = params?.clientInfo as { name?: string; version?: string } | undefined;
     const capabilities = params?.capabilities as Record<string, unknown> | undefined;
 
-    // Detect client capabilities from MCP initialization
-    if (mcpClientInfo?.name && mcpClientInfo?.version) {
-      this.clientInfo = detectClientInfo(
-        capabilities ?? {},
-        mcpClientInfo
-      );
+    // Capability-based: check for Sampling support
+    if (clientInfo && capabilities) {
+      this.supportsSampling = capabilities.sampling !== undefined;
 
-      // Log client detection (console.log since we don't have mcpLogger here)
       console.log(
-        `[sage] Client detected: ${this.clientInfo.clientName} v${this.clientInfo.clientVersion}, ` +
-        `sampling: ${this.clientInfo.supportsSampling}`
+        `[sage] MCP client initialized: ${clientInfo.name} v${clientInfo.version}, ` +
+        `sampling: ${this.supportsSampling}`
       );
     } else {
       console.warn('[sage] No clientInfo available in initialize request');
@@ -919,9 +887,6 @@ class MCPHandlerImpl implements MCPHandler {
         },
       },
       async (args) => {
-        // Use Sampling when the client supports it
-        const shouldUseSampling = this.clientInfo?.supportsSampling ?? false;
-
         const input = {
           taskTitle: args.taskTitle as string,
           dueDate: args.dueDate as string | undefined,
@@ -937,12 +902,12 @@ class MCPHandlerImpl implements MCPHandler {
           notes: args.notes as string | undefined,
         };
 
-        if (shouldUseSampling && this.clientInfo) {
+        // Capability-based routing: Use Sampling when available
+        if (this.supportsSampling) {
           return handleSetReminderWithSampling(
             input,
-            { ...this.createReminderTodoContext(), ...this.createPlatformContext() },
-            this.createSamplingContext(),
-            this.clientInfo
+            this.createReminderTodoContext(),
+            this.createSamplingContext()
           );
         } else {
           return handleSetReminder(this.createReminderTodoContext(), input);
@@ -1013,19 +978,17 @@ class MCPHandlerImpl implements MCPHandler {
         },
       },
       async (args) => {
-        // Use Sampling when the client supports it
-        const shouldUseSampling = this.clientInfo?.supportsSampling ?? false;
-
         const input = {
           startDate: args.startDate as string,
           endDate: args.endDate as string,
           calendarId: args.calendarId as string | undefined,
         };
 
-        if (shouldUseSampling) {
+        // Capability-based routing: Use Sampling when available
+        if (this.supportsSampling) {
           return handleListCalendarEventsWithSampling(
             input,
-            { ...this.createCalendarToolsContext(), ...this.createPlatformContext() },
+            this.createCalendarToolsContext(),
             this.createSamplingContext()
           );
         } else {

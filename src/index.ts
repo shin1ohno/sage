@@ -12,7 +12,6 @@ import { z } from "zod";
 
 import { ConfigLoader } from "./config/loader.js";
 import { SetupWizard } from "./setup/wizard.js";
-import { type ClientInfo, detectClientInfo } from "./types/sampling.js";
 import { ReminderManager } from "./integrations/reminder-manager.js";
 import { CalendarService } from "./integrations/calendar-service.js";
 import { CalendarSourceManager } from "./integrations/calendar-source-manager.js";
@@ -115,15 +114,13 @@ import {
   handleReloadConfig,
 } from "./tools/config/index.js";
 
-import {
-  type PlatformToolsContext,
-  handleGetPlatformInfo,
-} from "./tools/platform/index.js";
 
 // Global state
 let config: UserConfig | null = null;
 let wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
-let clientInfo: ClientInfo | null = null;
+
+// Client capability state (capability-based approach)
+let supportsSampling = false;
 
 // Transport mode helps distinguish Desktop (Stdio) from Remote (HTTP)
 // Stdio: Local Desktop Claude → Desktop platform
@@ -148,20 +145,6 @@ let configReloadService: ConfigReloadService | null = null;
 // MCP Server reference for Sampling support
 // Requirements: 1.6 (platform-adaptive-integration)
 let mcpServerRef: McpServer | null = null;
-
-/**
- * Get the client information
- *
- * This function returns the client info detected during MCP initialization.
- * Used to determine if the client supports Sampling capability.
- *
- * Requirements: 1.1, 1.6 (platform-adaptive-integration)
- *
- * @returns ClientInfo object if client info has been detected, null otherwise
- */
-export function getClientInfo(): ClientInfo | null {
-  return clientInfo;
-}
 
 /**
  * Initialize services with config
@@ -211,27 +194,6 @@ function initializeServices(userConfig: UserConfig): void {
 // Context Factory Functions
 // ============================================
 
-/**
- * PlatformContext interface for injecting client info into tool handlers
- *
- * This context provides access to the client information (Sampling support)
- * from MCP client initialization. Tool handlers can use this to
- * adapt their behavior based on client capabilities.
- *
- * Requirements: 1.6 (platform-adaptive-integration)
- */
-export interface PlatformContext {
-  /**
-   * Get the client information
-   *
-   * Returns the client info detected during MCP initialization,
-   * or null if detection has not occurred yet.
-   *
-   * @returns ClientInfo object or null
-   */
-  getClientInfo: () => ClientInfo | null;
-}
-
 function createSetupContext(): SetupContext {
   return {
     getConfig: () => config,
@@ -257,14 +219,9 @@ function createTaskToolsContext(): TaskToolsContext {
 }
 
 /**
- * Create calendar tools context with client information
- *
- * Extends CalendarToolsContext with PlatformContext to provide
- * capability-specific behavior in calendar tool handlers.
- *
- * Requirements: 1.6 (platform-adaptive-integration)
+ * Create calendar tools context
  */
-function createCalendarToolsContext(): CalendarToolsContext & PlatformContext {
+function createCalendarToolsContext(): CalendarToolsContext {
   return {
     getConfig: () => config,
     getCalendarSourceManager: () => calendarSourceManager,
@@ -276,25 +233,18 @@ function createCalendarToolsContext(): CalendarToolsContext & PlatformContext {
       workingCadenceService = service;
     },
     initializeServices,
-    getClientInfo: () => clientInfo,
   };
 }
 
 /**
- * Create reminder/todo tools context with client information
- *
- * Extends ReminderTodoContext with PlatformContext to provide
- * capability-specific behavior in reminder tool handlers.
- *
- * Requirements: 1.6 (platform-adaptive-integration)
+ * Create reminder/todo tools context
  */
-function createReminderTodoContext(): ReminderTodoContext & PlatformContext {
+function createReminderTodoContext(): ReminderTodoContext {
   return {
     getConfig: () => config,
     getReminderManager: () => reminderManager,
     getTodoListManager: () => todoListManager,
     initializeServices,
-    getClientInfo: () => clientInfo,
   };
 }
 
@@ -365,21 +315,6 @@ function createSamplingContext(): SamplingContext {
 }
 
 /**
- * Create platform tools context
- *
- * Provides access to client information and configuration
- * for the get_platform_info tool handler.
- *
- * Requirements: 7.1-7.7 (platform-adaptive-integration)
- */
-function createPlatformToolsContext(): PlatformToolsContext {
-  return {
-    getClientInfo: () => clientInfo,
-    getConfig: () => config,
-  };
-}
-
-/**
  * Initialize the MCP server with all tools
  */
 async function createServer(): Promise<McpServer> {
@@ -389,7 +324,6 @@ async function createServer(): Promise<McpServer> {
   });
 
   // Store server reference for Sampling support
-  // Requirements: 1.6 (platform-adaptive-integration)
   mcpServerRef = server;
 
   // Try to load existing config
@@ -402,28 +336,23 @@ async function createServer(): Promise<McpServer> {
     config = null;
   }
 
-  // Setup client capability detection on initialization
-  // The oninitialized callback is called after the client sends the initialized notification
-  // At this point, clientInfo and capabilities are available from the underlying server
-  // Requirements: 1.1, 1.6 (platform-adaptive-integration)
+  // Log client capabilities on initialization (capability-based approach)
   server.server.oninitialized = () => {
     const mcpClientVersion = server.server.getClientVersion();
     const clientCapabilities = server.server.getClientCapabilities();
 
-    if (mcpClientVersion) {
-      clientInfo = detectClientInfo(
-        clientCapabilities ?? {},
-        mcpClientVersion
-      );
+    if (mcpClientVersion && clientCapabilities) {
+      // Capability-based: check for Sampling support
+      supportsSampling = clientCapabilities.sampling !== undefined;
 
       mcpLogger.info(
         {
-          clientName: clientInfo.clientName,
-          clientVersion: clientInfo.clientVersion,
-          supportsSampling: clientInfo.supportsSampling,
-          capabilities: Object.keys(clientCapabilities ?? {}),
+          clientName: mcpClientVersion.name,
+          clientVersion: mcpClientVersion.version,
+          supportsSampling,
+          capabilities: Object.keys(clientCapabilities),
         },
-        'Client capabilities detected'
+        'MCP client initialized'
       );
     } else {
       mcpLogger.warn('No clientInfo available during MCP initialization');
@@ -537,32 +466,23 @@ async function createServer(): Promise<McpServer> {
     },
     async ({ taskTitle, dueDate, reminderType, list, priority, notes }) => {
       const reminderContext = createReminderTodoContext();
-      const client = reminderContext.getClientInfo();
 
-      // Check if client supports Sampling for native reminders integration
-      // When Sampling is supported, Claude can access native Reminders API
-      // Otherwise, fall back to AppleScript on macOS
-      if (client?.supportsSampling) {
+      // Capability-based routing: Use Sampling when available
+      if (supportsSampling) {
         mcpLogger.info(
-          {
-            clientName: client.clientName,
-            supportsSampling: true,
-          },
-          'Using Sampling-based reminder integration (native reminders access)'
+          { supportsSampling },
+          'Using Sampling-based reminder integration'
         );
         return handleSetReminderWithSampling(
           { taskTitle, dueDate, reminderType, list, priority, notes },
           reminderContext,
-          createSamplingContext() as ReminderSamplingContext,
-          client
+          createSamplingContext() as ReminderSamplingContext
         );
       }
 
-      // Fall back to MCP-only handler (AppleScript on macOS)
+      // Fall back to MCP-only handler (macOS with AppleScript)
       mcpLogger.info(
-        {
-          supportsSampling: client?.supportsSampling || false,
-        },
+        { supportsSampling },
         'Using MCP-only reminder integration (AppleScript)'
       );
       return handleSetReminder(reminderContext, {
@@ -633,18 +553,12 @@ async function createServer(): Promise<McpServer> {
     },
     async ({ startDate, endDate, calendarId }) => {
       const calendarContext = createCalendarToolsContext();
-      const client = calendarContext.getClientInfo();
 
-      // Check if client supports Sampling for native calendar integration
-      // When Sampling is supported, Claude can access native Calendar API + MCP sources
-      // Otherwise, use MCP-only: EventKit (macOS) or Google Calendar
-      if (client?.supportsSampling) {
+      // Capability-based routing: Use Sampling when available
+      if (supportsSampling) {
         mcpLogger.info(
-          {
-            clientName: client.clientName,
-            supportsSampling: true,
-          },
-          'Using Sampling-based calendar integration (native + MCP calendars)'
+          { supportsSampling },
+          'Using Sampling-based calendar integration'
         );
         return handleListCalendarEventsWithSampling(
           { startDate, endDate, calendarId },
@@ -653,11 +567,9 @@ async function createServer(): Promise<McpServer> {
         );
       }
 
-      // Fall back to MCP-only handler
+      // Fall back to MCP-only handler (EventKit/Google Calendar)
       mcpLogger.info(
-        {
-          supportsSampling: client?.supportsSampling || false,
-        },
+        { supportsSampling },
         'Using MCP-only calendar integration'
       );
       return handleListCalendarEvents(calendarContext, {
@@ -1605,28 +1517,6 @@ async function createServer(): Promise<McpServer> {
   );
 
   // ============================================
-  // Platform Tools
-  // Requirements: 7.1-7.7 (platform-adaptive-integration)
-  // ============================================
-
-  /**
-   * get_platform_info - Get detected platform and available integrations
-   * Requirements: 7.1-7.7 (platform-adaptive-integration)
-   *
-   * Returns platform information including:
-   * - Detected platform type (ios, ipados, macos, desktop, web, unknown)
-   * - MCP client name and version
-   * - Sampling support status
-   * - Available calendar and reminder integrations
-   * - Warnings about unavailable features
-   */
-  server.tool(
-    "get_platform_info",
-    "Get detected platform information and available integrations. Shows which calendar and reminder integrations are available on your platform, and any warnings about unavailable features.",
-    {},
-    async () => handleGetPlatformInfo({}, createPlatformToolsContext()),
-  );
-
   return server;
 }
 

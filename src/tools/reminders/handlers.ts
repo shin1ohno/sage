@@ -11,7 +11,6 @@
 import type { UserConfig, Priority } from '../../types/index.js';
 import type { ReminderManager } from '../../integrations/reminder-manager.js';
 import type { TodoListManager } from '../../integrations/todo-list-manager.js';
-import type { ClientInfo } from '../../types/sampling.js';
 import { createToolResponse, createErrorFromCatch } from '../registry.js';
 import {
   SamplingService,
@@ -221,20 +220,8 @@ export async function handleListTodos(
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 /**
- * Platform context for accessing client information
- * Aligned with the pattern used in calendar handlers
- *
- * Requirements: 1.6 (platform-adaptive-integration)
- */
-export interface PlatformContext {
-  getClientInfo: () => ClientInfo | null;
-}
-
-/**
  * Sampling context for MCP Server access
  * Used to send Sampling requests to the host application
- *
- * Requirements: 2.1-2.7 (platform-adaptive-integration)
  */
 export interface SamplingContext {
   getMcpServer: () => McpServer | null;
@@ -252,32 +239,15 @@ export interface SamplingContext {
  * 2. Sends the Sampling request to Claude via SamplingService
  * 3. Returns Claude's response directly (success or error)
  *
- * Requirements: 2.3, 4.1
- * - WHEN set_reminder tool is called on iOS/iPad THEN system SHALL use Sampling
- *   to request Claude: "Create reminder using native iOS Reminders API with
- *   title, due date, and notes"
- *
  * @param args - Reminder creation arguments (title, dueDate, notes, etc.)
  * @param _context - Reminder context (not used in Sampling path but required for interface consistency)
  * @param samplingContext - Context providing access to MCP Server for Sampling requests
- * @param client - Client information with Sampling support status
  * @returns Tool response with reminder creation result or error
- *
- * @example
- * ```typescript
- * const response = await handleSetReminderWithSampling(
- *   { taskTitle: 'Buy groceries', dueDate: '2026-01-15T10:00:00Z' },
- *   reminderContext,
- *   { getMcpServer: () => mcpServer },
- *   clientInfo
- * );
- * ```
  */
 export async function handleSetReminderWithSampling(
   args: SetReminderInput,
-  _context: ReminderTodoContext & PlatformContext,
-  samplingContext: SamplingContext,
-  client: ClientInfo
+  _context: ReminderTodoContext,
+  samplingContext: SamplingContext
 ) {
   const { taskTitle, dueDate, notes, priority, list } = args;
 
@@ -339,7 +309,7 @@ export async function handleSetReminderWithSampling(
           method: 'sampling',
           reminderId: parsedResponse.reminderId,
           message: `iOSネイティブリマインダーを作成しました: ${taskTitle}`,
-          clientUsed: client.clientName,
+          platformUsed: 'sampling',
         });
       } else {
         return createToolResponse({
@@ -348,7 +318,7 @@ export async function handleSetReminderWithSampling(
           method: 'sampling',
           error: parsedResponse.error || 'Unknown error from native API',
           message: `リマインダー作成に失敗しました: ${parsedResponse.error || 'Unknown error'}`,
-          clientUsed: client.clientName,
+          platformUsed: 'sampling',
         });
       }
     } catch {
@@ -359,7 +329,7 @@ export async function handleSetReminderWithSampling(
         destination: 'native-ios-reminders',
         method: 'sampling',
         message: responseText,
-        clientUsed: client.clientName,
+        platformUsed: 'sampling',
         note: 'Response was not in expected JSON format, returning raw response',
       });
     }
