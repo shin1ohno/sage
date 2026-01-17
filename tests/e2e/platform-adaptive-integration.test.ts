@@ -1,37 +1,30 @@
 /**
  * E2E Test: Platform-Adaptive Integration
  * Task: E2E tests for platform-adaptive integration
- * Requirements: platform-adaptive-integration (1.1-1.6, 2.1-2.3, 3.1-3.3, 4.1-4.3, 7.1-7.7)
+ * Requirements: platform-adaptive-integration (1.1-1.6, 2.1-2.3, 3.1-3.3, 4.1-4.3)
  *
  * Tests complete platform-adaptive workflow:
  * 1. Client capability detection (Sampling support)
  * 2. Sampling-based integration when client supports it
  * 3. MCP-only integration when Sampling is not supported
- * 4. get_platform_info tool functionality
  *
  * Note: Tests use mocked MCP Server and Sampling responses for consistent CI/CD execution.
  */
 
-import { detectClientInfo, type ClientInfo } from '../../src/types/sampling.js';
+import { detectClientInfo } from '../../src/types/sampling.js';
 import { IntegrationStrategyManager } from '../../src/services/integration-strategy-manager.js';
 import {
   SamplingError,
   SamplingErrorCodes,
 } from '../../src/services/sampling-service.js';
-import { handleGetPlatformInfo } from '../../src/tools/platform/handlers.js';
 import {
   handleListCalendarEventsWithSampling,
   CalendarToolsContext,
-  PlatformContext,
   SamplingContext,
 } from '../../src/tools/calendar/handlers.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
-  createMockPlatformToolsContext,
   createTestConfig,
-  DEFAULT_DETECTED_PLATFORM,
-  IOS_DETECTED_PLATFORM,
-  WEB_DETECTED_PLATFORM,
 } from '../helpers/index.js';
 
 // Mock the logger to prevent console output during tests
@@ -142,7 +135,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
         createMessage: jest.Mock;
       };
     };
-    let mockCalendarToolsContext: CalendarToolsContext & PlatformContext;
+    let mockCalendarToolsContext: CalendarToolsContext;
     let mockSamplingContext: SamplingContext;
 
     beforeEach(() => {
@@ -155,7 +148,7 @@ describe('E2E: Platform-Adaptive Integration', () => {
         },
       };
 
-      // Create mock calendar tools context with Sampling-capable client
+      // Create mock calendar tools context
       mockCalendarToolsContext = {
         getConfig: jest.fn(() => createTestConfig({
           integrations: {
@@ -169,7 +162,6 @@ describe('E2E: Platform-Adaptive Integration', () => {
         getWorkingCadenceService: jest.fn(() => null),
         setWorkingCadenceService: jest.fn(),
         initializeServices: jest.fn(),
-        getClientInfo: jest.fn(() => IOS_DETECTED_PLATFORM),
       };
 
       // Create mock sampling context
@@ -273,121 +265,4 @@ describe('E2E: Platform-Adaptive Integration', () => {
     });
   });
 
-  describe('get_platform_info Tool (Requirement 7.1-7.7)', () => {
-    describe('Desktop client info (Requirement 7.3)', () => {
-      it('should return complete client info with all integrations', async () => {
-        const ctx = createMockPlatformToolsContext({
-          clientInfo: DEFAULT_DETECTED_PLATFORM,
-          config: createTestConfig({
-            integrations: {
-              googleCalendar: { enabled: true },
-            },
-          }),
-        });
-
-        const result = await handleGetPlatformInfo({}, ctx);
-        const response = JSON.parse(result.content[0].text);
-
-        // Client info
-        expect(response.clientName).toBe('claude-desktop');
-        expect(response.supportsSampling).toBe(false);
-
-        // Server environment
-        expect(response.serverEnvironment).toBeDefined();
-        expect(response.serverEnvironment.platform).toBeDefined();
-
-        // Available integrations
-        expect(response.availableIntegrations.calendar.google).toBe(true);
-      });
-    });
-
-    describe('Client with Sampling support (Requirement 7.2)', () => {
-      it('should return client info with native integrations enabled', async () => {
-        const ctx = createMockPlatformToolsContext({
-          clientInfo: IOS_DETECTED_PLATFORM,
-          config: createTestConfig({
-            integrations: {
-              googleCalendar: { enabled: true },
-            },
-          }),
-        });
-
-        const result = await handleGetPlatformInfo({}, ctx);
-        const response = JSON.parse(result.content[0].text);
-
-        // Client info
-        expect(response.supportsSampling).toBe(true);
-
-        // Native integrations should be available when Sampling is supported
-        expect(response.availableIntegrations.calendar.native).toBe(true);
-        expect(response.availableIntegrations.reminders.native).toBe(true);
-      });
-    });
-
-    describe('Client without Sampling support (Requirement 7.4)', () => {
-      it('should return client info with limited integrations', async () => {
-        const ctx = createMockPlatformToolsContext({
-          clientInfo: WEB_DETECTED_PLATFORM,
-          config: createTestConfig({
-            integrations: {
-              googleCalendar: { enabled: true },
-            },
-          }),
-        });
-
-        const result = await handleGetPlatformInfo({}, ctx);
-        const response = JSON.parse(result.content[0].text);
-
-        // Client info
-        expect(response.supportsSampling).toBe(false);
-
-        // Native integrations not available
-        expect(response.availableIntegrations.calendar.native).toBe(false);
-        expect(response.availableIntegrations.reminders.native).toBe(false);
-
-        // Sampling warning (Requirement 7.5)
-        expect(response.warnings).toBeDefined();
-        expect(response.warnings.some((w: string) =>
-          w.includes('Native integration unavailable')
-        )).toBe(true);
-      });
-    });
-
-    describe('Google Calendar warnings (Requirement 7.7)', () => {
-      it('should include warning when Google Calendar is not authenticated', async () => {
-        const ctx = createMockPlatformToolsContext({
-          clientInfo: DEFAULT_DETECTED_PLATFORM,
-          config: createTestConfig({
-            integrations: {
-              googleCalendar: { enabled: false },
-            },
-          }),
-        });
-
-        const result = await handleGetPlatformInfo({}, ctx);
-        const response = JSON.parse(result.content[0].text);
-
-        expect(response.availableIntegrations.calendar.google).toBe(false);
-        expect(response.warnings).toContain(
-          'Google Calendar: Not authenticated (run authenticate_google)'
-        );
-      });
-    });
-
-    describe('Client not detected', () => {
-      it('should return error when client info is null', async () => {
-        const ctx = createMockPlatformToolsContext({
-          clientInfo: null,
-          config: createTestConfig(),
-        });
-
-        const result = await handleGetPlatformInfo({}, ctx);
-        const response = JSON.parse(result.content[0].text);
-
-        expect(response.error).toBe(true);
-        expect(response.message).toContain('Client not detected');
-        expect(response.suggestion).toContain('reconnecting');
-      });
-    });
-  });
 });

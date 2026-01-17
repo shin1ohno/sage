@@ -21,8 +21,6 @@ describe('Tool Parity', () => {
     'get_calendar_sync_status',
     // reload_config is stdio-only (remote mode has hot reload)
     'reload_config',
-    // get_platform_info is stdio-only (relies on MCP client info from initialization)
-    'get_platform_info',
   ];
 
   function extractToolsFromIndex(): string[] {

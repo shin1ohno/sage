@@ -12,7 +12,6 @@ import { SamplingError, SamplingErrorCodes } from '../../../src/services/samplin
 import {
   createMockReminderContextWithPlatform,
   createMockSamplingContext,
-  IOS_DETECTED_PLATFORM,
 } from '../../helpers/index.js';
 
 /**
@@ -51,8 +50,7 @@ describe('handleSetReminderWithSampling', () => {
       const result = await handleSetReminderWithSampling(
         { taskTitle: '' },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
       const response = JSON.parse(result.content[0].text);
 
@@ -67,8 +65,7 @@ describe('handleSetReminderWithSampling', () => {
       const result = await handleSetReminderWithSampling(
         { taskTitle: '   ' },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
       const response = JSON.parse(result.content[0].text);
 
@@ -87,8 +84,7 @@ describe('handleSetReminderWithSampling', () => {
       const result = await handleSetReminderWithSampling(
         { taskTitle: 'Test Task' },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
       const response = JSON.parse(result.content[0].text);
 
@@ -113,9 +109,7 @@ describe('handleSetReminderWithSampling', () => {
         }),
       });
 
-      const ctx = createMockReminderContextWithPlatform({
-        platform: IOS_DETECTED_PLATFORM,
-      });
+      const ctx = createMockReminderContextWithPlatform();
       const samplingCtx = createMockSamplingContext({
         getMcpServer: () => mockServer,
       }) as SamplingContext;
@@ -128,8 +122,7 @@ describe('handleSetReminderWithSampling', () => {
           priority: 'P1',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
       const response = JSON.parse(result.content[0].text);
 
@@ -138,7 +131,7 @@ describe('handleSetReminderWithSampling', () => {
       expect(response.method).toBe('sampling');
       expect(response.reminderId).toBe('ios-reminder-123');
       expect(response.message).toContain('iOSネイティブリマインダー');
-      expect(response.clientUsed).toBe('claude-ios');
+      expect(response.platformUsed).toBe('sampling');
     });
 
     it('should include all optional fields in Sampling request', async () => {
@@ -154,9 +147,7 @@ describe('handleSetReminderWithSampling', () => {
         createMessage: mockCreateMessage,
       });
 
-      const ctx = createMockReminderContextWithPlatform({
-        platform: IOS_DETECTED_PLATFORM,
-      });
+      const ctx = createMockReminderContextWithPlatform();
       const samplingCtx = createMockSamplingContext({
         getMcpServer: () => mockServer,
       }) as SamplingContext;
@@ -170,8 +161,7 @@ describe('handleSetReminderWithSampling', () => {
           list: 'Work',
         },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
 
       // Verify createMessage was called
@@ -199,9 +189,7 @@ describe('handleSetReminderWithSampling', () => {
         }),
       });
 
-      const ctx = createMockReminderContextWithPlatform({
-        platform: IOS_DETECTED_PLATFORM,
-      });
+      const ctx = createMockReminderContextWithPlatform();
       const samplingCtx = createMockSamplingContext({
         getMcpServer: () => mockServer,
       }) as SamplingContext;
@@ -209,8 +197,7 @@ describe('handleSetReminderWithSampling', () => {
       const result = await handleSetReminderWithSampling(
         { taskTitle: 'Test Task' },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
       const response = JSON.parse(result.content[0].text);
 
@@ -231,9 +218,7 @@ describe('handleSetReminderWithSampling', () => {
         }),
       });
 
-      const ctx = createMockReminderContextWithPlatform({
-        platform: IOS_DETECTED_PLATFORM,
-      });
+      const ctx = createMockReminderContextWithPlatform();
       const samplingCtx = createMockSamplingContext({
         getMcpServer: () => mockServer,
       }) as SamplingContext;
@@ -241,8 +226,7 @@ describe('handleSetReminderWithSampling', () => {
       const result = await handleSetReminderWithSampling(
         { taskTitle: 'Test Task' },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
       const response = JSON.parse(result.content[0].text);
 
@@ -264,9 +248,7 @@ describe('handleSetReminderWithSampling', () => {
         createMessage: jest.fn().mockRejectedValue(userRejectionError),
       });
 
-      const ctx = createMockReminderContextWithPlatform({
-        platform: IOS_DETECTED_PLATFORM,
-      });
+      const ctx = createMockReminderContextWithPlatform();
       const samplingCtx = createMockSamplingContext({
         getMcpServer: () => mockServer,
       }) as SamplingContext;
@@ -274,8 +256,7 @@ describe('handleSetReminderWithSampling', () => {
       const result = await handleSetReminderWithSampling(
         { taskTitle: 'Test Task' },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
       const response = JSON.parse(result.content[0].text);
 
@@ -296,9 +277,7 @@ describe('handleSetReminderWithSampling', () => {
         createMessage: jest.fn().mockRejectedValue(notSupportedError),
       });
 
-      const ctx = createMockReminderContextWithPlatform({
-        platform: IOS_DETECTED_PLATFORM,
-      });
+      const ctx = createMockReminderContextWithPlatform();
       const samplingCtx = createMockSamplingContext({
         getMcpServer: () => mockServer,
       }) as SamplingContext;
@@ -306,8 +285,7 @@ describe('handleSetReminderWithSampling', () => {
       const result = await handleSetReminderWithSampling(
         { taskTitle: 'Test Task' },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
       const response = JSON.parse(result.content[0].text);
 
@@ -327,9 +305,7 @@ describe('handleSetReminderWithSampling', () => {
         createMessage: jest.fn().mockRejectedValue(otherError),
       });
 
-      const ctx = createMockReminderContextWithPlatform({
-        platform: IOS_DETECTED_PLATFORM,
-      });
+      const ctx = createMockReminderContextWithPlatform();
       const samplingCtx = createMockSamplingContext({
         getMcpServer: () => mockServer,
       }) as SamplingContext;
@@ -337,8 +313,7 @@ describe('handleSetReminderWithSampling', () => {
       const result = await handleSetReminderWithSampling(
         { taskTitle: 'Test Task' },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
       const response = JSON.parse(result.content[0].text);
 
@@ -353,9 +328,7 @@ describe('handleSetReminderWithSampling', () => {
         createMessage: jest.fn().mockRejectedValue(new Error('Unexpected error')),
       });
 
-      const ctx = createMockReminderContextWithPlatform({
-        platform: IOS_DETECTED_PLATFORM,
-      });
+      const ctx = createMockReminderContextWithPlatform();
       const samplingCtx = createMockSamplingContext({
         getMcpServer: () => mockServer,
       }) as SamplingContext;
@@ -363,8 +336,7 @@ describe('handleSetReminderWithSampling', () => {
       const result = await handleSetReminderWithSampling(
         { taskTitle: 'Test Task' },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
       const response = JSON.parse(result.content[0].text);
 
@@ -378,9 +350,7 @@ describe('handleSetReminderWithSampling', () => {
   describe('Platform Information', () => {
     it('should include platform information in response', async () => {
       const mockServer = createMockMcpServer();
-      const ctx = createMockReminderContextWithPlatform({
-        platform: IOS_DETECTED_PLATFORM,
-      });
+      const ctx = createMockReminderContextWithPlatform();
       const samplingCtx = createMockSamplingContext({
         getMcpServer: () => mockServer,
       }) as SamplingContext;
@@ -388,25 +358,17 @@ describe('handleSetReminderWithSampling', () => {
       const result = await handleSetReminderWithSampling(
         { taskTitle: 'Test Task' },
         ctx,
-        samplingCtx,
-        IOS_DETECTED_PLATFORM
+        samplingCtx
       );
       const response = JSON.parse(result.content[0].text);
 
-      expect(response.clientUsed).toBe('claude-ios');
+      // After refactoring, platformUsed indicates Sampling was used
+      expect(response.platformUsed).toBe('sampling');
     });
 
-    it('should work with iPadOS platform', async () => {
-      const ipadosPlatform = {
-        ...IOS_DETECTED_PLATFORM,
-        platform: 'ipados' as const,
-        clientName: 'claude-ipados',
-      };
-
+    it('should consistently use sampling platform', async () => {
       const mockServer = createMockMcpServer();
-      const ctx = createMockReminderContextWithPlatform({
-        platform: ipadosPlatform,
-      });
+      const ctx = createMockReminderContextWithPlatform();
       const samplingCtx = createMockSamplingContext({
         getMcpServer: () => mockServer,
       }) as SamplingContext;
@@ -414,12 +376,13 @@ describe('handleSetReminderWithSampling', () => {
       const result = await handleSetReminderWithSampling(
         { taskTitle: 'Test Task' },
         ctx,
-        samplingCtx,
-        ipadosPlatform
+        samplingCtx
       );
       const response = JSON.parse(result.content[0].text);
 
-      expect(response.clientUsed).toBe('claude-ipados');
+      // Verify consistent platform indication
+      expect(response.platformUsed).toBe('sampling');
+      expect(response.method).toBe('sampling');
     });
   });
 });
