@@ -654,6 +654,331 @@ describe('Google Calendar Types', () => {
     });
   });
 
+  // ============================================================
+  // RSVP Support Tests
+  // Requirement: calendar-rsvp-support ATS-1, ATS-2, ATS-3, ATS-4, ATS-5
+  // ============================================================
+
+  describe('convertGoogleToCalendarEvent RSVP support', () => {
+    // Task 7: AttendeeInfo conversion tests (ATS-1, ATS-3, ATS-4)
+    describe('attendeesDetailed conversion', () => {
+      it('should convert attendees with different responseStatus values (ATS-1)', () => {
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'event-rsvp',
+          summary: 'Team Meeting with RSVP',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-rsvp@example.com',
+          attendees: [
+            { email: 'accepted@example.com', displayName: 'Accepted User', responseStatus: 'accepted' },
+            { email: 'declined@example.com', displayName: 'Declined User', responseStatus: 'declined' },
+            { email: 'tentative@example.com', displayName: 'Tentative User', responseStatus: 'tentative' },
+            { email: 'pending@example.com', displayName: 'Pending User', responseStatus: 'needsAction' },
+          ],
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        expect(result.attendeesDetailed).toHaveLength(4);
+        expect(result.attendeesDetailed![0]).toEqual({
+          email: 'accepted@example.com',
+          displayName: 'Accepted User',
+          responseStatus: 'accepted',
+          optional: undefined,
+          self: undefined,
+          comment: undefined,
+        });
+        expect(result.attendeesDetailed![1].responseStatus).toBe('declined');
+        expect(result.attendeesDetailed![2].responseStatus).toBe('tentative');
+        expect(result.attendeesDetailed![3].responseStatus).toBe('needsAction');
+      });
+
+      it('should mark self attendee with self: true (ATS-3)', () => {
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'event-self',
+          summary: 'Meeting with Self',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-self@example.com',
+          attendees: [
+            { email: 'me@example.com', displayName: 'Me', responseStatus: 'accepted', self: true },
+            { email: 'other@example.com', displayName: 'Other', responseStatus: 'tentative', self: false },
+          ],
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        expect(result.attendeesDetailed).toHaveLength(2);
+        expect(result.attendeesDetailed![0].self).toBe(true);
+        expect(result.attendeesDetailed![1].self).toBe(false);
+      });
+
+      it('should distinguish required vs optional attendees (ATS-4)', () => {
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'event-optional',
+          summary: 'Meeting with Optional Attendees',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-optional@example.com',
+          attendees: [
+            { email: 'required@example.com', responseStatus: 'accepted', optional: false },
+            { email: 'optional@example.com', responseStatus: 'needsAction', optional: true },
+          ],
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        expect(result.attendeesDetailed).toHaveLength(2);
+        expect(result.attendeesDetailed![0].optional).toBe(false);
+        expect(result.attendeesDetailed![1].optional).toBe(true);
+      });
+
+      it('should include attendee comments when present', () => {
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'event-comment',
+          summary: 'Meeting with Comments',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-comment@example.com',
+          attendees: [
+            { email: 'user@example.com', responseStatus: 'declined', comment: 'Cannot attend due to conflict' },
+          ],
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        expect(result.attendeesDetailed![0].comment).toBe('Cannot attend due to conflict');
+      });
+
+      it('should default responseStatus to needsAction when missing', () => {
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'event-no-status',
+          summary: 'Meeting without status',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-no-status@example.com',
+          attendees: [
+            { email: 'user@example.com' }, // No responseStatus
+          ],
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        expect(result.attendeesDetailed![0].responseStatus).toBe('needsAction');
+      });
+
+      it('should handle events without attendees (undefined)', () => {
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'event-no-attendees',
+          summary: 'Solo Event',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-solo@example.com',
+          // attendees is undefined
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        expect(result.attendeesDetailed).toBeUndefined();
+        expect(result.attendees).toBeUndefined();
+      });
+
+      it('should handle events with empty attendees array', () => {
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'event-empty-attendees',
+          summary: 'Event with empty attendees',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-empty@example.com',
+          attendees: [],
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        expect(result.attendeesDetailed).toEqual([]);
+        expect(result.attendees).toEqual([]);
+      });
+    });
+
+    // Task 8: OrganizerInfo conversion tests (ATS-2)
+    describe('organizer conversion', () => {
+      it('should convert organizer information (ATS-2)', () => {
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'event-org',
+          summary: 'Organized Meeting',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-org@example.com',
+          organizer: {
+            email: 'organizer@example.com',
+            displayName: 'Meeting Organizer',
+            self: false,
+          },
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        expect(result.organizer).toEqual({
+          email: 'organizer@example.com',
+          displayName: 'Meeting Organizer',
+          self: false,
+        });
+      });
+
+      it('should identify self as organizer', () => {
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'event-self-org',
+          summary: 'My Meeting',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-self-org@example.com',
+          organizer: {
+            email: 'me@example.com',
+            displayName: 'Me',
+            self: true,
+          },
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        expect(result.organizer?.self).toBe(true);
+      });
+
+      it('should handle events without organizer', () => {
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'event-no-org',
+          summary: 'Event without organizer',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-no-org@example.com',
+          // organizer is undefined
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        expect(result.organizer).toBeUndefined();
+      });
+
+      it('should handle organizer without displayName', () => {
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'event-org-no-name',
+          summary: 'Event with minimal organizer',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-org-no-name@example.com',
+          organizer: {
+            email: 'org@example.com',
+            // displayName and self are undefined
+          },
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        expect(result.organizer?.email).toBe('org@example.com');
+        expect(result.organizer?.displayName).toBeUndefined();
+        expect(result.organizer?.self).toBeUndefined();
+      });
+    });
+
+    // Task 9: EventKit graceful handling tests (ATS-5, FR-5)
+    describe('EventKit event graceful handling', () => {
+      it('should handle EventKit-like events without attendee RSVP data (ATS-5)', () => {
+        // EventKit events typically don't have responseStatus
+        // Simulating by creating an event without the detailed attendee fields
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'eventkit-event',
+          summary: 'EventKit Meeting',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-eventkit@example.com',
+          // No attendees - typical for basic EventKit events
+        };
+
+        // Should not throw error
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        expect(result).toBeDefined();
+        expect(result.attendeesDetailed).toBeUndefined();
+        expect(result.organizer).toBeUndefined();
+      });
+
+      it('should handle mixed source events gracefully', () => {
+        // Event with minimal attendee info (as might come from EventKit)
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'mixed-event',
+          summary: 'Mixed Source Meeting',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-mixed@example.com',
+          attendees: [
+            { email: 'user@example.com' }, // Minimal attendee info
+          ],
+          organizer: {
+            email: 'org@example.com',
+          },
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        // Should have default responseStatus
+        expect(result.attendeesDetailed![0].responseStatus).toBe('needsAction');
+        // Should still have basic organizer
+        expect(result.organizer?.email).toBe('org@example.com');
+      });
+    });
+
+    // Combined test: Full RSVP flow
+    describe('full RSVP data flow', () => {
+      it('should convert complete event with all RSVP information', () => {
+        const googleEvent: GoogleCalendarEvent = {
+          id: 'full-rsvp-event',
+          summary: 'Complete Meeting',
+          start: { dateTime: '2025-01-15T10:00:00+09:00' },
+          end: { dateTime: '2025-01-15T11:00:00+09:00' },
+          iCalUID: 'uid-full@example.com',
+          organizer: {
+            email: 'organizer@example.com',
+            displayName: 'Organizer',
+            self: false,
+          },
+          attendees: [
+            { email: 'organizer@example.com', displayName: 'Organizer', responseStatus: 'accepted', self: false },
+            { email: 'me@example.com', displayName: 'Me', responseStatus: 'accepted', self: true },
+            { email: 'optional@example.com', displayName: 'Optional', responseStatus: 'tentative', optional: true },
+            { email: 'declined@example.com', displayName: 'Declined', responseStatus: 'declined', comment: 'Conflict' },
+          ],
+        };
+
+        const result = convertGoogleToCalendarEvent(googleEvent);
+
+        // Verify organizer
+        expect(result.organizer).toBeDefined();
+        expect(result.organizer?.email).toBe('organizer@example.com');
+
+        // Verify attendees
+        expect(result.attendeesDetailed).toHaveLength(4);
+
+        // Verify backward compatible attendees field still works
+        expect(result.attendees).toEqual([
+          'organizer@example.com',
+          'me@example.com',
+          'optional@example.com',
+          'declined@example.com',
+        ]);
+
+        // Verify detailed attendee info
+        const selfAttendee = result.attendeesDetailed!.find(a => a.self);
+        expect(selfAttendee?.email).toBe('me@example.com');
+
+        const optionalAttendee = result.attendeesDetailed!.find(a => a.optional);
+        expect(optionalAttendee?.email).toBe('optional@example.com');
+
+        const declinedAttendee = result.attendeesDetailed!.find(a => a.responseStatus === 'declined');
+        expect(declinedAttendee?.comment).toBe('Conflict');
+      });
+    });
+  });
+
   describe('areEventsDuplicate', () => {
     it('should return true when iCalUIDs match', () => {
       const event1: CalendarEvent = {

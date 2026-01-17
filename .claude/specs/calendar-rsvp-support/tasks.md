@@ -1,7 +1,7 @@
 # Calendar RSVP Support - Implementation Tasks
 
 > **Last Updated**: 2026-01-17
-> **Status**: Draft
+> **Status**: Completed
 > **Feature**: calendar-rsvp-support
 > **Requirements**: [requirements.md](./requirements.md)
 > **Design**: [design.md](./design.md)
@@ -461,13 +461,13 @@ graph LR
 
 ## Progress Tracking
 
-- [ ] Task 1: Add AttendeeInfo and OrganizerInfo interfaces
-- [ ] Task 2: Extend CalendarEvent interface
-- [ ] Task 3: Update GoogleCalendarEvent attendees type
-- [ ] Task 4: Update convertGoogleToCalendarEvent for attendees
-- [ ] Task 5: Update convertGoogleToCalendarEvent for organizer
-- [ ] Task 6: Update handleListCalendarEvents response mapping
-- [ ] Task 7: Add unit tests for AttendeeInfo conversion
-- [ ] Task 8: Add unit tests for OrganizerInfo conversion
-- [ ] Task 9: Add unit tests for EventKit graceful handling
-- [ ] Task 10: Add integration test for list_calendar_events
+- [x] Task 1: Add AttendeeInfo and OrganizerInfo interfaces
+- [x] Task 2: Extend CalendarEvent interface
+- [x] Task 3: Update GoogleCalendarEvent attendees type
+- [x] Task 4: Update convertGoogleToCalendarEvent for attendees
+- [x] Task 5: Update convertGoogleToCalendarEvent for organizer
+- [x] Task 6: Update handleListCalendarEvents response mapping
+- [x] Task 7: Add unit tests for AttendeeInfo conversion
+- [x] Task 8: Add unit tests for OrganizerInfo conversion
+- [x] Task 9: Add unit tests for EventKit graceful handling
+- [x] Task 10: Add integration test for list_calendar_events

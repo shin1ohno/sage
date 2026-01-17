@@ -446,7 +446,8 @@ export async function handleListCalendarEvents(
       success: true,
       sources: enabledSources,
       events: events.map((event) => {
-        // Include eventType and typeSpecificProperties in the response (Task 18)
+        // Include eventType, typeSpecificProperties, organizer, and attendees in the response
+        // Task 18 (eventType) + calendar-rsvp-support FR-3 (organizer, attendees)
         return {
           id: event.id,
           title: event.title,
@@ -458,6 +459,9 @@ export async function handleListCalendarEvents(
           source: event.source,
           eventType: event.eventType || 'default',
           typeSpecificProperties: event.typeSpecificProperties,
+          // RSVP information (Requirement: calendar-rsvp-support FR-3)
+          organizer: event.organizer,
+          attendees: event.attendeesDetailed,
         };
       }),
       period: { start: startDate, end: endDate },

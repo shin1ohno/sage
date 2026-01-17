@@ -5,6 +5,7 @@
  */
 
 import { describeRecurrence } from '../utils/recurrence-validator.js';
+import type { AttendeeInfo, OrganizerInfo } from './calendar.js';
 
 // ============================================================
 // Event Type Discriminated Union
@@ -128,7 +129,11 @@ export interface GoogleCalendarEvent {
   };
   attendees?: Array<{
     email: string;
-    responseStatus: 'needsAction' | 'declined' | 'tentative' | 'accepted';
+    displayName?: string;
+    responseStatus?: 'needsAction' | 'declined' | 'tentative' | 'accepted';
+    optional?: boolean;
+    self?: boolean;
+    comment?: string;
   }>;
   reminders?: {
     useDefault: boolean;
@@ -145,6 +150,7 @@ export interface GoogleCalendarEvent {
   organizer?: {
     email: string;
     displayName?: string;
+    self?: boolean;
   };
   /**
    * Event type from Google Calendar API
@@ -286,6 +292,16 @@ export interface CalendarEvent {
    * Requirement: recurring-calendar-events
    */
   recurrenceDescription?: string;
+  /**
+   * Organizer information for the event
+   * Requirement: calendar-rsvp-support FR-2, FR-3, US-2
+   */
+  organizer?: OrganizerInfo;
+  /**
+   * Detailed attendee information with RSVP status
+   * Requirement: calendar-rsvp-support FR-1, FR-3, US-1, US-3, US-4, US-5
+   */
+  attendeesDetailed?: AttendeeInfo[];
 }
 
 /**
@@ -384,6 +400,29 @@ export function convertGoogleToCalendarEvent(googleEvent: GoogleCalendarEvent): 
   const recurrenceDescription =
     recurrence && recurrence.length > 0 ? describeRecurrence(recurrence) : undefined;
 
+  // Convert attendees with full RSVP information
+  // Requirement: calendar-rsvp-support FR-1, FR-4, US-1, US-3, US-4
+  const attendeesDetailed: AttendeeInfo[] | undefined = googleEvent.attendees?.map(
+    (attendee) => ({
+      email: attendee.email,
+      displayName: attendee.displayName,
+      responseStatus: attendee.responseStatus || 'needsAction',
+      optional: attendee.optional,
+      self: attendee.self,
+      comment: attendee.comment,
+    })
+  );
+
+  // Convert organizer information
+  // Requirement: calendar-rsvp-support FR-2, FR-4, US-2
+  const organizer: OrganizerInfo | undefined = googleEvent.organizer
+    ? {
+        email: googleEvent.organizer.email,
+        displayName: googleEvent.organizer.displayName,
+        self: googleEvent.organizer.self,
+      }
+    : undefined;
+
   return {
     // Existing fields (backward compatibility)
     id: googleEvent.id,
@@ -405,6 +444,9 @@ export function convertGoogleToCalendarEvent(googleEvent: GoogleCalendarEvent): 
     recurrence,
     recurringEventId,
     recurrenceDescription,
+    // RSVP information (Requirement: calendar-rsvp-support FR-1, FR-2, FR-3)
+    organizer,
+    attendeesDetailed,
   };
 }
 

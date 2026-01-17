@@ -56,6 +56,38 @@ export const CALENDAR_RETRY_OPTIONS = {
 export type CalendarSource = 'eventkit' | 'google';
 
 /**
+ * Attendee information with RSVP status
+ * Requirement: calendar-rsvp-support FR-1, US-1, US-3, US-4
+ */
+export interface AttendeeInfo {
+  /** Attendee email address (required) */
+  email: string;
+  /** Display name if available */
+  displayName?: string;
+  /** RSVP response status (required) */
+  responseStatus: 'accepted' | 'declined' | 'tentative' | 'needsAction';
+  /** Whether this attendee is optional */
+  optional?: boolean;
+  /** Whether this attendee is the current user */
+  self?: boolean;
+  /** Comment from the attendee */
+  comment?: string;
+}
+
+/**
+ * Organizer information for calendar events
+ * Requirement: calendar-rsvp-support FR-2, US-2
+ */
+export interface OrganizerInfo {
+  /** Organizer email address (required) */
+  email: string;
+  /** Display name if available */
+  displayName?: string;
+  /** Whether the organizer is the current user */
+  self?: boolean;
+}
+
+/**
  * Calendar resource representing an individual calendar from any source
  * Requirement: multi-calendar-resources 1.3, 4.1
  */
