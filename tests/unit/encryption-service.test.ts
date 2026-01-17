@@ -260,9 +260,13 @@ describe('EncryptionService', () => {
       const plaintext = 'important data';
       const encrypted = await service.encrypt(plaintext);
 
-      // Tamper with the auth tag
+      // Tamper with the auth tag by inverting all bytes
       const parts = encrypted.split(':');
-      parts[2] = parts[2].slice(0, -2) + 'FF'; // Change auth tag
+      // Invert each hex digit to ensure the auth tag is completely different
+      parts[2] = parts[2].split('').map(c => {
+        const digit = parseInt(c, 16);
+        return (15 - digit).toString(16);
+      }).join('');
       const tampered = parts.join(':');
 
       await expect(service.decrypt(tampered)).rejects.toThrow();

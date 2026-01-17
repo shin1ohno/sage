@@ -284,11 +284,25 @@ describe('GoogleCalendarService', () => {
         location: 'Test Location',
         description: 'Test Description',
         attendees: ['attendee@example.com'],
+        attendeesDetailed: [
+          {
+            email: 'attendee@example.com',
+            responseStatus: 'accepted',
+            displayName: undefined,
+            self: undefined,
+            optional: undefined,
+            comment: undefined,
+          },
+        ],
         status: 'confirmed',
         iCalUID: 'ical-123',
         calendar: undefined,
         eventType: 'default',
         typeSpecificProperties: undefined,
+        organizer: undefined,
+        recurrence: undefined,
+        recurrenceDescription: undefined,
+        recurringEventId: undefined,
       });
     });
 
