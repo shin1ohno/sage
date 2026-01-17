@@ -9,7 +9,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
 // Fallback version - keep in sync with package.json
-const FALLBACK_VERSION = '1.0.1';
+const FALLBACK_VERSION = '1.0.4';
 
 function getVersion(): string {
   // Try to find package.json from current working directory
