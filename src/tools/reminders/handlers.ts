@@ -11,7 +11,7 @@
 import type { UserConfig, Priority } from '../../types/index.js';
 import type { ReminderManager } from '../../integrations/reminder-manager.js';
 import type { TodoListManager } from '../../integrations/todo-list-manager.js';
-import type { DetectedPlatform } from '../../types/platform.js';
+import type { ClientInfo } from '../../types/sampling.js';
 import { createToolResponse, createErrorFromCatch } from '../registry.js';
 import {
   SamplingService,
@@ -221,13 +221,13 @@ export async function handleListTodos(
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 /**
- * Platform context for accessing platform information
+ * Platform context for accessing client information
  * Aligned with the pattern used in calendar handlers
  *
  * Requirements: 1.6 (platform-adaptive-integration)
  */
 export interface PlatformContext {
-  getPlatformInfo: () => DetectedPlatform | null;
+  getClientInfo: () => ClientInfo | null;
 }
 
 /**
@@ -260,7 +260,7 @@ export interface SamplingContext {
  * @param args - Reminder creation arguments (title, dueDate, notes, etc.)
  * @param _context - Reminder context (not used in Sampling path but required for interface consistency)
  * @param samplingContext - Context providing access to MCP Server for Sampling requests
- * @param platform - Detected platform information
+ * @param client - Client information with Sampling support status
  * @returns Tool response with reminder creation result or error
  *
  * @example
@@ -269,7 +269,7 @@ export interface SamplingContext {
  *   { taskTitle: 'Buy groceries', dueDate: '2026-01-15T10:00:00Z' },
  *   reminderContext,
  *   { getMcpServer: () => mcpServer },
- *   iosPlatform
+ *   clientInfo
  * );
  * ```
  */
@@ -277,7 +277,7 @@ export async function handleSetReminderWithSampling(
   args: SetReminderInput,
   _context: ReminderTodoContext & PlatformContext,
   samplingContext: SamplingContext,
-  platform: DetectedPlatform
+  client: ClientInfo
 ) {
   const { taskTitle, dueDate, notes, priority, list } = args;
 
@@ -339,7 +339,7 @@ export async function handleSetReminderWithSampling(
           method: 'sampling',
           reminderId: parsedResponse.reminderId,
           message: `iOSネイティブリマインダーを作成しました: ${taskTitle}`,
-          platformUsed: platform.platform,
+          clientUsed: client.clientName,
         });
       } else {
         return createToolResponse({
@@ -348,7 +348,7 @@ export async function handleSetReminderWithSampling(
           method: 'sampling',
           error: parsedResponse.error || 'Unknown error from native API',
           message: `リマインダー作成に失敗しました: ${parsedResponse.error || 'Unknown error'}`,
-          platformUsed: platform.platform,
+          clientUsed: client.clientName,
         });
       }
     } catch {
@@ -359,7 +359,7 @@ export async function handleSetReminderWithSampling(
         destination: 'native-ios-reminders',
         method: 'sampling',
         message: responseText,
-        platformUsed: platform.platform,
+        clientUsed: client.clientName,
         note: 'Response was not in expected JSON format, returning raw response',
       });
     }

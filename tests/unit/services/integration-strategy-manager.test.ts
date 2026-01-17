@@ -2,31 +2,19 @@
  * Unit tests for IntegrationStrategyManager
  *
  * Tests the Sampling message templates for calendar and reminder operations
- * across different platforms (iOS, iPadOS, macOS).
+ * and strategy selection based on client Sampling support.
  *
  * @see requirements.md 5.1-5.4 (Sampling message construction)
  * @see design.md Component 3: Integration Strategy Manager
  */
 
 import { IntegrationStrategyManager } from '../../../src/services/integration-strategy-manager.js';
-import type { DetectedPlatform } from '../../../src/types/platform.js';
 
 describe('IntegrationStrategyManager', () => {
   let manager: IntegrationStrategyManager;
 
   beforeEach(() => {
     manager = new IntegrationStrategyManager();
-  });
-
-  // Helper function to create mock platforms
-  const createMockPlatform = (
-    platform: 'ios' | 'ipados' | 'macos' | 'web' | 'unknown',
-    supportsSampling = true
-  ): DetectedPlatform => ({
-    platform,
-    clientName: `Claude ${platform}`,
-    clientVersion: '1.0.0',
-    supportsSampling,
   });
 
   describe('buildCalendarSamplingMessage', () => {
@@ -371,61 +359,41 @@ describe('IntegrationStrategyManager', () => {
   describe('getCalendarStrategy', () => {
     const params = { startDate: '2026-01-01', endDate: '2026-01-31' };
 
-    it('should return Sampling strategy for iOS with Sampling support', () => {
-      const platform = createMockPlatform('ios');
-      const strategy = manager.getCalendarStrategy(platform, params);
+    it('should return Sampling strategy when supportsSampling is true', () => {
+      const strategy = manager.getCalendarStrategy(true, params);
 
       expect(strategy.useSampling).toBe(true);
       expect(strategy.samplingMessage).toBeDefined();
       expect(strategy.mcpToolsToCall).toContain('list_calendar_events');
-      expect(strategy.nativeIntegrations).toContain('ios-calendar');
+      expect(strategy.nativeIntegrations).toContain('native-calendar');
     });
 
-    it('should return MCP-only strategy for macOS', () => {
-      const platform = createMockPlatform('macos');
-      const strategy = manager.getCalendarStrategy(platform, params);
+    it('should return MCP-only strategy when supportsSampling is false', () => {
+      const strategy = manager.getCalendarStrategy(false, params);
 
       expect(strategy.useSampling).toBe(false);
       expect(strategy.samplingMessage).toBeUndefined();
       expect(strategy.mcpToolsToCall).toContain('list_calendar_events');
       expect(strategy.nativeIntegrations).toEqual([]);
     });
-
-    it('should return MCP-only strategy for web', () => {
-      const platform = createMockPlatform('web');
-      const strategy = manager.getCalendarStrategy(platform, params);
-
-      expect(strategy.useSampling).toBe(false);
-      expect(strategy.mcpToolsToCall).toContain('list_calendar_events');
-    });
   });
 
   describe('getReminderStrategy', () => {
     const params = { title: 'Test reminder' };
 
-    it('should return Sampling strategy for iOS with Sampling support', () => {
-      const platform = createMockPlatform('ios');
-      const strategy = manager.getReminderStrategy(platform, params);
+    it('should return Sampling strategy when supportsSampling is true', () => {
+      const strategy = manager.getReminderStrategy(true, params);
 
       expect(strategy.useSampling).toBe(true);
       expect(strategy.samplingMessage).toBeDefined();
-      expect(strategy.nativeIntegrations).toContain('ios-reminders');
+      expect(strategy.nativeIntegrations).toContain('native-reminders');
     });
 
-    it('should return MCP-only strategy for macOS', () => {
-      const platform = createMockPlatform('macos');
-      const strategy = manager.getReminderStrategy(platform, params);
+    it('should return MCP-only strategy when supportsSampling is false', () => {
+      const strategy = manager.getReminderStrategy(false, params);
 
       expect(strategy.useSampling).toBe(false);
       expect(strategy.mcpToolsToCall).toContain('set_reminder');
-    });
-
-    it('should return empty strategy for web (reminders not supported)', () => {
-      const platform = createMockPlatform('web');
-      const strategy = manager.getReminderStrategy(platform, params);
-
-      expect(strategy.useSampling).toBe(false);
-      expect(strategy.mcpToolsToCall).toEqual([]);
       expect(strategy.nativeIntegrations).toEqual([]);
     });
   });

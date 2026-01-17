@@ -3,11 +3,11 @@
  *
  * Tests that macOS platform uses MCP-only path (NOT Sampling) for calendar integration.
  * On macOS, calendar access is via CalendarSourceManager (EventKit/Google Calendar),
- * not via Sampling which is only used on iOS/iPadOS platforms.
+ * not via Sampling which is only used when the client supports Sampling.
  *
  * Requirements:
  * - Platform-adaptive integration: macOS uses MCP-only CalendarSourceManager
- * - Sampling is NOT called on macOS
+ * - Sampling is NOT called when supportsSampling is false
  * - MCP-only handler is used via handleListCalendarEvents
  */
 
@@ -23,23 +23,22 @@ import { handleListCalendarEvents } from '../../../src/tools/calendar/handlers.j
 import type { CalendarEvent, CalendarEventDetailed } from '../../../src/integrations/calendar-service.js';
 
 describe('macOS Platform Calendar Integration', () => {
-  describe('Platform Detection', () => {
-    it('should identify macOS platform with DEFAULT_DETECTED_PLATFORM', () => {
-      // Verify the DEFAULT_DETECTED_PLATFORM is macOS
-      expect(DEFAULT_DETECTED_PLATFORM.platform).toBe('macos');
+  describe('Client Detection', () => {
+    it('should identify desktop client with DEFAULT_DETECTED_PLATFORM', () => {
+      // Verify the DEFAULT_DETECTED_PLATFORM is desktop client
       expect(DEFAULT_DETECTED_PLATFORM.clientName).toBe('claude-desktop');
       expect(DEFAULT_DETECTED_PLATFORM.supportsSampling).toBe(false); // Desktop doesn't support Sampling
     });
   });
 
-  describe('MCP-Only Path for macOS', () => {
+  describe('MCP-Only Path for Desktop Clients', () => {
     let mockCalendarSourceManager: MockCalendarSourceManager;
 
     beforeEach(() => {
       mockCalendarSourceManager = createMockCalendarSourceManager();
     });
 
-    it('should use handleListCalendarEvents (MCP-only) on macOS platform', async () => {
+    it('should use handleListCalendarEvents (MCP-only) for clients without Sampling support', async () => {
       // Setup mock events
       const mockEvents: CalendarEvent[] = [
         {
@@ -63,13 +62,13 @@ describe('macOS Platform Calendar Integration', () => {
       mockCalendarSourceManager.getEvents.mockResolvedValue(mockEvents);
       mockCalendarSourceManager.getEnabledSources.mockReturnValue(['eventkit', 'google']);
 
-      // Create context with macOS platform
+      // Create context for desktop client
       const ctx = createMockCalendarToolsContext({
         config: DEFAULT_TEST_CONFIG,
         calendarSourceManager: mockCalendarSourceManager as unknown as CalendarSourceManager,
       });
 
-      // Call the MCP-only handler directly (this is what macOS uses)
+      // Call the MCP-only handler directly (this is what desktop clients use)
       const result = await handleListCalendarEvents(ctx, {
         startDate: '2026-01-10',
         endDate: '2026-01-11',
@@ -91,20 +90,13 @@ describe('macOS Platform Calendar Integration', () => {
       expect(content.totalEvents).toBe(2);
     });
 
-    it('should NOT use Sampling on macOS even though supportsSampling is true', async () => {
-      // macOS has supportsSampling: true but the routing logic in index.ts
-      // only uses Sampling for iOS/iPadOS platforms explicitly
+    it('should NOT use Sampling when supportsSampling is false', () => {
+      // Desktop clients have supportsSampling: false, so they use MCP-only path
+      // The routing decision is based on supportsSampling, not platform name
 
-      // The key insight is that DEFAULT_DETECTED_PLATFORM (macOS) has supportsSampling: true
-      // but the routing decision in index.ts checks for platform === 'ios' || platform === 'ipados'
-      // So macOS always uses the MCP-only path
+      expect(DEFAULT_DETECTED_PLATFORM.supportsSampling).toBe(false);
 
-      expect(DEFAULT_DETECTED_PLATFORM.supportsSampling).toBe(false) // Desktop does not support Sampling;
-      expect(DEFAULT_DETECTED_PLATFORM.platform).toBe('macos');
-
-      // Verify macOS is NOT ios or ipados (which are the Sampling platforms)
-      expect(DEFAULT_DETECTED_PLATFORM.platform).not.toBe('ios');
-      expect(DEFAULT_DETECTED_PLATFORM.platform).not.toBe('ipados');
+      // Desktop clients use MCP-only path because they don't support Sampling
     });
 
     it('should handle empty enabled sources gracefully', async () => {
@@ -229,11 +221,11 @@ describe('macOS Platform Calendar Integration', () => {
         calendarId: 'work-calendar',
       });
 
-      // Verify calendarId was passed to getEvents
+      // Verify calendarId was passed to getEvents (converted to array)
       expect(mockCalendarSourceManager.getEvents).toHaveBeenCalledWith(
         '2026-01-10',
         '2026-01-11',
-        'work-calendar'
+        ['work-calendar']
       );
     });
   });

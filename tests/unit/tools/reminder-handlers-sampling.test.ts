@@ -138,7 +138,7 @@ describe('handleSetReminderWithSampling', () => {
       expect(response.method).toBe('sampling');
       expect(response.reminderId).toBe('ios-reminder-123');
       expect(response.message).toContain('iOSネイティブリマインダー');
-      expect(response.platformUsed).toBe('ios');
+      expect(response.clientUsed).toBe('claude-ios');
     });
 
     it('should include all optional fields in Sampling request', async () => {
@@ -393,7 +393,7 @@ describe('handleSetReminderWithSampling', () => {
       );
       const response = JSON.parse(result.content[0].text);
 
-      expect(response.platformUsed).toBe('ios');
+      expect(response.clientUsed).toBe('claude-ios');
     });
 
     it('should work with iPadOS platform', async () => {
@@ -419,7 +419,7 @@ describe('handleSetReminderWithSampling', () => {
       );
       const response = JSON.parse(result.content[0].text);
 
-      expect(response.platformUsed).toBe('ipados');
+      expect(response.clientUsed).toBe('claude-ipados');
     });
   });
 });

@@ -8,20 +8,14 @@
  */
 
 import type { UserConfig } from '../../types/index.js';
-import type {
-  DetectedPlatform,
-  PlatformInfo,
-  CalendarIntegrations,
-  RemindersIntegrations,
-} from '../../types/platform.js';
-import { PlatformDetector } from '../../platform/detector.js';
+import type { ClientInfo } from '../../types/sampling.js';
 import { createToolResponse } from '../registry.js';
 
 /**
  * Platform context containing shared state
  */
 export interface PlatformToolsContext {
-  getPlatformInfo: () => DetectedPlatform | null;
+  getClientInfo: () => ClientInfo | null;
   getConfig: () => UserConfig | null;
 }
 
@@ -30,37 +24,63 @@ export interface PlatformToolsContext {
 // ============================================================
 
 /**
+ * Check if running on macOS (server-side)
+ */
+function isMacOS(): boolean {
+  return process.platform === 'darwin';
+}
+
+/**
+ * Build available integrations based on server environment and config
+ *
+ * @param config User configuration
+ * @returns Object describing available integrations
+ */
+function getAvailableIntegrations(config: UserConfig | null) {
+  const macOS = isMacOS();
+  const googleEnabled = config?.integrations?.googleCalendar?.enabled ?? false;
+
+  return {
+    calendar: {
+      eventkit: macOS,
+      google: googleEnabled,
+      native: false, // Native calendar access requires Sampling
+    },
+    reminders: {
+      applescript: macOS,
+      native: false, // Native reminders access requires Sampling
+    },
+  };
+}
+
+/**
  * Format calendar integrations for user-friendly display
  *
  * @param integrations Calendar integration status
- * @param platform Detected platform
- * @param googleAuthenticated Whether Google OAuth is configured
+ * @param supportsSampling Whether client supports Sampling
  * @returns Array of integration descriptions
  */
 function formatCalendarIntegrations(
-  integrations: CalendarIntegrations,
-  platform: DetectedPlatform['platform'],
-  googleAuthenticated: boolean
+  integrations: { eventkit: boolean; google: boolean; native: boolean },
+  supportsSampling: boolean
 ): string[] {
   const result: string[] = [];
 
   // Google Calendar
   if (integrations.google) {
     result.push('Google Calendar (MCP)');
-  } else if (!googleAuthenticated) {
+  } else {
     result.push('Google Calendar: Not authenticated (run authenticate_google)');
   }
 
   // EventKit (macOS only)
   if (integrations.eventkit) {
     result.push('EventKit (MCP)');
-  } else if (platform === 'macos' || platform === 'desktop') {
-    result.push('EventKit: Available (macOS)');
   }
 
-  // Native calendar (iOS/iPadOS only)
-  if (integrations.native) {
-    result.push('Apple Calendar (native)');
+  // Native calendar (requires Sampling)
+  if (supportsSampling) {
+    result.push('Apple Calendar (native via Sampling)');
   }
 
   return result;
@@ -70,12 +90,12 @@ function formatCalendarIntegrations(
  * Format reminders integrations for user-friendly display
  *
  * @param integrations Reminders integration status
- * @param platform Detected platform
+ * @param supportsSampling Whether client supports Sampling
  * @returns Array of integration descriptions
  */
 function formatRemindersIntegrations(
-  integrations: RemindersIntegrations,
-  platform: DetectedPlatform['platform']
+  integrations: { applescript: boolean; native: boolean },
+  supportsSampling: boolean
 ): string[] {
   const result: string[] = [];
 
@@ -84,43 +104,36 @@ function formatRemindersIntegrations(
     result.push('Apple Reminders (MCP via AppleScript)');
   }
 
-  // Native reminders (iOS/iPadOS only)
-  if (integrations.native) {
-    result.push('Apple Reminders (native)');
+  // Native reminders (requires Sampling)
+  if (supportsSampling) {
+    result.push('Apple Reminders (native via Sampling)');
   }
 
-  // Web platform warning
-  if (platform === 'web') {
-    result.push('Reminders not supported on web platform');
+  if (!integrations.applescript && !supportsSampling) {
+    result.push('Reminders: Not available on this platform');
   }
 
   return result;
 }
 
 /**
- * Build warnings array based on platform capabilities
+ * Build warnings array based on client capabilities
  *
- * @param platform Detected platform info
+ * @param clientInfo Client information
  * @param config User configuration
  * @returns Array of warning messages
  */
 function buildWarnings(
-  platform: DetectedPlatform,
+  clientInfo: ClientInfo,
   config: UserConfig | null
 ): string[] {
   const warnings: string[] = [];
 
   // Sampling not supported warning (Requirement 7.5)
-  if (!platform.supportsSampling) {
+  if (!clientInfo.supportsSampling) {
     warnings.push(
-      'Platform-adaptive integration unavailable: Your Claude client does not support Sampling.'
-    );
-  }
-
-  // Unknown platform warning
-  if (platform.platform === 'unknown') {
-    warnings.push(
-      `Unknown platform detected (client: ${platform.clientName}). Using limited integrations.`
+      'Native integration unavailable: Your Claude client does not support Sampling. ' +
+      'Using MCP-only integrations.'
     );
   }
 
@@ -136,25 +149,22 @@ function buildWarnings(
 }
 
 /**
- * Get platform-specific integration summary
+ * Get integration summary based on capabilities
  *
- * @param platform Detected platform type
- * @returns Summary string for the platform
+ * @param supportsSampling Whether client supports Sampling
+ * @param isMac Whether server is running on macOS
+ * @returns Summary string
  */
-function getPlatformSummary(platform: DetectedPlatform['platform']): string {
-  switch (platform) {
-    case 'ios':
-    case 'ipados':
-      return 'iOS/iPadOS: Google Calendar (MCP), Apple Calendar (native), Apple Reminders (native)';
-    case 'macos':
-    case 'desktop':
-      return 'macOS: EventKit (MCP), Google Calendar (MCP), Apple Reminders (MCP)';
-    case 'web':
-      return 'Web: Google Calendar (MCP only)';
-    case 'unknown':
-    default:
-      return 'Unknown platform: Limited integrations available';
+function getIntegrationSummary(supportsSampling: boolean, isMac: boolean): string {
+  if (supportsSampling) {
+    return 'Full integration: Google Calendar (MCP), Apple Calendar (native), Apple Reminders (native)';
   }
+
+  if (isMac) {
+    return 'macOS MCP: EventKit (MCP), Google Calendar (MCP), Apple Reminders (MCP)';
+  }
+
+  return 'MCP only: Google Calendar (MCP)';
 }
 
 // ============================================================
@@ -164,18 +174,18 @@ function getPlatformSummary(platform: DetectedPlatform['platform']): string {
 /**
  * get_platform_info handler
  *
- * Returns detected platform information and available integrations.
+ * Returns client information and available integrations.
  * Requirements: 7.1-7.7
  *
- * @param args Empty object (no arguments required)
+ * @param _args Empty object (no arguments required)
  * @param context Platform tools context
  * @returns Tool response with platform info
  *
  * Response includes:
- * - platform: Detected platform type (ios, ipados, macos, desktop, web, unknown)
  * - clientName: MCP client application name
  * - clientVersion: MCP client version
  * - supportsSampling: Whether Sampling is available
+ * - serverEnvironment: Server-side environment info
  * - availableIntegrations: Calendar and reminders integration status
  * - integrationSummary: Human-readable integration summary
  * - warnings: Array of warning messages
@@ -184,70 +194,64 @@ export async function handleGetPlatformInfo(
   _args: Record<string, never>,
   context: PlatformToolsContext
 ) {
-  const platform = context.getPlatformInfo();
+  const clientInfo = context.getClientInfo();
   const config = context.getConfig();
 
-  // Platform not detected error
-  if (!platform) {
+  // Client not detected error
+  if (!clientInfo) {
     return createToolResponse({
       error: true,
       message:
-        'Platform not detected. Please reconnect to sage MCP server. ' +
-        'Platform detection occurs during MCP initialization.',
+        'Client not detected. Please reconnect to sage MCP server. ' +
+        'Client detection occurs during MCP initialization.',
       suggestion: 'Try restarting your Claude client and reconnecting to sage.',
     });
   }
 
-  // Get available integrations for this platform
-  const availableIntegrations = PlatformDetector.getAvailableIntegrations(
-    platform.platform,
-    config ?? undefined
-  );
+  // Get available integrations for this environment
+  const availableIntegrations = getAvailableIntegrations(config);
 
-  // Check if Google is authenticated
-  const googleAuthenticated =
-    config?.integrations?.googleCalendar?.enabled ?? false;
+  // Update native access based on Sampling support
+  if (clientInfo.supportsSampling) {
+    availableIntegrations.calendar.native = true;
+    availableIntegrations.reminders.native = true;
+  }
 
   // Build formatted integration lists for display
   const calendarIntegrationList = formatCalendarIntegrations(
     availableIntegrations.calendar,
-    platform.platform,
-    googleAuthenticated
+    clientInfo.supportsSampling
   );
 
   const remindersIntegrationList = formatRemindersIntegrations(
     availableIntegrations.reminders,
-    platform.platform
+    clientInfo.supportsSampling
   );
 
   // Build warnings
-  const warnings = buildWarnings(platform, config);
-
-  // Build the platform info response
-  const platformInfo: PlatformInfo = {
-    platform: platform.platform,
-    clientName: platform.clientName,
-    clientVersion: platform.clientVersion,
-    supportsSampling: platform.supportsSampling,
-    availableIntegrations,
-  };
+  const warnings = buildWarnings(clientInfo, config);
 
   return createToolResponse({
-    // Core platform info
-    platform: platformInfo.platform,
-    clientName: platformInfo.clientName,
-    clientVersion: platformInfo.clientVersion,
-    supportsSampling: platformInfo.supportsSampling,
+    // Client info
+    clientName: clientInfo.clientName,
+    clientVersion: clientInfo.clientVersion,
+    supportsSampling: clientInfo.supportsSampling,
+
+    // Server environment
+    serverEnvironment: {
+      platform: process.platform,
+      isMacOS: isMacOS(),
+    },
 
     // Structured integration status
-    availableIntegrations: platformInfo.availableIntegrations,
+    availableIntegrations,
 
     // Human-readable integration lists
     calendarIntegrations: calendarIntegrationList,
     remindersIntegrations: remindersIntegrationList,
 
-    // Platform summary (Requirements 7.2, 7.3, 7.4)
-    integrationSummary: getPlatformSummary(platform.platform),
+    // Integration summary (Requirements 7.2, 7.3, 7.4)
+    integrationSummary: getIntegrationSummary(clientInfo.supportsSampling, isMacOS()),
 
     // Warnings (Requirements 7.5, 7.7)
     warnings: warnings.length > 0 ? warnings : undefined,
@@ -255,7 +259,7 @@ export async function handleGetPlatformInfo(
     // Message for user
     message:
       warnings.length > 0
-        ? `Platform detected: ${platform.platform}. There are ${warnings.length} warning(s) to review.`
-        : `Platform detected: ${platform.platform}. All integrations are available.`,
+        ? `Client: ${clientInfo.clientName ?? 'Unknown'}. There are ${warnings.length} warning(s) to review.`
+        : `Client: ${clientInfo.clientName ?? 'Unknown'}. All integrations are available.`,
   });
 }

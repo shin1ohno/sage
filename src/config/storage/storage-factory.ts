@@ -8,7 +8,7 @@
  * - remote_mcp: クラウドストレージ（セッションフォールバック）
  */
 
-import type { ConfigStorage, PlatformType } from '../../types/platform.js';
+import type { ConfigStorage, PlatformType } from '../../types/storage.js';
 import { FileConfigStorage } from './file-storage.js';
 import { SessionConfigStorage } from './session-storage.js';
 

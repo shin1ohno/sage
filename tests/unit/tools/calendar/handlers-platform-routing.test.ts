@@ -2,14 +2,14 @@
  * Unit tests for calendar handler platform routing
  *
  * Tests that handleListCalendarEvents routes to the correct handler based on
- * detected platform:
- * - iOS/iPadOS with Sampling support -> handleListCalendarEventsWithSampling
- * - macOS/web/unknown -> handleListCalendarEvents (MCP-only path)
+ * client Sampling support:
+ * - Client with Sampling support -> handleListCalendarEventsWithSampling
+ * - Client without Sampling support -> handleListCalendarEvents (MCP-only path)
  *
  * Requirements: 2.1-2.2, 3.1, 6.2 (platform-adaptive-integration)
  */
 
-import type { DetectedPlatform } from '../../../../src/types/platform';
+import type { ClientInfo } from '../../../../src/types/sampling.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   createMockCalendarToolsContext,
@@ -103,26 +103,28 @@ describe('Calendar Handler Platform Routing', () => {
   /**
    * Helper function to simulate the routing logic from src/index.ts
    * This replicates the decision logic in the list_calendar_events tool registration
+   *
+   * The new routing logic is simplified:
+   * - If supportsSampling is true -> use Sampling handler
+   * - Otherwise -> use MCP-only handler
    */
   async function routeToHandler(
     args: { startDate: string; endDate: string; calendarId?: string },
-    platformInfo: DetectedPlatform | null,
+    clientInfo: ClientInfo | null,
     getMcpServer: () => McpServer | null
   ) {
     const calendarContext = {
       ...createMockCalendarToolsContext(),
-      getPlatformInfo: () => platformInfo,
+      getClientInfo: () => clientInfo,
     };
 
     const samplingContext = {
       getMcpServer,
     };
 
-    // This replicates the routing logic from src/index.ts
-    if (
-      platformInfo?.supportsSampling &&
-      (platformInfo.platform === 'ios' || platformInfo.platform === 'ipados')
-    ) {
+    // This replicates the simplified routing logic from src/index.ts
+    // Only check supportsSampling - platform type is no longer considered
+    if (clientInfo?.supportsSampling) {
       // Route to Sampling handler
       return calendarHandlers.handleListCalendarEventsWithSampling(
         args,
@@ -135,8 +137,8 @@ describe('Calendar Handler Platform Routing', () => {
     return calendarHandlers.handleListCalendarEvents(calendarContext, args);
   }
 
-  describe('iOS platform routing', () => {
-    it('should route to handleListCalendarEventsWithSampling for iOS with Sampling support', async () => {
+  describe('Client with Sampling support', () => {
+    it('should route to handleListCalendarEventsWithSampling when supportsSampling is true', async () => {
       handleListCalendarEventsWithSamplingSpy = jest
         .spyOn(calendarHandlers, 'handleListCalendarEventsWithSampling')
         .mockResolvedValue({
@@ -154,7 +156,7 @@ describe('Calendar Handler Platform Routing', () => {
       expect(handleListCalendarEventsWithSamplingSpy).toHaveBeenCalledWith(
         { startDate: '2026-01-01', endDate: '2026-01-31' },
         expect.objectContaining({
-          getPlatformInfo: expect.any(Function),
+          getClientInfo: expect.any(Function),
         }),
         expect.objectContaining({
           getMcpServer: expect.any(Function),
@@ -162,7 +164,7 @@ describe('Calendar Handler Platform Routing', () => {
       );
     });
 
-    it('should pass correct arguments to Sampling handler for iOS', async () => {
+    it('should pass correct arguments to Sampling handler', async () => {
       handleListCalendarEventsWithSamplingSpy = jest
         .spyOn(calendarHandlers, 'handleListCalendarEventsWithSampling')
         .mockResolvedValue({
@@ -188,17 +190,8 @@ describe('Calendar Handler Platform Routing', () => {
         expect.any(Object)
       );
     });
-  });
 
-  describe('iPadOS platform routing', () => {
-    const IPADOS_DETECTED_PLATFORM: DetectedPlatform = {
-      platform: 'ipados',
-      clientName: 'claude-ipados',
-      clientVersion: '1.0.0',
-      supportsSampling: true,
-    };
-
-    it('should route to handleListCalendarEventsWithSampling for iPadOS with Sampling support', async () => {
+    it('should route to Sampling handler regardless of client name', async () => {
       handleListCalendarEventsWithSamplingSpy = jest
         .spyOn(calendarHandlers, 'handleListCalendarEventsWithSampling')
         .mockResolvedValue({
@@ -206,42 +199,25 @@ describe('Calendar Handler Platform Routing', () => {
           isError: false,
         });
 
+      // Any client with supportsSampling: true should use Sampling
+      const customClient: ClientInfo = {
+        clientName: 'custom-client',
+        clientVersion: '2.0.0',
+        supportsSampling: true,
+      };
+
       await routeToHandler(
         { startDate: '2026-01-01', endDate: '2026-01-31' },
-        IPADOS_DETECTED_PLATFORM,
+        customClient,
         () => mockMcpServer as unknown as McpServer
       );
 
       expect(handleListCalendarEventsWithSamplingSpy).toHaveBeenCalled();
-      expect(handleListCalendarEventsWithSamplingSpy).toHaveBeenCalledWith(
-        expect.any(Object),
-        expect.any(Object),
-        expect.any(Object)
-      );
-    });
-
-    it('should pass correct arguments to Sampling handler for iPadOS', async () => {
-      handleListCalendarEventsWithSamplingSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEventsWithSampling')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: '[]' }],
-          isError: false,
-        });
-
-      await routeToHandler(
-        { startDate: '2026-01-01', endDate: '2026-01-31' },
-        IPADOS_DETECTED_PLATFORM,
-        () => mockMcpServer as unknown as McpServer
-      );
-
-      // Verify the correct number of arguments (3, not 4)
-      const callArgs = handleListCalendarEventsWithSamplingSpy.mock.calls[0];
-      expect(callArgs.length).toBe(3);
     });
   });
 
-  describe('macOS platform routing', () => {
-    it('should route to handleListCalendarEvents (MCP-only) for macOS', async () => {
+  describe('Client without Sampling support', () => {
+    it('should route to handleListCalendarEvents for desktop clients', async () => {
       handleListCalendarEventsSpy = jest
         .spyOn(calendarHandlers, 'handleListCalendarEvents')
         .mockResolvedValue({
@@ -255,35 +231,15 @@ describe('Calendar Handler Platform Routing', () => {
       );
 
       expect(handleListCalendarEventsSpy).toHaveBeenCalled();
-    });
-
-    it('should NOT call Sampling handler for macOS', async () => {
-      handleListCalendarEventsSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEvents')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: JSON.stringify({ success: true, events: [] }) }],
-        });
-
-      handleListCalendarEventsWithSamplingSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEventsWithSampling')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: '[]' }],
-          isError: false,
-        });
-
-      await routeToHandler(
-        { startDate: '2026-01-01', endDate: '2026-01-31' },
-        DEFAULT_DETECTED_PLATFORM,
-        () => mockMcpServer as unknown as McpServer
+      expect(handleListCalendarEventsSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          getClientInfo: expect.any(Function),
+        }),
+        { startDate: '2026-01-01', endDate: '2026-01-31' }
       );
-
-      expect(handleListCalendarEventsWithSamplingSpy).not.toHaveBeenCalled();
-      expect(handleListCalendarEventsSpy).toHaveBeenCalled();
     });
-  });
 
-  describe('Web platform routing', () => {
-    it('should route to handleListCalendarEvents (MCP-only) for web platform', async () => {
+    it('should route to handleListCalendarEvents for web clients', async () => {
       handleListCalendarEventsSpy = jest
         .spyOn(calendarHandlers, 'handleListCalendarEvents')
         .mockResolvedValue({
@@ -299,51 +255,7 @@ describe('Calendar Handler Platform Routing', () => {
       expect(handleListCalendarEventsSpy).toHaveBeenCalled();
     });
 
-    it('should NOT call Sampling handler for web platform', async () => {
-      handleListCalendarEventsSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEvents')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: JSON.stringify({ success: true, events: [] }) }],
-        });
-
-      handleListCalendarEventsWithSamplingSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEventsWithSampling')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: '[]' }],
-          isError: false,
-        });
-
-      await routeToHandler(
-        { startDate: '2026-01-01', endDate: '2026-01-31' },
-        WEB_DETECTED_PLATFORM,
-        () => mockMcpServer as unknown as McpServer
-      );
-
-      expect(handleListCalendarEventsWithSamplingSpy).not.toHaveBeenCalled();
-    });
-
-    it('should use MCP-only path because web does not support Sampling', async () => {
-      // Verify the platform doesn't support Sampling
-      expect(WEB_DETECTED_PLATFORM.supportsSampling).toBe(false);
-
-      handleListCalendarEventsSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEvents')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: JSON.stringify({ success: true, events: [] }) }],
-        });
-
-      await routeToHandler(
-        { startDate: '2026-01-01', endDate: '2026-01-31' },
-        WEB_DETECTED_PLATFORM,
-        () => mockMcpServer as unknown as McpServer
-      );
-
-      expect(handleListCalendarEventsSpy).toHaveBeenCalled();
-    });
-  });
-
-  describe('Unknown platform routing', () => {
-    it('should route to handleListCalendarEvents (MCP-only) for unknown platform', async () => {
+    it('should route to handleListCalendarEvents for unknown clients', async () => {
       handleListCalendarEventsSpy = jest
         .spyOn(calendarHandlers, 'handleListCalendarEvents')
         .mockResolvedValue({
@@ -358,85 +270,12 @@ describe('Calendar Handler Platform Routing', () => {
 
       expect(handleListCalendarEventsSpy).toHaveBeenCalled();
     });
-  });
 
-  describe('No Sampling support routing', () => {
-    it('should route to MCP-only handler when iOS does NOT support Sampling', async () => {
-      const iosWithoutSampling: DetectedPlatform = {
-        ...IOS_DETECTED_PLATFORM,
-        supportsSampling: false,
-      };
-
+    it('should route to handleListCalendarEvents when clientInfo is null', async () => {
       handleListCalendarEventsSpy = jest
         .spyOn(calendarHandlers, 'handleListCalendarEvents')
         .mockResolvedValue({
           content: [{ type: 'text', text: JSON.stringify({ success: true, events: [] }) }],
-        });
-
-      handleListCalendarEventsWithSamplingSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEventsWithSampling')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: '[]' }],
-          isError: false,
-        });
-
-      await routeToHandler(
-        { startDate: '2026-01-01', endDate: '2026-01-31' },
-        iosWithoutSampling,
-        () => mockMcpServer as unknown as McpServer
-      );
-
-      // Should use MCP-only because supportsSampling is false
-      expect(handleListCalendarEventsSpy).toHaveBeenCalled();
-      expect(handleListCalendarEventsWithSamplingSpy).not.toHaveBeenCalled();
-    });
-
-    it('should route to MCP-only handler when iPadOS does NOT support Sampling', async () => {
-      const ipadosWithoutSampling: DetectedPlatform = {
-        platform: 'ipados',
-        clientName: 'claude-ipados',
-        clientVersion: '1.0.0',
-        supportsSampling: false,
-      };
-
-      handleListCalendarEventsSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEvents')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: JSON.stringify({ success: true, events: [] }) }],
-        });
-
-      handleListCalendarEventsWithSamplingSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEventsWithSampling')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: '[]' }],
-          isError: false,
-        });
-
-      await routeToHandler(
-        { startDate: '2026-01-01', endDate: '2026-01-31' },
-        ipadosWithoutSampling,
-        () => mockMcpServer as unknown as McpServer
-      );
-
-      // Should use MCP-only because supportsSampling is false
-      expect(handleListCalendarEventsSpy).toHaveBeenCalled();
-      expect(handleListCalendarEventsWithSamplingSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Null platform info handling', () => {
-    it('should route to MCP-only handler when platform info is null', async () => {
-      handleListCalendarEventsSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEvents')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: JSON.stringify({ success: true, events: [] }) }],
-        });
-
-      handleListCalendarEventsWithSamplingSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEventsWithSampling')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: '[]' }],
-          isError: false,
         });
 
       await routeToHandler(
@@ -446,123 +285,49 @@ describe('Calendar Handler Platform Routing', () => {
       );
 
       expect(handleListCalendarEventsSpy).toHaveBeenCalled();
-      expect(handleListCalendarEventsWithSamplingSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Desktop platform routing', () => {
-    it('should route to MCP-only handler for desktop platform (non-macOS)', async () => {
-      const desktopPlatform: DetectedPlatform = {
-        platform: 'desktop',
-        clientName: 'claude-desktop-windows',
-        clientVersion: '1.0.0',
-        supportsSampling: true,
-      };
-
-      handleListCalendarEventsSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEvents')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: JSON.stringify({ success: true, events: [] }) }],
-        });
-
-      handleListCalendarEventsWithSamplingSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEventsWithSampling')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: '[]' }],
-          isError: false,
-        });
-
-      await routeToHandler(
-        { startDate: '2026-01-01', endDate: '2026-01-31' },
-        desktopPlatform,
-        () => mockMcpServer as unknown as McpServer
-      );
-
-      // Desktop is not iOS/iPadOS, so should use MCP-only handler
-      expect(handleListCalendarEventsSpy).toHaveBeenCalled();
-      expect(handleListCalendarEventsWithSamplingSpy).not.toHaveBeenCalled();
     });
   });
 
   describe('Routing decision edge cases', () => {
-    it('should check both supportsSampling AND platform type for routing', async () => {
-      // macOS with Sampling support should still use MCP-only
-      // because it's not iOS/iPadOS
-      const macosWithSampling: DetectedPlatform = {
-        ...DEFAULT_DETECTED_PLATFORM,
-        supportsSampling: true,
-      };
-
-      handleListCalendarEventsSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEvents')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: JSON.stringify({ success: true, events: [] }) }],
-        });
-
-      handleListCalendarEventsWithSamplingSpy = jest
-        .spyOn(calendarHandlers, 'handleListCalendarEventsWithSampling')
-        .mockResolvedValue({
-          content: [{ type: 'text', text: '[]' }],
-          isError: false,
-        });
-
-      await routeToHandler(
-        { startDate: '2026-01-01', endDate: '2026-01-31' },
-        macosWithSampling,
-        () => mockMcpServer as unknown as McpServer
-      );
-
-      // macOS should NOT use Sampling handler even with Sampling support
-      // because platform-adaptive integration (Sampling for native calendar)
-      // only makes sense on iOS/iPadOS where Claude can access native Calendar
-      expect(handleListCalendarEventsSpy).toHaveBeenCalled();
-      expect(handleListCalendarEventsWithSamplingSpy).not.toHaveBeenCalled();
-    });
-
-    it('should verify routing condition requires BOTH conditions', async () => {
-      // Test the exact condition: supportsSampling && (ios || ipados)
+    it('should verify routing is based solely on supportsSampling', async () => {
+      // Test various combinations to verify only supportsSampling matters
       const testCases: Array<{
-        platform: DetectedPlatform;
+        clientInfo: ClientInfo;
         shouldUseSampling: boolean;
         description: string;
       }> = [
         {
-          platform: { ...IOS_DETECTED_PLATFORM, supportsSampling: true },
+          clientInfo: { clientName: 'test-ios', supportsSampling: true },
           shouldUseSampling: true,
-          description: 'iOS with Sampling',
+          description: 'iOS-like client with Sampling',
         },
         {
-          platform: { ...IOS_DETECTED_PLATFORM, supportsSampling: false },
-          shouldUseSampling: false,
-          description: 'iOS without Sampling',
-        },
-        {
-          platform: {
-            platform: 'ipados',
-            clientName: 'test',
-            clientVersion: '1.0.0',
-            supportsSampling: true,
-          },
+          clientInfo: { clientName: 'test-desktop', supportsSampling: true },
           shouldUseSampling: true,
-          description: 'iPadOS with Sampling',
+          description: 'Desktop-like client with Sampling',
         },
         {
-          platform: {
-            platform: 'ipados',
-            clientName: 'test',
-            clientVersion: '1.0.0',
-            supportsSampling: false,
-          },
+          clientInfo: { clientName: 'test-web', supportsSampling: true },
+          shouldUseSampling: true,
+          description: 'Web-like client with Sampling',
+        },
+        {
+          clientInfo: { clientName: 'test-ios', supportsSampling: false },
           shouldUseSampling: false,
-          description: 'iPadOS without Sampling',
+          description: 'iOS-like client without Sampling',
         },
         {
-          platform: { ...DEFAULT_DETECTED_PLATFORM, supportsSampling: true },
+          clientInfo: { clientName: 'test-desktop', supportsSampling: false },
           shouldUseSampling: false,
-          description: 'macOS with Sampling',
+          description: 'Desktop-like client without Sampling',
         },
         {
-          platform: WEB_DETECTED_PLATFORM,
+          clientInfo: DEFAULT_DETECTED_PLATFORM,
+          shouldUseSampling: false,
+          description: 'Default desktop platform',
+        },
+        {
+          clientInfo: WEB_DETECTED_PLATFORM,
           shouldUseSampling: false,
           description: 'Web platform',
         },
@@ -586,7 +351,7 @@ describe('Calendar Handler Platform Routing', () => {
 
         await routeToHandler(
           { startDate: '2026-01-01', endDate: '2026-01-31' },
-          testCase.platform,
+          testCase.clientInfo,
           () => mockMcpServer as unknown as McpServer
         );
 

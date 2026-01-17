@@ -21,7 +21,7 @@
  * ```
  */
 
-import type { SamplingResponse } from '../../src/types/platform.js';
+import type { SamplingResponse } from '../../src/types/sampling.js';
 import { SamplingError, SamplingErrorCodes } from '../../src/services/sampling-service.js';
 
 // ============================================================================

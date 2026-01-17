@@ -22,10 +22,10 @@ describe('Platform Tool Handlers', () => {
   });
 
   describe('handleGetPlatformInfo', () => {
-    describe('when platform is detected successfully', () => {
-      it('should return macOS platform info with all integrations', async () => {
+    describe('when client is detected successfully', () => {
+      it('should return desktop client info with all integrations', async () => {
         const ctx = createMockPlatformToolsContext({
-          platformInfo: DEFAULT_DETECTED_PLATFORM,
+          clientInfo: DEFAULT_DETECTED_PLATFORM,
           config: createTestConfig({
             integrations: {
               googleCalendar: { enabled: true },
@@ -36,37 +36,41 @@ describe('Platform Tool Handlers', () => {
         const result = await handleGetPlatformInfo({}, ctx);
         const response = JSON.parse(result.content[0].text);
 
-        // Core platform info
-        expect(response.platform).toBe('macos');
+        // Core client info
         expect(response.clientName).toBe('claude-desktop');
         expect(response.clientVersion).toBe('1.0.0');
         expect(response.supportsSampling).toBe(false); // Desktop doesn't support Sampling
 
+        // Server environment
+        expect(response.serverEnvironment).toBeDefined();
+        expect(response.serverEnvironment.platform).toBe(process.platform);
+        expect(response.serverEnvironment.isMacOS).toBe(process.platform === 'darwin');
+
         // Available integrations (capability-based)
         expect(response.availableIntegrations.calendar.google).toBe(true);
-        expect(response.availableIntegrations.calendar.eventkit).toBe(true);
+        const isMacOS = process.platform === 'darwin';
+        expect(response.availableIntegrations.calendar.eventkit).toBe(isMacOS);
         expect(response.availableIntegrations.calendar.native).toBe(false); // No Sampling on desktop
-        expect(response.availableIntegrations.reminders.applescript).toBe(true);
+        expect(response.availableIntegrations.reminders.applescript).toBe(isMacOS);
         expect(response.availableIntegrations.reminders.native).toBe(false); // No Sampling on desktop
 
         // Human-readable integration lists
         expect(response.calendarIntegrations).toContain('Google Calendar (MCP)');
-        expect(response.calendarIntegrations).toContain('EventKit (MCP)');
-        expect(response.remindersIntegrations).toContain('Apple Reminders (MCP via AppleScript)');
-
-        // Platform summary (Requirement 7.3)
-        expect(response.integrationSummary).toContain('macOS');
+        if (isMacOS) {
+          expect(response.calendarIntegrations).toContain('EventKit (MCP)');
+          expect(response.remindersIntegrations).toContain('Apple Reminders (MCP via AppleScript)');
+        }
 
         // Warning about no Sampling support on desktop
         expect(response.warnings).toBeDefined();
-        expect(response.warnings).toContain(
-          'Platform-adaptive integration unavailable: Your Claude client does not support Sampling.'
-        );
+        expect(response.warnings.some((w: string) =>
+          w.includes('Native integration unavailable')
+        )).toBe(true);
       });
 
-      it('should return iOS platform info with native integrations (Requirement 7.2)', async () => {
+      it('should return iOS client info with native integrations (Requirement 7.2)', async () => {
         const ctx = createMockPlatformToolsContext({
-          platformInfo: IOS_DETECTED_PLATFORM,
+          clientInfo: IOS_DETECTED_PLATFORM,
           config: createTestConfig({
             integrations: {
               googleCalendar: { enabled: true },
@@ -77,15 +81,14 @@ describe('Platform Tool Handlers', () => {
         const result = await handleGetPlatformInfo({}, ctx);
         const response = JSON.parse(result.content[0].text);
 
-        // Core platform info
-        expect(response.platform).toBe('ios');
+        // Core client info
         expect(response.clientName).toBe('claude-ios');
         expect(response.supportsSampling).toBe(true);
 
         // Available integrations (Requirement 7.2) - capability-based
         expect(response.availableIntegrations.calendar.google).toBe(true);
         expect(response.availableIntegrations.calendar.native).toBe(true); // Sampling support
-        // Note: eventkit/applescript depend on actual process.platform, not detected platform
+        // Note: eventkit/applescript depend on actual process.platform, not client type
         const isMacOS = process.platform === 'darwin';
         expect(response.availableIntegrations.calendar.eventkit).toBe(isMacOS); // Runtime platform check
         expect(response.availableIntegrations.reminders.native).toBe(true); // Sampling support
@@ -93,18 +96,16 @@ describe('Platform Tool Handlers', () => {
 
         // Human-readable integration lists
         expect(response.calendarIntegrations).toContain('Google Calendar (MCP)');
-        expect(response.calendarIntegrations).toContain('Apple Calendar (native)');
-        expect(response.remindersIntegrations).toContain('Apple Reminders (native)');
+        expect(response.calendarIntegrations).toContain('Apple Calendar (native via Sampling)');
+        expect(response.remindersIntegrations).toContain('Apple Reminders (native via Sampling)');
 
-        // Platform summary (Requirement 7.2)
-        expect(response.integrationSummary).toContain('iOS/iPadOS');
-        expect(response.integrationSummary).toContain('Google Calendar (MCP)');
-        expect(response.integrationSummary).toContain('Apple Calendar (native)');
+        // Integration summary (Requirement 7.2)
+        expect(response.integrationSummary).toContain('Full integration');
       });
 
-      it('should return web platform info with limited integrations (Requirement 7.4)', async () => {
+      it('should return web client info with limited integrations (Requirement 7.4)', async () => {
         const ctx = createMockPlatformToolsContext({
-          platformInfo: WEB_DETECTED_PLATFORM,
+          clientInfo: WEB_DETECTED_PLATFORM,
           config: createTestConfig({
             integrations: {
               googleCalendar: { enabled: true },
@@ -115,8 +116,8 @@ describe('Platform Tool Handlers', () => {
         const result = await handleGetPlatformInfo({}, ctx);
         const response = JSON.parse(result.content[0].text);
 
-        // Core platform info
-        expect(response.platform).toBe('web');
+        // Core client info
+        expect(response.clientName).toBe('claude-web');
         expect(response.supportsSampling).toBe(false);
 
         // Available integrations (Requirement 7.4) - capability-based
@@ -128,44 +129,37 @@ describe('Platform Tool Handlers', () => {
         expect(response.availableIntegrations.reminders.native).toBe(false); // No Sampling on web
         expect(response.availableIntegrations.reminders.applescript).toBe(isMacOS); // Runtime platform check
 
-        // Reminders warning for web
-        expect(response.remindersIntegrations).toContain('Reminders not supported on web platform');
-
-        // Platform summary (Requirement 7.4)
-        expect(response.integrationSummary).toContain('Web');
-        expect(response.integrationSummary).toContain('Google Calendar (MCP only)');
-
         // Sampling warning (Requirement 7.5)
         expect(response.warnings).toBeDefined();
-        expect(response.warnings).toContain(
-          'Platform-adaptive integration unavailable: Your Claude client does not support Sampling.'
-        );
+        expect(response.warnings.some((w: string) =>
+          w.includes('Native integration unavailable')
+        )).toBe(true);
       });
 
-      it('should return unknown platform info with warnings', async () => {
+      it('should return unknown client info with warnings', async () => {
         const ctx = createMockPlatformToolsContext({
-          platformInfo: UNKNOWN_DETECTED_PLATFORM,
+          clientInfo: UNKNOWN_DETECTED_PLATFORM,
           config: DEFAULT_TEST_CONFIG,
         });
 
         const result = await handleGetPlatformInfo({}, ctx);
         const response = JSON.parse(result.content[0].text);
 
-        // Core platform info
-        expect(response.platform).toBe('unknown');
+        // Core client info
+        expect(response.clientName).toBe('unknown-client');
 
-        // Warnings should include unknown platform warning
+        // Warnings should include Sampling not supported warning
         expect(response.warnings).toBeDefined();
-        expect(response.warnings).toContainEqual(
-          expect.stringContaining('Unknown platform detected')
-        );
+        expect(response.warnings.some((w: string) =>
+          w.includes('Native integration unavailable')
+        )).toBe(true);
       });
     });
 
     describe('when Google Calendar is not authenticated (Requirement 7.7)', () => {
       it('should include warning about Google Calendar authentication', async () => {
         const ctx = createMockPlatformToolsContext({
-          platformInfo: DEFAULT_DETECTED_PLATFORM,
+          clientInfo: DEFAULT_DETECTED_PLATFORM,
           config: createTestConfig({
             integrations: {
               googleCalendar: { enabled: false },
@@ -194,13 +188,13 @@ describe('Platform Tool Handlers', () => {
 
     describe('when Sampling is not supported (Requirement 7.5)', () => {
       it('should include Sampling warning for non-Sampling clients', async () => {
-        const noSamplingPlatform = {
+        const noSamplingClient = {
           ...DEFAULT_DETECTED_PLATFORM,
           supportsSampling: false,
         };
 
         const ctx = createMockPlatformToolsContext({
-          platformInfo: noSamplingPlatform,
+          clientInfo: noSamplingClient,
           config: DEFAULT_TEST_CONFIG,
         });
 
@@ -209,19 +203,19 @@ describe('Platform Tool Handlers', () => {
 
         // Sampling warning (Requirement 7.5)
         expect(response.warnings).toBeDefined();
-        expect(response.warnings).toContain(
-          'Platform-adaptive integration unavailable: Your Claude client does not support Sampling.'
-        );
+        expect(response.warnings.some((w: string) =>
+          w.includes('Native integration unavailable')
+        )).toBe(true);
 
         // Message should mention warnings
         expect(response.message).toContain('warning');
       });
     });
 
-    describe('when platform is not detected', () => {
-      it('should return error when platform info is null', async () => {
+    describe('when client is not detected', () => {
+      it('should return error when client info is null', async () => {
         const ctx = createMockPlatformToolsContext({
-          platformInfo: null,
+          clientInfo: null,
           config: DEFAULT_TEST_CONFIG,
         });
 
@@ -229,23 +223,22 @@ describe('Platform Tool Handlers', () => {
         const response = JSON.parse(result.content[0].text);
 
         expect(response.error).toBe(true);
-        expect(response.message).toContain('Platform not detected');
+        expect(response.message).toContain('Client not detected');
         expect(response.suggestion).toContain('reconnecting');
       });
     });
 
     describe('when config is null', () => {
-      it('should still return platform info but with limited integration status', async () => {
+      it('should still return client info but with limited integration status', async () => {
         const ctx = createMockPlatformToolsContext({
-          platformInfo: DEFAULT_DETECTED_PLATFORM,
+          clientInfo: DEFAULT_DETECTED_PLATFORM,
           config: null,
         });
 
         const result = await handleGetPlatformInfo({}, ctx);
         const response = JSON.parse(result.content[0].text);
 
-        // Platform info should still be returned
-        expect(response.platform).toBe('macos');
+        // Client info should still be returned
         expect(response.clientName).toBe('claude-desktop');
 
         // Google Calendar should not be available (no config)
@@ -286,7 +279,7 @@ describe('Platform Tool Handlers', () => {
       it('should reflect updated Google Calendar availability when config changes', async () => {
         // First call with Google disabled
         const ctx1 = createMockPlatformToolsContext({
-          platformInfo: DEFAULT_DETECTED_PLATFORM,
+          clientInfo: DEFAULT_DETECTED_PLATFORM,
           config: createTestConfig({
             integrations: {
               googleCalendar: { enabled: false },
@@ -300,7 +293,7 @@ describe('Platform Tool Handlers', () => {
 
         // Second call with Google enabled
         const ctx2 = createMockPlatformToolsContext({
-          platformInfo: DEFAULT_DETECTED_PLATFORM,
+          clientInfo: DEFAULT_DETECTED_PLATFORM,
           config: createTestConfig({
             integrations: {
               googleCalendar: { enabled: true },

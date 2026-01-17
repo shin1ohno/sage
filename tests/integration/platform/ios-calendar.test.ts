@@ -26,16 +26,16 @@ import { IntegrationStrategyManager } from '../../../src/services/integration-st
 /**
  * Helper function to create a mock calendar context with platform support
  *
- * Creates a CalendarToolsContext with getPlatformInfo method added
+ * Creates a CalendarToolsContext with getClientInfo method added
  */
 function createMockCalendarContextWithPlatform() {
   const baseContext = createMockCalendarToolsContext({
     config: DEFAULT_TEST_CONFIG,
   });
 
-  // Add getPlatformInfo to make it compatible with PlatformContext
+  // Add getClientInfo to make it compatible with PlatformContext
   const contextWithPlatform = baseContext as unknown as CalendarToolsContext & PlatformContext;
-  contextWithPlatform.getPlatformInfo = jest.fn(() => IOS_DETECTED_PLATFORM);
+  contextWithPlatform.getClientInfo = jest.fn(() => IOS_DETECTED_PLATFORM);
 
   return contextWithPlatform;
 }
@@ -187,7 +187,6 @@ describe('iOS Platform Calendar Integration', () => {
 
       // Verify the Sampling message contains expected instructions
       expect(capturedMessage).toBeDefined();
-      expect(capturedMessage).toContain('iOS/iPad');
       expect(capturedMessage).toContain('list_calendar_events');
       expect(capturedMessage).toContain('2026-01-15');
       expect(capturedMessage).toContain('2026-01-20');
@@ -237,8 +236,8 @@ describe('iOS Platform Calendar Integration', () => {
   describe('IntegrationStrategyManager', () => {
     const strategyManager = new IntegrationStrategyManager();
 
-    it('should return Sampling strategy for iOS platform', () => {
-      const strategy = strategyManager.getCalendarStrategy(IOS_DETECTED_PLATFORM, {
+    it('should return Sampling strategy when supportsSampling is true', () => {
+      const strategy = strategyManager.getCalendarStrategy(true, {
         startDate: '2026-01-15',
         endDate: '2026-01-20',
       });
@@ -246,17 +245,16 @@ describe('iOS Platform Calendar Integration', () => {
       expect(strategy.useSampling).toBe(true);
       expect(strategy.samplingMessage).toBeDefined();
       expect(strategy.mcpToolsToCall).toContain('list_calendar_events');
-      expect(strategy.nativeIntegrations).toContain('ios-calendar');
+      expect(strategy.nativeIntegrations).toContain('native-calendar');
     });
 
-    it('should build correct Sampling message for iOS calendar', () => {
+    it('should build correct Sampling message for calendar', () => {
       const message = strategyManager.buildCalendarSamplingMessage({
         startDate: '2026-01-15',
         endDate: '2026-01-20',
       });
 
       // Verify message contains all required instructions
-      expect(message).toContain('iOS/iPad');
       expect(message).toContain('list_calendar_events');
       expect(message).toContain('"startDate": "2026-01-15"');
       expect(message).toContain('"endDate": "2026-01-20"');
@@ -266,20 +264,14 @@ describe('iOS Platform Calendar Integration', () => {
       expect(message).toContain('"source"');
     });
 
-    it('should build message for iPadOS platform as well', () => {
-      const iPadOSPlatform = {
-        ...IOS_DETECTED_PLATFORM,
-        platform: 'ipados' as const,
-        clientName: 'claude-ipados',
-      };
-
-      const strategy = strategyManager.getCalendarStrategy(iPadOSPlatform, {
+    it('should return MCP-only strategy when supportsSampling is false', () => {
+      const strategy = strategyManager.getCalendarStrategy(false, {
         startDate: '2026-01-15',
         endDate: '2026-01-20',
       });
 
-      expect(strategy.useSampling).toBe(true);
-      expect(strategy.samplingMessage).toContain('iOS/iPad');
+      expect(strategy.useSampling).toBe(false);
+      expect(strategy.mcpToolsToCall).toContain('list_calendar_events');
     });
   });
 
@@ -477,12 +469,12 @@ describe('iOS Platform Calendar Integration', () => {
   });
 
   describe('Platform Detection Verification', () => {
-    it('should correctly identify iOS platform for Sampling', () => {
-      expect(IOS_DETECTED_PLATFORM.platform).toBe('ios');
+    it('should correctly identify iOS client with Sampling support', () => {
+      expect(IOS_DETECTED_PLATFORM.clientName).toBe('claude-ios');
       expect(IOS_DETECTED_PLATFORM.supportsSampling).toBe(true);
     });
 
-    it('should use Sampling when platform supports it', async () => {
+    it('should use Sampling when client supports it', async () => {
       const calendarContext = createMockCalendarContextWithPlatform();
 
       let createMessageCalled = false;

@@ -6,6 +6,50 @@
  */
 
 /**
+ * Client information detected during MCP initialization
+ *
+ * This simplified interface replaces the legacy DetectedPlatform type.
+ * The server only needs to know:
+ * 1. Client capability: Does the client support MCP Sampling?
+ * 2. Client identification for logging purposes
+ *
+ * Platform-specific behavior is determined by:
+ * - supportsSampling → use Sampling for native integrations
+ * - process.platform === 'darwin' → EventKit/AppleScript available (server-side check)
+ */
+export interface ClientInfo {
+  /** Whether the client supports MCP Sampling capability */
+  supportsSampling: boolean;
+  /** Client name (e.g., "Claude for iOS", "Claude Desktop") */
+  clientName?: string;
+  /** Client version */
+  clientVersion?: string;
+}
+
+/**
+ * Detect client info from MCP capabilities
+ *
+ * Creates a ClientInfo object by checking if the client supports Sampling.
+ *
+ * @param capabilities - MCP client capabilities from initialization
+ * @param clientVersion - Optional client version info
+ * @returns ClientInfo with sampling support status
+ */
+export function detectClientInfo(
+  capabilities: Record<string, unknown>,
+  clientVersion?: { name?: string; version?: string }
+): ClientInfo {
+  // Check if client supports Sampling capability
+  const supportsSampling = capabilities?.sampling !== undefined;
+
+  return {
+    supportsSampling,
+    clientName: clientVersion?.name,
+    clientVersion: clientVersion?.version,
+  };
+}
+
+/**
  * Content item for Sampling messages
  */
 export interface SamplingTextContent {

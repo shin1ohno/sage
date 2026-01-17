@@ -18,7 +18,7 @@ import { McpError } from '@modelcontextprotocol/sdk/types.js';
 import type {
   SamplingRequest,
   SamplingResponse,
-} from '../types/platform.js';
+} from '../types/sampling.js';
 import { servicesLogger } from '../utils/logger.js';
 import { retryWithBackoff } from '../utils/retry.js';
 

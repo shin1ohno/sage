@@ -17,7 +17,7 @@ import {
   SamplingResponseSchema,
 } from '../../../src/services/sampling-service';
 import { McpError } from '@modelcontextprotocol/sdk/types.js';
-import type { SamplingRequest, SamplingResponse } from '../../../src/types/platform';
+import type { SamplingRequest, SamplingResponse } from '../../../src/types/sampling';
 import {
   createMockSamplingResponse,
   mockSamplingCalendarResponse,

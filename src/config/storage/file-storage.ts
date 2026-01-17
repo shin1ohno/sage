@@ -7,7 +7,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import type { ConfigStorage } from '../../types/platform.js';
+import type { ConfigStorage } from '../../types/storage.js';
 
 /**
  * File-based configuration storage

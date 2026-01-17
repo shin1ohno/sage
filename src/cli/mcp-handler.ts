@@ -8,8 +8,7 @@
 import { VERSION, SERVER_NAME } from '../version.js';
 import { ConfigLoader } from '../config/loader.js';
 import { SetupWizard } from '../setup/wizard.js';
-import { PlatformDetector } from '../platform/detector.js';
-import type { DetectedPlatform } from '../types/platform.js';
+import { type ClientInfo, detectClientInfo } from '../types/sampling.js';
 import { ReminderManager } from '../integrations/reminder-manager.js';
 import { CalendarService } from '../integrations/calendar-service.js';
 import { NotionMCPService } from '../integrations/notion-mcp.js';
@@ -173,10 +172,10 @@ export interface MCPHandler {
   handleRequest(request: MCPRequest): Promise<MCPResponse>;
   listTools(): ToolDefinition[];
   /**
-   * Get the detected platform information
+   * Get the client information
    * Requirements: 1.1, 1.6 (platform-adaptive-integration)
    */
-  getDetectedPlatform(): DetectedPlatform | null;
+  getClientInfo(): ClientInfo | null;
   /**
    * Shutdown the handler and release all resources
    * Should be called when the handler is no longer needed (e.g., in tests)
@@ -190,7 +189,7 @@ export interface MCPHandler {
 class MCPHandlerImpl implements MCPHandler {
   private config: UserConfig | null = null;
   private wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
-  private detectedPlatform: DetectedPlatform | null = null;
+  private clientInfo: ClientInfo | null = null;
   private reminderManager: ReminderManager | null = null;
   private calendarService: CalendarService | null = null;
   private notionService: NotionMCPService | null = null;
@@ -219,14 +218,14 @@ class MCPHandlerImpl implements MCPHandler {
   }
 
   /**
-   * Get the detected platform information
+   * Get the client information
    *
    * Requirements: 1.1, 1.6 (platform-adaptive-integration)
    *
-   * @returns DetectedPlatform object if platform has been detected, null otherwise
+   * @returns ClientInfo object if client info has been detected, null otherwise
    */
-  getDetectedPlatform(): DetectedPlatform | null {
-    return this.detectedPlatform;
+  getClientInfo(): ClientInfo | null {
+    return this.clientInfo;
   }
 
   /**
@@ -546,11 +545,11 @@ class MCPHandlerImpl implements MCPHandler {
   }
 
   /**
-   * Create PlatformContext for platform-adaptive tool handlers
+   * Create PlatformContext for capability-adaptive tool handlers
    */
   private createPlatformContext(): PlatformContext {
     return {
-      getPlatformInfo: () => this.detectedPlatform,
+      getClientInfo: () => this.clientInfo,
     };
   }
 
@@ -563,14 +562,6 @@ class MCPHandlerImpl implements MCPHandler {
       // Currently returns null - Sampling handlers will fall back to non-Sampling behavior
       getMcpServer: () => null,
     };
-  }
-
-  /**
-   * Check if EventKit is available and enabled
-   * Returns false if EventKit is disabled or unavailable (non-macOS)
-   */
-  private isEventKitAvailable(): boolean {
-    return this.config?.calendar?.sources?.eventkit?.enabled ?? false;
   }
 
   /**
@@ -625,20 +616,20 @@ class MCPHandlerImpl implements MCPHandler {
   private handleInitialize(id: number | string | null, params?: Record<string, unknown>): MCPResponse {
     // Extract clientInfo and capabilities from params
     // MCP initialize request contains: { clientInfo: { name, version }, capabilities: {...} }
-    const clientInfo = params?.clientInfo as { name?: string; version?: string } | undefined;
+    const mcpClientInfo = params?.clientInfo as { name?: string; version?: string } | undefined;
     const capabilities = params?.capabilities as Record<string, unknown> | undefined;
 
-    // Detect platform from clientInfo
-    if (clientInfo?.name && clientInfo?.version) {
-      this.detectedPlatform = PlatformDetector.detectPlatform(
-        capabilities ?? {}
+    // Detect client capabilities from MCP initialization
+    if (mcpClientInfo?.name && mcpClientInfo?.version) {
+      this.clientInfo = detectClientInfo(
+        capabilities ?? {},
+        mcpClientInfo
       );
 
-      // Log platform detection (console.log since we don't have mcpLogger here)
+      // Log client detection (console.log since we don't have mcpLogger here)
       console.log(
-        `[sage] Platform detected: ${this.detectedPlatform.platform} ` +
-        `(client: ${this.detectedPlatform.clientName} v${this.detectedPlatform.clientVersion}, ` +
-        `sampling: ${this.detectedPlatform.supportsSampling})`
+        `[sage] Client detected: ${this.clientInfo.clientName} v${this.clientInfo.clientVersion}, ` +
+        `sampling: ${this.clientInfo.supportsSampling}`
       );
     } else {
       console.warn('[sage] No clientInfo available in initialize request');
@@ -928,10 +919,8 @@ class MCPHandlerImpl implements MCPHandler {
         },
       },
       async (args) => {
-        // Runtime dispatch: Use Sampling when EventKit is unavailable but Sampling is supported
-        // This covers iOS/iPad (no EventKit) and Web (no EventKit) with Sampling capability
-        const shouldUseSampling =
-          this.detectedPlatform?.supportsSampling && !this.isEventKitAvailable();
+        // Use Sampling when the client supports it
+        const shouldUseSampling = this.clientInfo?.supportsSampling ?? false;
 
         const input = {
           taskTitle: args.taskTitle as string,
@@ -948,12 +937,12 @@ class MCPHandlerImpl implements MCPHandler {
           notes: args.notes as string | undefined,
         };
 
-        if (shouldUseSampling) {
+        if (shouldUseSampling && this.clientInfo) {
           return handleSetReminderWithSampling(
             input,
             { ...this.createReminderTodoContext(), ...this.createPlatformContext() },
             this.createSamplingContext(),
-            this.detectedPlatform!
+            this.clientInfo
           );
         } else {
           return handleSetReminder(this.createReminderTodoContext(), input);
@@ -1024,10 +1013,8 @@ class MCPHandlerImpl implements MCPHandler {
         },
       },
       async (args) => {
-        // Runtime dispatch: Use Sampling when EventKit is unavailable but Sampling is supported
-        // This covers iOS/iPad (no EventKit) and Web (no EventKit) with Sampling capability
-        const shouldUseSampling =
-          this.detectedPlatform?.supportsSampling && !this.isEventKitAvailable();
+        // Use Sampling when the client supports it
+        const shouldUseSampling = this.clientInfo?.supportsSampling ?? false;
 
         const input = {
           startDate: args.startDate as string,

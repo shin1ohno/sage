@@ -22,7 +22,7 @@ import type {
   CalendarEvent as ExtendedCalendarEvent,
   RecurrenceScope,
 } from '../../types/google-calendar-types.js';
-import type { DetectedPlatform } from '../../types/platform.js';
+import type { ClientInfo } from '../../types/sampling.js';
 import { createToolResponse, createErrorFromCatch } from '../registry.js';
 import { SamplingService, SamplingError } from '../../services/sampling-service.js';
 import { IntegrationStrategyManager } from '../../services/integration-strategy-manager.js';
@@ -42,20 +42,20 @@ export interface CalendarToolsContext {
 }
 
 /**
- * Platform context for accessing detected platform information
+ * Platform context for accessing client information
  *
- * This interface provides access to the platform detected during MCP initialization,
- * enabling platform-specific behavior in tool handlers.
+ * This interface provides access to the client info detected during MCP initialization,
+ * enabling capability-specific behavior in tool handlers.
  *
  * Requirements: 1.6 (platform-adaptive-integration)
  */
 export interface PlatformContext {
   /**
-   * Get the detected platform information
+   * Get the client information
    *
-   * @returns DetectedPlatform object or null if not yet detected
+   * @returns ClientInfo object or null if not yet detected
    */
-  getPlatformInfo: () => DetectedPlatform | null;
+  getClientInfo: () => ClientInfo | null;
 }
 
 /**

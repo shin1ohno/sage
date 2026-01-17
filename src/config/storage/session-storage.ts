@@ -4,7 +4,7 @@
  * Requirements: 1.1, 10.1
  */
 
-import type { ConfigStorage } from '../../types/platform.js';
+import type { ConfigStorage } from '../../types/storage.js';
 
 /**
  * Session-based configuration storage

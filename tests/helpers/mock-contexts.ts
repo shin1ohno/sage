@@ -7,7 +7,7 @@
  */
 
 import type { UserConfig } from '../../src/types/index.js';
-import type { DetectedPlatform } from '../../src/types/platform.js';
+import type { ClientInfo } from '../../src/types/sampling.js';
 import type { SetupContext, WizardSession } from '../../src/tools/setup/handlers.js';
 import type { TaskToolsContext } from '../../src/tools/tasks/handlers.js';
 import type { CalendarToolsContext } from '../../src/tools/calendar/handlers.js';
@@ -366,45 +366,41 @@ export function createMockDirectoryToolsContext(
  */
 export interface MockPlatformToolsContext extends PlatformToolsContext {
   config: UserConfig | null;
-  platformInfo: DetectedPlatform | null;
+  clientInfo: ClientInfo | null;
 }
 
 /**
- * Default detected platform for testing (macOS without Sampling support)
- * Claude Desktop on macOS does not support Sampling
+ * Default client info for testing (Desktop without Sampling support)
+ * Claude Desktop does not support Sampling
  */
-export const DEFAULT_DETECTED_PLATFORM: DetectedPlatform = {
-  platform: 'macos',
+export const DEFAULT_DETECTED_PLATFORM: ClientInfo = {
   clientName: 'claude-desktop',
   clientVersion: '1.0.0',
   supportsSampling: false, // Desktop clients don't support Sampling
 };
 
 /**
- * iOS detected platform for testing
+ * iOS client info for testing (with Sampling support)
  */
-export const IOS_DETECTED_PLATFORM: DetectedPlatform = {
-  platform: 'ios',
+export const IOS_DETECTED_PLATFORM: ClientInfo = {
   clientName: 'claude-ios',
   clientVersion: '1.0.0',
   supportsSampling: true,
 };
 
 /**
- * Web detected platform for testing (no Sampling)
+ * Web client info for testing (no Sampling)
  */
-export const WEB_DETECTED_PLATFORM: DetectedPlatform = {
-  platform: 'web',
+export const WEB_DETECTED_PLATFORM: ClientInfo = {
   clientName: 'claude-web',
   clientVersion: '1.0.0',
   supportsSampling: false,
 };
 
 /**
- * Unknown detected platform for testing
+ * Unknown client info for testing
  */
-export const UNKNOWN_DETECTED_PLATFORM: DetectedPlatform = {
-  platform: 'unknown',
+export const UNKNOWN_DETECTED_PLATFORM: ClientInfo = {
   clientName: 'unknown-client',
   clientVersion: '1.0.0',
   supportsSampling: false,
@@ -419,7 +415,7 @@ export const UNKNOWN_DETECTED_PLATFORM: DetectedPlatform = {
  * @example
  * ```typescript
  * const ctx = createMockPlatformToolsContext({
- *   platformInfo: IOS_DETECTED_PLATFORM,
+ *   clientInfo: IOS_DETECTED_PLATFORM,
  *   config: DEFAULT_TEST_CONFIG,
  * });
  * const result = await handleGetPlatformInfo({}, ctx);
@@ -428,31 +424,44 @@ export const UNKNOWN_DETECTED_PLATFORM: DetectedPlatform = {
 export function createMockPlatformToolsContext(
   overrides?: Partial<{
     config: UserConfig | null;
-    platformInfo: DetectedPlatform | null;
+    clientInfo: ClientInfo | null;
+    // Backwards compatibility - maps to clientInfo
+    platformInfo?: ClientInfo | null;
     getConfig: () => UserConfig | null;
-    getPlatformInfo: () => DetectedPlatform | null;
+    getClientInfo: () => ClientInfo | null;
   }>
 ): MockPlatformToolsContext {
+  // Support both clientInfo and platformInfo for backwards compatibility
+  // Use 'in' check to distinguish between explicit null and undefined
+  let resolvedClientInfo: ClientInfo | null;
+  if (overrides && 'clientInfo' in overrides) {
+    resolvedClientInfo = overrides.clientInfo as ClientInfo | null;
+  } else if (overrides && 'platformInfo' in overrides) {
+    resolvedClientInfo = overrides.platformInfo as ClientInfo | null;
+  } else {
+    resolvedClientInfo = DEFAULT_DETECTED_PLATFORM;
+  }
+
   const state = {
     config: overrides?.config !== undefined ? overrides.config : DEFAULT_TEST_CONFIG,
-    platformInfo: overrides?.platformInfo !== undefined ? overrides.platformInfo : DEFAULT_DETECTED_PLATFORM,
+    clientInfo: resolvedClientInfo,
   };
 
   return {
     config: state.config,
-    platformInfo: state.platformInfo,
+    clientInfo: state.clientInfo,
     getConfig: overrides?.getConfig ?? jest.fn(() => state.config),
-    getPlatformInfo: overrides?.getPlatformInfo ?? jest.fn(() => state.platformInfo),
+    getClientInfo: overrides?.getClientInfo ?? jest.fn(() => state.clientInfo),
   };
 }
 
 /**
  * Mock ReminderContextWithPlatform with configurable state
  *
- * Extends MockReminderTodoContext with platform detection
+ * Extends MockReminderTodoContext with client info
  */
 export interface MockReminderContextWithPlatform extends MockReminderTodoContext {
-  getPlatformInfo: () => DetectedPlatform | null;
+  getClientInfo: () => ClientInfo | null;
 }
 
 /**
@@ -503,7 +512,7 @@ export function createMockSamplingContext(
 /**
  * Create a mock ReminderContextWithPlatform
  *
- * Combines ReminderTodoContext with platform detection
+ * Combines ReminderTodoContext with client info
  * for testing handleSetReminderWithSampling.
  *
  * @param overrides - Optional overrides for context methods and services
@@ -512,7 +521,7 @@ export function createMockSamplingContext(
  * @example
  * ```typescript
  * const ctx = createMockReminderContextWithPlatform({
- *   platform: IOS_DETECTED_PLATFORM,
+ *   clientInfo: IOS_DETECTED_PLATFORM,
  * });
  * const samplingCtx = createMockSamplingContext();
  * const result = await handleSetReminderWithSampling(
@@ -528,12 +537,14 @@ export function createMockReminderContextWithPlatform(
     config: UserConfig | null;
     reminderManager: ReminderManager | null;
     todoListManager: TodoListManager | null;
-    platform: DetectedPlatform;
+    clientInfo: ClientInfo;
+    // Backwards compatibility
+    platform?: ClientInfo;
     getConfig: () => UserConfig | null;
     getReminderManager: () => ReminderManager | null;
     getTodoListManager: () => TodoListManager | null;
     initializeServices: (config: UserConfig) => void;
-    getPlatformInfo: () => DetectedPlatform | null;
+    getClientInfo: () => ClientInfo | null;
   }>
 ): MockReminderContextWithPlatform {
   const baseCtx = createMockReminderTodoContext({
@@ -546,10 +557,10 @@ export function createMockReminderContextWithPlatform(
     initializeServices: overrides?.initializeServices,
   });
 
-  const platform = overrides?.platform ?? IOS_DETECTED_PLATFORM;
+  const client = overrides?.clientInfo ?? overrides?.platform ?? IOS_DETECTED_PLATFORM;
 
   return {
     ...baseCtx,
-    getPlatformInfo: overrides?.getPlatformInfo ?? (() => platform),
+    getClientInfo: overrides?.getClientInfo ?? (() => client),
   };
 }
