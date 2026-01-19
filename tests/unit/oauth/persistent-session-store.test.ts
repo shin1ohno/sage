@@ -10,6 +10,7 @@ import { EncryptionService } from '../../../src/oauth/encryption-service.js';
 import { existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { randomUUID } from 'crypto';
 
 describe('PersistentSessionStore', () => {
   let store: PersistentSessionStore;
@@ -18,8 +19,8 @@ describe('PersistentSessionStore', () => {
   const sessionExpiryMs = 24 * 60 * 60 * 1000; // 24 hours
 
   beforeEach(async () => {
-    // Create temporary storage path for each test
-    tempStoragePath = join(tmpdir(), `test-sessions-${Date.now()}.enc`);
+    // Create temporary storage path for each test with UUID for uniqueness
+    tempStoragePath = join(tmpdir(), `test-sessions-${Date.now()}-${randomUUID()}.enc`);
 
     // Initialize encryption service with test key
     encryptionService = new EncryptionService({
@@ -32,12 +33,15 @@ describe('PersistentSessionStore', () => {
   });
 
   afterEach(() => {
-    // Clean up test file
-    if (existsSync(tempStoragePath)) {
-      try {
-        unlinkSync(tempStoragePath);
-      } catch (error) {
-        // Ignore cleanup errors
+    // Clean up test files (both main and temp file)
+    const filesToClean = [tempStoragePath, `${tempStoragePath}.tmp`];
+    for (const file of filesToClean) {
+      if (existsSync(file)) {
+        try {
+          unlinkSync(file);
+        } catch {
+          // Ignore cleanup errors
+        }
       }
     }
   });
