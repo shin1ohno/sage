@@ -393,6 +393,20 @@ Time: ~18s per full test run
 
 ---
 
-**Status Report Generated**: 2026-01-03
+---
+
+## Active Specs
+
+### Pending Implementation
+
+| Spec | Phase | Tasks | Description |
+|------|-------|-------|-------------|
+| [streamable-http-transport](./streamable-http-transport/) | 📋 Draft | 0/35 | MCP Streamable HTTP Transport対応（Codex接続） |
+| [multi-calendar-resources](./multi-calendar-resources/) | 📋 Pending | 0/20 | 複数カレンダーリソース同時参照 |
+| [test-performance-optimization](./test-performance-optimization/) | 📋 Pending | 0/22 | テストパフォーマンス最適化 |
+
+---
+
+**Status Report Generated**: 2026-01-19
 **Next Review**: After production deployment
 **Contact**: @shin1ohno

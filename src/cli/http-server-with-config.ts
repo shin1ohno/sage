@@ -15,7 +15,7 @@ import {
   OAuthAuthConfig,
 } from './remote-config-loader.js';
 import { createSecretAuthenticator, SecretAuthenticator } from './secret-auth.js';
-import { createMCPHandler, MCPHandler, MCPRequest } from './mcp-handler.js';
+import { createMCPHandler, MCPHandler } from './mcp-handler.js';
 import {
   OAuthServer,
   OAuthHandler,
@@ -25,6 +25,11 @@ import {
 } from '../oauth/index.js';
 import { setSharedPendingAuthStore } from '../tools/oauth/authenticate-google.js';
 import { cliLogger } from '../utils/logger.js';
+import { createSSEStreamHandler, SSEStreamHandler } from './sse-stream-handler.js';
+import {
+  createStreamableHTTPHandler,
+  StreamableHTTPHandler,
+} from './streamable-http-handler.js';
 
 /**
  * Options for creating the server
@@ -116,6 +121,9 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   // Google OAuth remote mode handlers
   private pendingGoogleAuthStore: PendingGoogleAuthStore | null = null;
   private googleOAuthCallbackHandler: GoogleOAuthCallbackHandler | null = null;
+  // Streamable HTTP Transport handlers (FR-1, FR-2, FR-3)
+  private sseHandler: SSEStreamHandler | null = null;
+  private streamableHandler: StreamableHTTPHandler | null = null;
 
   constructor(config: RemoteConfig, options: HTTPServerWithConfigOptions) {
     this.config = config;
@@ -169,6 +177,23 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
     // Initialize MCP handler
     this.mcpHandler = await createMCPHandler();
+
+    // Initialize Streamable HTTP Transport handlers (FR-1, FR-2, FR-3)
+    this.sseHandler = createSSEStreamHandler({
+      keepaliveInterval: this.config.remote.streamableHttp?.keepaliveInterval ?? 30000,
+      maxConnectionsPerSession: this.config.remote.streamableHttp?.maxStreamsPerSession ?? 5,
+    });
+    this.streamableHandler = createStreamableHTTPHandler(
+      this.mcpHandler,
+      this.sseHandler,
+      {
+        sessionTimeout: this.config.remote.streamableHttp?.sessionTimeout ?? 3600000,
+        eventBufferRetention: this.config.remote.streamableHttp?.eventBufferRetention ?? 300000,
+        keepaliveInterval: this.config.remote.streamableHttp?.keepaliveInterval ?? 30000,
+        maxSessions: this.config.remote.streamableHttp?.maxSessions ?? 1000,
+        maxStreamsPerSession: this.config.remote.streamableHttp?.maxStreamsPerSession ?? 5,
+      }
+    );
 
     // Initialize Google OAuth callback handler for remote mode
     if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -395,10 +420,29 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       return;
     }
 
-    // MCP endpoint (auth required if enabled)
-    if (path === '/mcp' && method === 'POST') {
-      this.handleMCPRequest(req, res);
-      return;
+    // MCP endpoint - Streamable HTTP Transport (FR-1, FR-2, FR-3)
+    if (path === '/mcp') {
+      switch (method) {
+        case 'GET':
+          // FR-1: SSE stream establishment
+          this.handleMCPGetRequest(req, res);
+          return;
+        case 'POST':
+          // FR-2, FR-8: JSON-RPC with optional SSE response
+          this.handleMCPPostRequest(req, res);
+          return;
+        case 'DELETE':
+          // FR-3 (AC-3.5): Session termination
+          this.handleMCPDeleteRequest(req, res);
+          return;
+        default:
+          res.writeHead(405, {
+            'Content-Type': 'application/json',
+            'Allow': 'GET, POST, DELETE, OPTIONS',
+          });
+          res.end(JSON.stringify({ error: 'Method not allowed' }));
+          return;
+      }
     }
 
     // Root path - show server info
@@ -613,10 +657,12 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     return { valid: false, error: 'No authentication configured' };
   }
 
-  private handleMCPRequest(req: IncomingMessage, res: ServerResponse): void {
-    // Check authentication if enabled
+  /**
+   * Handle GET /mcp - SSE stream establishment
+   * Requirement: FR-1
+   */
+  private handleMCPGetRequest(req: IncomingMessage, res: ServerResponse): void {
     if (this.isAuthEnabled()) {
-      // Add WWW-Authenticate header for OAuth (Requirement 22.4)
       if (this.isOAuthEnabled() && this.oauthServer) {
         res.setHeader('WWW-Authenticate', this.oauthServer.getWWWAuthenticateHeader());
       }
@@ -624,16 +670,68 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       this.verifyAuthentication(req).then((result) => {
         if (!result.valid) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              jsonrpc: '2.0',
-              id: null,
-              error: {
-                code: -32002,
-                message: result.error || 'Invalid token',
-              },
-            })
-          );
+          res.end(JSON.stringify({
+            error: 'Unauthorized',
+            message: result.error || 'Invalid token',
+          }));
+          return;
+        }
+
+        if (!this.streamableHandler) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Streamable HTTP handler not initialized' }));
+          return;
+        }
+
+        this.streamableHandler.handleGetRequest(req, res, result.token).catch((error) => {
+          cliLogger.error({ err: error }, 'GET /mcp failed');
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Internal server error' }));
+          }
+        });
+      }).catch(() => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Token verification failed' }));
+      });
+    } else {
+      if (!this.streamableHandler) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Streamable HTTP handler not initialized' }));
+        return;
+      }
+
+      this.streamableHandler.handleGetRequest(req, res).catch((error) => {
+        cliLogger.error({ err: error }, 'GET /mcp failed');
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Internal server error' }));
+        }
+      });
+    }
+  }
+
+  /**
+   * Handle POST /mcp - JSON-RPC with optional SSE response
+   * Requirement: FR-2, FR-8
+   */
+  private handleMCPPostRequest(req: IncomingMessage, res: ServerResponse): void {
+    if (this.isAuthEnabled()) {
+      if (this.isOAuthEnabled() && this.oauthServer) {
+        res.setHeader('WWW-Authenticate', this.oauthServer.getWWWAuthenticateHeader());
+      }
+
+      this.verifyAuthentication(req).then((result) => {
+        if (!result.valid) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            id: null,
+            error: {
+              code: -32002,
+              message: result.error || 'Invalid token',
+            },
+          }));
           return;
         }
 
@@ -642,101 +740,83 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
           res.setHeader('Set-Cookie', createSessionCookie(result.token));
         }
 
-        this.processMCPRequest(req, res);
+        if (!this.streamableHandler) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            id: null,
+            error: {
+              code: -32603,
+              message: 'Streamable HTTP handler not initialized',
+            },
+          }));
+          return;
+        }
+
+        this.streamableHandler.handlePostRequest(req, res, result.token).catch((error) => {
+          cliLogger.error({ err: error }, 'POST /mcp failed');
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              jsonrpc: '2.0',
+              id: null,
+              error: { code: -32603, message: 'Internal server error' },
+            }));
+          }
+        });
       }).catch(() => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Token verification failed' }));
+        res.end(JSON.stringify({
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32603, message: 'Token verification failed' },
+        }));
       });
     } else {
-      this.processMCPRequest(req, res);
+      if (!this.streamableHandler) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32603, message: 'Streamable HTTP handler not initialized' },
+        }));
+        return;
+      }
+
+      this.streamableHandler.handlePostRequest(req, res).catch((error) => {
+        cliLogger.error({ err: error }, 'POST /mcp failed');
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            id: null,
+            error: { code: -32603, message: 'Internal server error' },
+          }));
+        }
+      });
     }
   }
 
   /**
-   * Process MCP request synchronously with inline response
+   * Handle DELETE /mcp - Session termination
+   * Requirement: FR-3 (AC-3.5)
    */
-  private processMCPRequest(req: IncomingMessage, res: ServerResponse): void {
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk.toString();
-    });
+  private handleMCPDeleteRequest(req: IncomingMessage, res: ServerResponse): void {
+    if (!this.streamableHandler) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Streamable HTTP handler not initialized' }));
+      return;
+    }
 
-    req.on('end', async () => {
-      try {
-        const request = this.parseJSONRPCRequest(body);
-
-        if (!this.mcpHandler) {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              jsonrpc: '2.0',
-              id: request.id,
-              error: {
-                code: -32603,
-                message: 'MCP handler not initialized',
-              },
-            })
-          );
-          return;
-        }
-
-        const mcpRequest: MCPRequest = {
-          jsonrpc: '2.0',
-          id: request.id,
-          method: request.method,
-          params: request.params,
-        };
-
-        const mcpResponse = await this.mcpHandler.handleRequest(mcpRequest);
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(mcpResponse));
-      } catch (error) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: null,
-            error: {
-              code: -32700,
-              message: error instanceof Error ? error.message : 'Parse error',
-            },
-          })
-        );
+    this.streamableHandler.handleDeleteRequest(req, res).catch((error) => {
+      cliLogger.error({ err: error }, 'DELETE /mcp failed');
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Internal server error' }));
       }
     });
   }
 
-  private parseJSONRPCRequest(body: string): {
-    jsonrpc: string;
-    id: number | string | null;
-    method: string;
-    params?: Record<string, unknown>;
-  } {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(body);
-    } catch {
-      throw new Error('Invalid JSON');
-    }
-
-    const request = parsed as Record<string, unknown>;
-
-    if (!request.jsonrpc || request.jsonrpc !== '2.0') {
-      throw new Error('Invalid JSON-RPC request');
-    }
-
-    if (request.method === undefined) {
-      throw new Error('Invalid JSON-RPC request: missing method');
-    }
-
-    return {
-      jsonrpc: '2.0',
-      id: (request.id as number | string) ?? null,
-      method: request.method as string,
-      params: request.params as Record<string, unknown> | undefined,
-    };
-  }
 }
 
 /**

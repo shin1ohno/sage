@@ -56,6 +56,25 @@ export interface NoAuthConfig {
 export type AuthConfig = OAuthAuthConfig | JWTAuthConfig | NoAuthConfig;
 
 /**
+ * Streamable HTTP Transport Configuration
+ * Requirement: FR-3, NFR-1
+ */
+export interface StreamableHTTPConfig {
+  /** Whether Streamable HTTP transport is enabled (default: true) */
+  enabled?: boolean;
+  /** Session timeout in milliseconds (default: 3600000 = 1 hour) */
+  sessionTimeout?: number;
+  /** Event buffer retention in milliseconds (default: 300000 = 5 minutes) */
+  eventBufferRetention?: number;
+  /** Keepalive interval in milliseconds (default: 30000 = 30 seconds) */
+  keepaliveInterval?: number;
+  /** Maximum sessions per server (default: 1000) */
+  maxSessions?: number;
+  /** Maximum SSE connections per session (default: 5) */
+  maxStreamsPerSession?: number;
+}
+
+/**
  * Remote MCP Server Configuration
  */
 export interface RemoteConfig {
@@ -67,6 +86,8 @@ export interface RemoteConfig {
     cors: {
       allowedOrigins: string[];
     };
+    /** Streamable HTTP Transport configuration (FR-1, FR-2, FR-3) */
+    streamableHttp?: StreamableHTTPConfig;
   };
 }
 

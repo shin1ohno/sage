@@ -717,3 +717,99 @@ export function validateFindCommonAvailabilityInput(request: unknown): {
     error: result.error,
   };
 }
+
+// ============================================================
+// Streamable HTTP Transport Schemas
+// Requirement: FR-3, NFR-2
+// ============================================================
+
+/**
+ * Session ID format schema
+ * Validates UUID v4 format or JWT-like format
+ */
+export const SessionIdSchema = z.string().refine(
+  (value) => {
+    // UUID v4 format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    // JWT format (three base64 segments separated by dots)
+    const jwtRegex = /^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$/;
+    return uuidRegex.test(value) || jwtRegex.test(value);
+  },
+  { message: 'Session ID must be a valid UUID v4 or JWT' }
+);
+
+/**
+ * Streamable HTTP configuration schema
+ * Requirement: FR-3, NFR-1
+ */
+export const StreamableHTTPConfigSchema = z.object({
+  /** Whether Streamable HTTP transport is enabled */
+  enabled: z.boolean().default(true),
+
+  /** Session timeout in milliseconds (default: 1 hour) */
+  sessionTimeout: z.number().min(60000).max(86400000).default(3600000),
+
+  /** Event buffer retention in milliseconds (default: 5 minutes) */
+  eventBufferRetention: z.number().min(10000).max(3600000).default(300000),
+
+  /** Keepalive interval in milliseconds (default: 30 seconds) */
+  keepaliveInterval: z.number().min(5000).max(120000).default(30000),
+
+  /** Maximum sessions per server (default: 1000) */
+  maxSessions: z.number().min(1).max(100000).default(1000),
+
+  /** Maximum SSE connections per session (default: 5) */
+  maxStreamsPerSession: z.number().min(1).max(100).default(5),
+});
+
+export type ValidatedStreamableHTTPConfig = z.infer<typeof StreamableHTTPConfigSchema>;
+
+/**
+ * Validate Streamable HTTP configuration
+ * @param config - The configuration to validate
+ * @returns Validation result with parsed data or error
+ */
+export function validateStreamableHTTPConfig(config: unknown): {
+  success: boolean;
+  data?: ValidatedStreamableHTTPConfig;
+  error?: z.ZodError;
+} {
+  const result = StreamableHTTPConfigSchema.safeParse(config);
+
+  if (result.success) {
+    return {
+      success: true,
+      data: result.data,
+    };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+  };
+}
+
+/**
+ * Validate session ID
+ * @param sessionId - The session ID to validate
+ * @returns Validation result
+ */
+export function validateSessionId(sessionId: unknown): {
+  success: boolean;
+  data?: string;
+  error?: z.ZodError;
+} {
+  const result = SessionIdSchema.safeParse(sessionId);
+
+  if (result.success) {
+    return {
+      success: true,
+      data: result.data,
+    };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+  };
+}

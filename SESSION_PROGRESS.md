@@ -1,6 +1,114 @@
 # Session Progress - sage
 
-## Current Session: 2026-01-15 - Multi-Calendar Resources実装
+## Current Session: 2026-01-19 - Streamable HTTP Transport実装
+
+### 進行中タスク
+
+#### MCP Streamable HTTP Transport対応 ✅ 完了
+
+**仕様ファイル**: `.claude/specs/streamable-http-transport/`
+
+**目的**: MCP Streamable HTTP Transport (2025-03-26仕様) に対応し、CodexやClaude.ai等のMCPクライアントからの接続を可能にする
+
+### 実装タスク進捗: 35/35タスク完了 ✅ 全完了
+
+#### Phase 1: Type Definitions ✅
+- **Task 1-2**: 型定義追加
+  - `src/types/streamable-http.ts` - `StreamableSession`, `BufferedEvent`, `MCPCapabilities`等
+  - `src/config/validation.ts` - `SessionIdSchema`, `StreamableHTTPConfigSchema`追加
+
+#### Phase 2: Session Management ✅
+- **Task 3-7**: SessionManager実装
+  - `src/cli/session-manager.ts` - セッション作成/取得/削除/タイムアウト
+  - イベントバッファリング（resumability用）
+  - セッションクリーンアップタイマー
+
+#### Phase 3: SSE Enhancement ✅
+- **Task 8-10**: SSEStreamHandler拡張
+  - `src/cli/sse-stream-handler.ts` - connection ID, event ID, event counter追加
+  - `sendEventWithId()`, `getConnectionsBySessionId()`, `sendToSession()`追加
+  - 複数ストリーム対応、ラウンドロビンルーティング
+
+#### Phase 4: Streamable HTTP Handler ✅
+- **Task 11-16**: StreamableHTTPHandler実装
+  - `src/cli/streamable-http-handler.ts` - GET/POST/DELETE /mcp処理
+  - セッション管理統合
+  - 後方互換性（FR-8）対応
+
+#### Phase 5: HTTP Server Integration ✅
+- **Task 17-20**: HTTPサーバー統合
+  - `src/cli/http-server-with-config.ts` - `/mcp`ルーティング更新
+  - `handleMCPGetRequest()`, `handleMCPPostRequest()`, `handleMCPDeleteRequest()`追加
+  - 認証統合
+
+#### Phase 6: Configuration ✅
+- **Task 21-22**: 設定拡張
+  - `src/cli/remote-config-loader.ts` - `StreamableHTTPConfig`追加
+  - `streamableHttp`設定セクション追加
+
+#### Phase 7: Unit Tests ✅
+- **Task 23**: SessionManager unit tests (31 tests)
+- **Task 24**: SSEStreamHandler enhancement tests (32 tests)
+- **Task 25-27**: StreamableHTTPHandler unit tests (28 tests)
+
+#### Phase 8: Integration Tests ✅
+- **Task 28**: Streamable HTTP transport integration tests (8 tests)
+- **Task 29**: Authentication integration tests for SSE (7 tests)
+- **Task 30**: Resumability integration tests (6 tests)
+
+#### Phase 9: E2E Tests ✅
+- **Task 31**: E2E test for Codex-like client connection (24 tests)
+- **Task 32**: E2E test for multiple streams (7 tests)
+
+#### Phase 10: Tool Parity and Final Validation ✅
+- **Task 33**: Update tool parity tests (7 tests)
+- **Task 34**: Run full test suite - All passed (107 suites, 2571 tests)
+- **Task 35**: Build verification - No TypeScript errors
+
+### 主要機能
+
+- ✅ GET /mcp - SSEストリーム確立 (FR-1)
+- ✅ POST /mcp - JSON-RPC with SSE/JSON response (FR-2, FR-8)
+- ✅ DELETE /mcp - セッション終了 (FR-3)
+- ✅ セッション管理 (FR-3)
+- ✅ イベントID付きSSE (FR-4)
+- ✅ 後方互換性（JSON-onlyクライアント対応）(FR-8)
+- ✅ 複数ストリーム対応 (FR-7)
+- ✅ 認証統合 (FR-6)
+
+### 新規・変更ファイル
+
+**新規 - コア:**
+- `src/types/streamable-http.ts` - Streamable HTTP型定義
+- `src/cli/session-manager.ts` - セッション管理
+- `src/cli/streamable-http-handler.ts` - Streamable HTTPハンドラー
+
+**変更 - サービス:**
+- `src/cli/sse-stream-handler.ts` - イベントID、複数ストリーム対応
+- `src/cli/http-server-with-config.ts` - GET/DELETE /mcpルーティング、POST統合
+- `src/cli/remote-config-loader.ts` - StreamableHTTPConfig追加
+
+**変更 - 型定義:**
+- `src/types/index.ts` - streamable-httpエクスポート追加
+- `src/config/validation.ts` - SessionId/StreamableHTTPConfig schema追加
+
+### テスト結果
+
+```
+Test Suites: 107 passed, 107 total ✅
+Tests:       2 skipped, 2571 passed, 2573 total ✅
+```
+
+### 新規テストファイル
+
+- `tests/unit/session-manager.test.ts` - SessionManagerユニットテスト (31 tests)
+- `tests/unit/sse-stream-handler-enhanced.test.ts` - SSE拡張テスト (32 tests)
+- `tests/unit/streamable-http-handler.test.ts` - StreamableHTTPHandlerテスト (28 tests)
+- `tests/e2e/streamable-http-e2e.test.ts` - E2Eテスト (31 tests)
+
+---
+
+## Previous Session: 2026-01-15 - Multi-Calendar Resources実装
 
 ### 完了タスク
 
