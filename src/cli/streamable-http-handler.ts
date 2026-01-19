@@ -225,23 +225,9 @@ export class StreamableHTTPHandlerImpl implements StreamableHTTPHandler {
     const sessionIdHeader = req.headers['mcp-session-id'] as string;
 
     // Requirement FR-8 (AC-8.1, AC-8.2, AC-8.3): Backward compatibility
-    // For JSON-only clients (Accept: application/json without text/event-stream),
-    // session management is optional to maintain backward compatibility
-    const requiresSession = wantsSSE && !isInitialize;
-
-    // Requirement FR-3 (AC-3.3): Session required for SSE mode after initialization
-    if (requiresSession && !sessionIdHeader) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        jsonrpc: '2.0',
-        error: {
-          code: -32600,
-          message: 'Mcp-Session-Id header required for SSE mode',
-        },
-        id: mcpRequest.id,
-      }));
-      return;
-    }
+    // Session management is OPTIONAL per MCP spec. Clients that don't use sessions
+    // can still make requests. Only validate session if client provides a session ID.
+    // This ensures backward compatibility with existing clients.
 
     let session: StreamableSession | undefined;
 
@@ -249,26 +235,12 @@ export class StreamableHTTPHandlerImpl implements StreamableHTTPHandler {
       // Create new session for initialize request
       session = this.sessionManager.createSession(userId);
     } else if (sessionIdHeader) {
-      // Validate existing session
+      // Validate existing session if client provided a session ID
       session = this.sessionManager.getSession(sessionIdHeader);
       if (!session) {
-        // For backward compatibility with JSON-only clients, allow requests
-        // without valid session if they don't want SSE
-        if (!wantsSSE) {
-          // Process without session for backward compatibility
-          session = undefined;
-        } else {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            jsonrpc: '2.0',
-            error: {
-              code: -32600,
-              message: 'Session not found or expired',
-            },
-            id: mcpRequest.id,
-          }));
-          return;
-        }
+        // Session not found - proceed without session for backward compatibility
+        // This allows clients to work even if their session expired
+        session = undefined;
       } else {
         // Requirement FR-6 (AC-6.3): Session bound to authenticated user
         if (session.userId && session.userId !== userId) {
