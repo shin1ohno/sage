@@ -570,7 +570,8 @@ describe('Streamable HTTP Transport - Integration Tests', () => {
         const deleteBody = JSON.parse(deleteResponse.body);
         expect(deleteBody.success).toBe(true);
 
-        // Act: Try to use deleted session (SSE mode requires valid session)
+        // Act: Try to use deleted session
+        // Per MCP spec, session management is optional for backward compatibility
         const postResponse = await httpRequest('POST', '/mcp', {
           headers: {
             'Content-Type': 'application/json',
@@ -585,8 +586,8 @@ describe('Streamable HTTP Transport - Integration Tests', () => {
           }),
         });
 
-        // Assert: Should fail with session not found
-        expect(postResponse.status).toBe(404);
+        // Assert: Session management is optional - requests succeed even with deleted session
+        expect(postResponse.status).toBe(200);
       } finally {
         await httpServer.stop();
       }
@@ -1190,7 +1191,8 @@ describe('Streamable HTTP Transport - Integration Tests', () => {
       }
     });
 
-    it('should reject requests with wrong session ID after initialization', async () => {
+    it('should allow requests with invalid session ID for backward compatibility', async () => {
+      // FR-8: Session management is OPTIONAL - requests with invalid session should still work
       // Arrange
       createTestConfig();
       const { createHTTPServerWithConfig } = await import('../../src/cli/http-server-with-config.js');
@@ -1229,8 +1231,8 @@ describe('Streamable HTTP Transport - Integration Tests', () => {
           }),
         });
 
-        // Assert: Should fail with 404 (session not found)
-        expect(invalidResponse.status).toBe(404);
+        // Assert: Should succeed for backward compatibility (session management optional)
+        expect(invalidResponse.status).toBe(200);
       } finally {
         await httpServer.stop();
       }

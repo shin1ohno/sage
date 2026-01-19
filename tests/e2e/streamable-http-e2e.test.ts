@@ -557,7 +557,8 @@ describe('Streamable HTTP Transport E2E - Codex-like Client Flow', () => {
       // Cleanup SSE connection
       sseConnection.close();
 
-      // Verify session is terminated
+      // Verify session is terminated - with backward compatibility,
+      // requests with invalid session IDs still succeed (processed without session)
       const postDeleteResponse = await sendMCPRequest(
         port,
         {
@@ -572,7 +573,8 @@ describe('Streamable HTTP Transport E2E - Codex-like Client Flow', () => {
         }
       );
 
-      expect(postDeleteResponse.status).toBe(404);
+      // Session management is optional per MCP spec - requests succeed even with invalid session
+      expect(postDeleteResponse.status).toBe(200);
     });
 
     it('should handle multiple sequential requests correctly', async () => {
@@ -816,10 +818,12 @@ describe('Streamable HTTP Transport E2E - Codex-like Client Flow', () => {
       expect(uniqueIds.size).toBe(5);
     });
 
-    it('should reject requests with invalid session ID', async () => {
+    it('should accept requests with invalid session ID (backward compatibility)', async () => {
       const port = getNextPort();
       server = await createTestServer(port);
 
+      // Per MCP spec, session management is optional
+      // Requests with invalid session IDs are processed without a session
       const response = await sendMCPRequest(
         port,
         {
@@ -834,7 +838,8 @@ describe('Streamable HTTP Transport E2E - Codex-like Client Flow', () => {
         }
       );
 
-      expect(response.status).toBe(404);
+      // Session management is optional - requests succeed even with invalid session
+      expect(response.status).toBe(200);
     });
 
     it('should terminate session on DELETE /mcp', async () => {
@@ -880,7 +885,8 @@ describe('Streamable HTTP Transport E2E - Codex-like Client Flow', () => {
 
       expect(deleteResponse.status).toBe(200);
 
-      // Verify session is gone
+      // Verify session is gone - with backward compatibility,
+      // requests with deleted session IDs still succeed (processed without session)
       const postDeleteResponse = await sendMCPRequest(
         port,
         {
@@ -895,7 +901,8 @@ describe('Streamable HTTP Transport E2E - Codex-like Client Flow', () => {
         }
       );
 
-      expect(postDeleteResponse.status).toBe(404);
+      // Session management is optional per MCP spec - requests succeed even with deleted session
+      expect(postDeleteResponse.status).toBe(200);
     });
 
     it('should return 400 for DELETE without session ID', async () => {
@@ -1726,7 +1733,8 @@ describe('Streamable HTTP Transport E2E - Codex-like Client Flow', () => {
         }
       }
 
-      // Session should no longer exist
+      // Session should no longer exist - with backward compatibility,
+      // requests with deleted session IDs still succeed (processed without session)
       const postDeleteResponse = await sendMCPRequest(
         port,
         {
@@ -1741,7 +1749,8 @@ describe('Streamable HTTP Transport E2E - Codex-like Client Flow', () => {
         }
       );
 
-      expect(postDeleteResponse.status).toBe(404);
+      // Session management is optional per MCP spec - requests succeed even with deleted session
+      expect(postDeleteResponse.status).toBe(200);
     });
   });
 

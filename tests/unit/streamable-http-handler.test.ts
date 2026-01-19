@@ -352,8 +352,8 @@ describe('StreamableHTTPHandler', () => {
       expect(body.error.message).toContain('Parse error');
     });
 
-    it('should return 400 for SSE mode without session ID after initialization', async () => {
-      // Requirement FR-3 (AC-3.3): Session required for SSE mode after initialization
+    it('should allow SSE mode without session ID for backward compatibility', async () => {
+      // FR-8: Session management is OPTIONAL per MCP spec for backward compatibility
       const req = createMockRequest({
         method: 'POST',
         url: '/mcp',
@@ -372,12 +372,11 @@ describe('StreamableHTTPHandler', () => {
 
       await handler.handlePostRequest(req, res);
 
-      expect(res.writeHead).toHaveBeenCalledWith(400, { 'Content-Type': 'application/json' });
+      // Should succeed with SSE response (session optional)
+      expect(res.writeHead).toHaveBeenCalledWith(200, expect.objectContaining({
+        'Content-Type': 'text/event-stream',
+      }));
       expect(res.ended).toBe(true);
-      const body = JSON.parse(res.body);
-      expect(body.jsonrpc).toBe('2.0');
-      expect(body.error.code).toBe(-32600);
-      expect(body.error.message).toContain('Session');
     });
 
     it('should create session on initialize request', async () => {
@@ -481,7 +480,8 @@ describe('StreamableHTTPHandler', () => {
       expect(res.body).toContain('data:');
     });
 
-    it('should return 404 for non-existent session in SSE mode', async () => {
+    it('should allow non-existent session ID for backward compatibility', async () => {
+      // FR-8: Session management is OPTIONAL - proceed without session if not found
       const req = createMockRequest({
         method: 'POST',
         url: '/mcp',
@@ -501,9 +501,10 @@ describe('StreamableHTTPHandler', () => {
 
       await handler.handlePostRequest(req, res);
 
-      expect(res.writeHead).toHaveBeenCalledWith(404, { 'Content-Type': 'application/json' });
-      const body = JSON.parse(res.body);
-      expect(body.error.message).toContain('Session not found');
+      // Should succeed even with non-existent session (backward compatibility)
+      expect(res.writeHead).toHaveBeenCalledWith(200, expect.objectContaining({
+        'Content-Type': 'text/event-stream',
+      }));
     });
 
     it('should return 403 for session belonging to different user', async () => {
@@ -780,8 +781,8 @@ describe('StreamableHTTPHandler', () => {
       expect(res.headers['Content-Type']).toBe('application/json');
     });
 
-    it('should reject SSE mode with invalid session', async () => {
-      // SSE mode requires valid session (no backward compat here)
+    it('should allow SSE mode with invalid session for backward compatibility', async () => {
+      // FR-8: Session management is OPTIONAL - process even with invalid session
       const req = createMockRequest({
         method: 'POST',
         url: '/mcp',
@@ -801,7 +802,8 @@ describe('StreamableHTTPHandler', () => {
 
       await handler.handlePostRequest(req, res);
 
-      expect(res.statusCode).toBe(404);
+      // Should succeed (backward compatibility)
+      expect(res.statusCode).toBe(200);
     });
   });
 
