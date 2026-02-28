@@ -1,0 +1,13 @@
+{
+  "task": "./takt/tasks の内容を順番に実行",
+  "piece": "expert",
+  "runSlug": "20260228-142056-takt-tasks",
+  "runRoot": ".takt/runs/20260228-142056-takt-tasks",
+  "reportDirectory": ".takt/runs/20260228-142056-takt-tasks/reports",
+  "contextDirectory": ".takt/runs/20260228-142056-takt-tasks/context",
+  "logsDirectory": ".takt/runs/20260228-142056-takt-tasks/logs",
+  "status": "completed",
+  "startTime": "2026-02-28T14:20:56.010Z",
+  "endTime": "2026-02-28T17:18:55.649Z",
+  "iterations": 17
+}

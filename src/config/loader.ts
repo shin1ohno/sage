@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import type { UserConfig } from '../types/index.js';
 import { DEFAULT_CONFIG } from '../types/config.js';
 import { validateCalendarSources } from './validation.js';
+import { MeetingIntelligenceConfigSchema, SlackIntegrationConfigSchema } from '../types/pipeline-config.js';
 
 const SAGE_DIR = '.sage';
 const CONFIG_FILE = 'config.json';
@@ -63,6 +64,21 @@ export class ConfigLoader {
         parsed.calendar.sources = JSON.parse(
           JSON.stringify(DEFAULT_CONFIG.calendar.sources)
         );
+        migrated = true;
+      }
+
+      // Migrate config if meetingIntelligence is missing
+      if (!parsed.meetingIntelligence) {
+        parsed.meetingIntelligence = MeetingIntelligenceConfigSchema.parse({});
+        migrated = true;
+      }
+
+      // Migrate config if integrations.slack is missing
+      if (!parsed.integrations?.slack) {
+        if (!parsed.integrations) {
+          parsed.integrations = { ...DEFAULT_CONFIG.integrations };
+        }
+        parsed.integrations.slack = SlackIntegrationConfigSchema.parse({});
         migrated = true;
       }
 

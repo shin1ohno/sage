@@ -252,6 +252,57 @@ describe('ConfigLoader', () => {
       ConfigLoader.getConfigPath = originalGetConfigPath;
     });
 
+    it('should auto-migrate config without meetingIntelligence', async () => {
+      const legacyConfig = ConfigLoader.getDefaultConfig();
+      // Remove meetingIntelligence to simulate legacy config
+      delete (legacyConfig as { meetingIntelligence?: unknown }).meetingIntelligence;
+
+      const migrationDir = join(testDir, 'migration-mi-test');
+      const migrationPath = join(migrationDir, 'config.json');
+
+      await mkdir(migrationDir, { recursive: true });
+      await writeFile(migrationPath, JSON.stringify(legacyConfig));
+
+      const originalGetConfigDir = ConfigLoader.getConfigDir;
+      const originalGetConfigPath = ConfigLoader.getConfigPath;
+      ConfigLoader.getConfigDir = () => migrationDir;
+      ConfigLoader.getConfigPath = () => migrationPath;
+
+      const loaded = await ConfigLoader.load();
+
+      expect(loaded.meetingIntelligence).toBeDefined();
+      expect(loaded.meetingIntelligence!.enabled).toBe(false);
+      expect(loaded.meetingIntelligence!.briefingWindow).toBe(15);
+
+      ConfigLoader.getConfigDir = originalGetConfigDir;
+      ConfigLoader.getConfigPath = originalGetConfigPath;
+    });
+
+    it('should auto-migrate config without integrations.slack', async () => {
+      const legacyConfig = ConfigLoader.getDefaultConfig();
+      // Remove integrations.slack to simulate legacy config
+      delete (legacyConfig.integrations as { slack?: unknown }).slack;
+
+      const migrationDir = join(testDir, 'migration-slack-test');
+      const migrationPath = join(migrationDir, 'config.json');
+
+      await mkdir(migrationDir, { recursive: true });
+      await writeFile(migrationPath, JSON.stringify(legacyConfig));
+
+      const originalGetConfigDir = ConfigLoader.getConfigDir;
+      const originalGetConfigPath = ConfigLoader.getConfigPath;
+      ConfigLoader.getConfigDir = () => migrationDir;
+      ConfigLoader.getConfigPath = () => migrationPath;
+
+      const loaded = await ConfigLoader.load();
+
+      expect(loaded.integrations.slack).toBeDefined();
+      expect(loaded.integrations.slack!.enabled).toBe(false);
+
+      ConfigLoader.getConfigDir = originalGetConfigDir;
+      ConfigLoader.getConfigPath = originalGetConfigPath;
+    });
+
     it('should reject config when loading with invalid syncInterval', async () => {
       const invalidConfig = ConfigLoader.getDefaultConfig();
       // Set invalid syncInterval

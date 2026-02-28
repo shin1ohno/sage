@@ -7,7 +7,7 @@
  */
 
 import { google } from 'googleapis';
-import { OAuth2Client } from 'google-auth-library';
+import { OAuth2Client, CodeChallengeMethod } from 'google-auth-library';
 import { generateCodeVerifier, generateCodeChallenge } from './pkce.js';
 import { EncryptionService } from './encryption-service.js';
 import { join } from 'path';
@@ -50,6 +50,7 @@ export const GOOGLE_CALENDAR_SCOPES = [
   'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/directory.readonly',
+  'https://www.googleapis.com/auth/drive.readonly',
 ];
 
 /**
@@ -122,9 +123,9 @@ export class GoogleOAuthHandler {
       access_type: 'offline', // Request refresh token
       scope: GOOGLE_CALENDAR_SCOPES,
       code_challenge: codeChallenge,
-      code_challenge_method: 'S256',
+      code_challenge_method: CodeChallengeMethod.S256,
       prompt: 'consent', // Force consent screen to get refresh token
-    } as any);
+    });
 
     return authUrl;
   }

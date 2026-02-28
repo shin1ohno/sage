@@ -22,7 +22,7 @@ const config = {
     ],
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(run-applescript|execa|strip-final-newline|npm-run-path|path-key|onetime|mimic-fn|human-signals|is-stream|get-stream|signal-exit|merge-stream)/)',
+    'node_modules/(?!(run-applescript|execa|strip-final-newline|npm-run-path|path-key|onetime|mimic-fn|human-signals|is-stream|get-stream|signal-exit|merge-stream|p-queue|eventemitter3)/)',
   ],
   testMatch: ['**/tests/**/*.test.ts'],
   collectCoverageFrom: [

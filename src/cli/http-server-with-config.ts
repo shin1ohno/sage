@@ -7,6 +7,7 @@
  */
 
 import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
+import { randomUUID } from 'crypto';
 import { VERSION } from '../version.js';
 import {
   loadRemoteConfig,
@@ -25,6 +26,8 @@ import {
 } from '../oauth/index.js';
 import { setSharedPendingAuthStore } from '../tools/oauth/authenticate-google.js';
 import { cliLogger } from '../utils/logger.js';
+import { escapeHtml } from '../utils/html.js';
+import type { SlackOAuthHandler } from '../oauth/slack-oauth-handler.js';
 import { createSSEStreamHandler, SSEStreamHandler } from './sse-stream-handler.js';
 import {
   createStreamableHTTPHandler,
@@ -124,6 +127,10 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   // Streamable HTTP Transport handlers (FR-1, FR-2, FR-3)
   private sseHandler: SSEStreamHandler | null = null;
   private streamableHandler: StreamableHTTPHandler | null = null;
+  private slackOAuthHandler: SlackOAuthHandler | null = null;
+  // Slack OAuth CSRF state store: state → createdAt timestamp
+  private readonly pendingSlackOAuthStates = new Map<string, number>();
+  private static readonly SLACK_STATE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
   constructor(config: RemoteConfig, options: HTTPServerWithConfigOptions) {
     this.config = config;
@@ -219,6 +226,18 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
         cliLogger.info({ redirectUri }, 'Google OAuth remote mode enabled');
       }
+    }
+
+    // Initialize Slack OAuth handler if credentials are available
+    if (process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET) {
+      const slackRedirectUri = process.env.SLACK_REDIRECT_URI || `http://${this.effectiveHost}:${this.effectivePort}/oauth/slack/callback`;
+      const { SlackOAuthHandler: SlackOAuthHandlerClass } = await import('../oauth/slack-oauth-handler.js');
+      this.slackOAuthHandler = new SlackOAuthHandlerClass({
+        clientId: process.env.SLACK_CLIENT_ID,
+        clientSecret: process.env.SLACK_CLIENT_SECRET,
+        redirectUri: slackRedirectUri,
+      });
+      cliLogger.info({ redirectUri: slackRedirectUri }, 'Slack OAuth enabled');
     }
 
     // Initialize OAuth if configured (Requirements 21-31)
@@ -391,6 +410,18 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         res.writeHead(503, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Google OAuth not configured' }));
       }
+      return;
+    }
+
+    // Slack OAuth authorization start endpoint
+    if (path === '/oauth/slack/authorize' && method === 'GET') {
+      this.handleSlackOAuthAuthorize(res);
+      return;
+    }
+
+    // Slack OAuth callback endpoint (no auth required - receives redirect from Slack)
+    if (path === '/oauth/slack/callback' && method === 'GET') {
+      this.handleSlackOAuthCallback(req, res);
       return;
     }
 
@@ -815,6 +846,101 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         res.end(JSON.stringify({ error: 'Internal server error' }));
       }
     });
+  }
+
+  private handleSlackOAuthAuthorize(res: ServerResponse): void {
+    if (!this.slackOAuthHandler) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Slack OAuth not configured' }));
+      return;
+    }
+
+    // Clean up expired states before creating a new one
+    this.cleanupExpiredSlackOAuthStates();
+
+    const state = randomUUID();
+    this.pendingSlackOAuthStates.set(state, Date.now());
+
+    const authUrl = this.slackOAuthHandler.getAuthorizationUrl(state);
+    cliLogger.info({ state }, 'Slack OAuth authorization started');
+
+    res.writeHead(302, { Location: authUrl });
+    res.end();
+  }
+
+  private handleSlackOAuthCallback(req: IncomingMessage, res: ServerResponse): void {
+    if (!this.slackOAuthHandler) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Slack OAuth not configured' }));
+      return;
+    }
+
+    const url = new URL(req.url || '/', `http://${req.headers.host}`);
+    const code = url.searchParams.get('code');
+    const error = url.searchParams.get('error');
+    const state = url.searchParams.get('state');
+
+    if (error) {
+      cliLogger.warn({ error }, 'Slack OAuth callback received error');
+      res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`<h1>Slack Authorization Failed</h1><p>${escapeHtml(error)}</p>`);
+      return;
+    }
+
+    // Validate state parameter for CSRF protection
+    if (!state) {
+      cliLogger.warn('Slack OAuth callback missing state parameter');
+      res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<h1>Invalid Request</h1><p>Missing state parameter.</p>');
+      return;
+    }
+
+    const stateCreatedAt = this.pendingSlackOAuthStates.get(state);
+    if (stateCreatedAt === undefined) {
+      cliLogger.warn({ state }, 'Slack OAuth callback received unknown state');
+      res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<h1>Invalid Request</h1><p>Invalid or expired state. Please restart authorization.</p>');
+      return;
+    }
+
+    // One-time use: consume the state immediately
+    this.pendingSlackOAuthStates.delete(state);
+
+    // Check state expiration
+    if (Date.now() - stateCreatedAt > HTTPServerWithConfigImpl.SLACK_STATE_TIMEOUT_MS) {
+      cliLogger.warn({ state }, 'Slack OAuth state expired');
+      res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<h1>Session Expired</h1><p>Authorization session has expired. Please try again.</p>');
+      return;
+    }
+
+    if (!code) {
+      res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<h1>Missing authorization code</h1>');
+      return;
+    }
+
+    this.slackOAuthHandler.exchangeCodeForToken(code)
+      .then(async (tokens) => {
+        await this.slackOAuthHandler!.storeTokens(tokens);
+        cliLogger.info({ teamId: tokens.teamId }, 'Slack OAuth completed');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<h1>Slack Authorization Successful</h1><p>You can close this window.</p>');
+      })
+      .catch((err) => {
+        cliLogger.error({ err }, 'Slack OAuth callback failed');
+        res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<h1>Internal Server Error</h1>');
+      });
+  }
+
+  private cleanupExpiredSlackOAuthStates(): void {
+    const now = Date.now();
+    for (const [state, createdAt] of this.pendingSlackOAuthStates.entries()) {
+      if (now - createdAt > HTTPServerWithConfigImpl.SLACK_STATE_TIMEOUT_MS) {
+        this.pendingSlackOAuthStates.delete(state);
+      }
+    }
   }
 
 }
