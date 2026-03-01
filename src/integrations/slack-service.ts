@@ -198,7 +198,7 @@ export class SlackService {
       async () => {
         try {
           return await client.conversations.list({
-            types: 'public_channel,private_channel',
+            types: 'public_channel',
           });
         } catch (error) {
           this.handleApiError(error);

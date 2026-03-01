@@ -42,7 +42,7 @@ describe('SlackOAuthHandler', () => {
       expect(parsed.origin + parsed.pathname).toBe('https://slack.com/oauth/v2/authorize');
       expect(parsed.searchParams.get('client_id')).toBe('test-id');
       expect(parsed.searchParams.get('scope')).toBe(
-        'chat:write,channels:history,channels:read,groups:history,groups:read,im:write,users:read',
+        'chat:write,channels:history,channels:read,users:read',
       );
       expect(parsed.searchParams.get('redirect_uri')).toBe(
         'http://localhost:54321/oauth/slack/callback',

@@ -16,7 +16,7 @@ const SLACK_AUTHORIZE_URL = 'https://slack.com/oauth/v2/authorize';
 const SLACK_TOKEN_URL = 'https://slack.com/api/oauth.v2.access';
 const SLACK_REVOKE_URL = 'https://slack.com/api/auth.revoke';
 
-const SLACK_SCOPES = 'chat:write,channels:history,channels:read,groups:history,groups:read,im:write,users:read';
+const SLACK_SCOPES = 'chat:write,channels:history,channels:read,users:read';
 
 export interface SlackTokens {
   accessToken: string;
