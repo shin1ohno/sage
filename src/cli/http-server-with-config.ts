@@ -28,6 +28,7 @@ import { setSharedPendingAuthStore } from '../tools/oauth/authenticate-google.js
 import { cliLogger } from '../utils/logger.js';
 import { escapeHtml } from '../utils/html.js';
 import type { SlackOAuthHandler } from '../oauth/slack-oauth-handler.js';
+import { ConfigLoader } from '../config/loader.js';
 import { createSSEStreamHandler, SSEStreamHandler } from './sse-stream-handler.js';
 import {
   createStreamableHTTPHandler,
@@ -229,15 +230,29 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     }
 
     // Initialize Slack OAuth handler if credentials are available
-    if (process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET) {
-      const slackRedirectUri = process.env.SLACK_REDIRECT_URI || `http://${this.effectiveHost}:${this.effectivePort}/oauth/slack/callback`;
-      const { SlackOAuthHandler: SlackOAuthHandlerClass } = await import('../oauth/slack-oauth-handler.js');
-      this.slackOAuthHandler = new SlackOAuthHandlerClass({
-        clientId: process.env.SLACK_CLIENT_ID,
-        clientSecret: process.env.SLACK_CLIENT_SECRET,
-        redirectUri: slackRedirectUri,
-      });
-      cliLogger.info({ redirectUri: slackRedirectUri }, 'Slack OAuth enabled');
+    // Priority: environment variables > config.json
+    {
+      let slackConfig: { clientId?: string; clientSecret?: string; redirectUri?: string } | undefined;
+      try {
+        const userConfig = await ConfigLoader.load();
+        slackConfig = userConfig.integrations?.slack;
+      } catch {
+        // config.json may not exist — that's fine
+      }
+      const slackClientId = process.env.SLACK_CLIENT_ID || slackConfig?.clientId;
+      const slackClientSecret = process.env.SLACK_CLIENT_SECRET || slackConfig?.clientSecret;
+      if (slackClientId && slackClientSecret) {
+        const slackRedirectUri = process.env.SLACK_REDIRECT_URI
+          || slackConfig?.redirectUri
+          || `http://${this.effectiveHost}:${this.effectivePort}/oauth/slack/callback`;
+        const { SlackOAuthHandler: SlackOAuthHandlerClass } = await import('../oauth/slack-oauth-handler.js');
+        this.slackOAuthHandler = new SlackOAuthHandlerClass({
+          clientId: slackClientId,
+          clientSecret: slackClientSecret,
+          redirectUri: slackRedirectUri,
+        });
+        cliLogger.info({ redirectUri: slackRedirectUri }, 'Slack OAuth enabled');
+      }
     }
 
     // Initialize OAuth if configured (Requirements 21-31)

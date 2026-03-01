@@ -36,6 +36,9 @@ export type MeetingIntelligenceConfig = z.infer<typeof MeetingIntelligenceConfig
 
 export const SlackIntegrationConfigSchema = z.object({
   enabled: z.boolean().default(false),
+  clientId: z.string().optional(),
+  clientSecret: z.string().optional(),
+  redirectUri: z.string().optional(),
 });
 
 export type SlackIntegrationConfig = z.infer<typeof SlackIntegrationConfigSchema>;

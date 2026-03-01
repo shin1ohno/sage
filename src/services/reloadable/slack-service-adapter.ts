@@ -20,15 +20,17 @@ export type SlackServiceFactory = (config: UserConfig) => SlackService;
 
 /**
  * Default factory that creates SlackService.
- * Credentials come from environment variables (single source of truth).
+ * Credentials are resolved with priority: environment variables > config.json.
  */
-export function createSlackService(_config: UserConfig): SlackService {
-  const clientId = process.env.SLACK_CLIENT_ID;
-  const clientSecret = process.env.SLACK_CLIENT_SECRET;
+export function createSlackService(config: UserConfig): SlackService {
+  const clientId = process.env.SLACK_CLIENT_ID || config.integrations?.slack?.clientId;
+  const clientSecret = process.env.SLACK_CLIENT_SECRET || config.integrations?.slack?.clientSecret;
   if (!clientId || !clientSecret) {
-    throw new Error('Slack integration not configured: missing SLACK_CLIENT_ID or SLACK_CLIENT_SECRET environment variables');
+    throw new Error('Slack integration not configured: missing SLACK_CLIENT_ID or SLACK_CLIENT_SECRET');
   }
-  const redirectUri = process.env.SLACK_REDIRECT_URI || 'http://localhost:54321/oauth/slack/callback';
+  const redirectUri = process.env.SLACK_REDIRECT_URI
+    || config.integrations?.slack?.redirectUri
+    || 'http://localhost:54321/oauth/slack/callback';
   const oauthHandler = new SlackOAuthHandler({
     clientId,
     clientSecret,
