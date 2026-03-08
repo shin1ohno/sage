@@ -6,7 +6,7 @@
  */
 
 import { GooglePeopleService } from '../../src/integrations/google-people-service.js';
-import { GoogleOAuthHandler } from '../../src/oauth/google-oauth-handler.js';
+import { GoogleOAuthHandler } from '../../src/google-oauth/google-oauth-handler.js';
 
 // Mock modules
 jest.mock('googleapis', () => ({

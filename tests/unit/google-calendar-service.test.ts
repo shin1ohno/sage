@@ -6,7 +6,7 @@
  */
 
 import { GoogleCalendarService } from "../../src/integrations/google-calendar-service.js";
-import { GoogleOAuthHandler } from "../../src/oauth/google-oauth-handler.js";
+import { GoogleOAuthHandler } from "../../src/google-oauth/google-oauth-handler.js";
 import type { GoogleCalendarEvent } from "../../src/types/google-calendar-types.js";
 
 // Mock modules

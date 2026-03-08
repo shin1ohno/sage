@@ -6,7 +6,7 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 
 // Mock the encryption service
-jest.mock('../../src/oauth/encryption-service.js', () => ({
+jest.mock('../../src/google-oauth/encryption-service.js', () => ({
   EncryptionService: jest.fn().mockImplementation(() => ({
     initialize: jest.fn().mockImplementation(() => Promise.resolve()),
     encryptToFile: jest.fn().mockImplementation(() => Promise.resolve()),
@@ -24,7 +24,7 @@ jest.mock('../../src/utils/logger.js', () => ({
   },
 }));
 
-import { PendingGoogleAuthStore } from '../../src/oauth/pending-google-auth-store.js';
+import { PendingGoogleAuthStore } from '../../src/google-oauth/pending-google-auth-store.js';
 
 describe('PendingGoogleAuthStore', () => {
   let store: PendingGoogleAuthStore;

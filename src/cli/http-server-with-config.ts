@@ -1,9 +1,9 @@
 /**
  * HTTP Server with Remote Config Integration
- * Requirements: 15.1, 15.4, 15.5, 15.6, 15.7, 15.8, 15.9, 21-31 (OAuth)
+ * Requirements: 15.1, 15.4, 15.5, 15.6, 15.7, 15.8, 15.9
  *
  * Creates an HTTP server with configuration loaded from remote-config.json
- * and integrates JWT-based authentication and OAuth 2.1.
+ * and integrates JWKS-based JWT verification (via Hydra) for OAuth 2.0.
  */
 
 import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
@@ -12,18 +12,16 @@ import {
   loadRemoteConfig,
   RemoteConfig,
   DEFAULT_REMOTE_CONFIG_PATH,
-  OAuthAuthConfig,
 } from './remote-config-loader.js';
 import { createSecretAuthenticator, SecretAuthenticator } from './secret-auth.js';
 import { createMCPHandler, MCPHandler } from './mcp-handler.js';
 import {
-  OAuthServer,
-  OAuthHandler,
   PendingGoogleAuthStore,
   GoogleOAuthCallbackHandler,
   GoogleOAuthHandler,
-} from '../oauth/index.js';
+} from '../google-oauth/index.js';
 import { setSharedPendingAuthStore } from '../tools/oauth/authenticate-google.js';
+import { JWKSVerifier } from '../auth/jwks-verifier.js';
 import { cliLogger } from '../utils/logger.js';
 import { createSSEStreamHandler, SSEStreamHandler } from './sse-stream-handler.js';
 import {
@@ -115,8 +113,7 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   private effectiveHost: string;
   private authenticator: SecretAuthenticator | null = null;
   private mcpHandler: MCPHandler | null = null;
-  private oauthServer: OAuthServer | null = null;
-  private oauthHandler: OAuthHandler | null = null;
+  private jwksVerifier: JWKSVerifier | null = null;
   private debug: boolean = false;
   // Google OAuth remote mode handlers
   private pendingGoogleAuthStore: PendingGoogleAuthStore | null = null;
@@ -135,13 +132,13 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
     // Setup authentication based on type
     if (config.remote.auth.type === 'oauth2') {
-      // OAuth will be initialized in start()
+      // JWKS verifier will be initialized in start()
       // Also setup static token authenticator if enabled
       const oauthConfig = config.remote.auth;
       if (oauthConfig.allowStaticTokens && oauthConfig.staticTokenSecret) {
         this.authenticator = createSecretAuthenticator({
           secret: oauthConfig.staticTokenSecret,
-          expiresIn: oauthConfig.accessTokenExpiry ?? '1h',
+          expiresIn: '1h',
         });
       }
     } else if (config.remote.auth.type === 'jwt') {
@@ -221,50 +218,17 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       }
     }
 
-    // Initialize OAuth if configured (Requirements 21-31)
+    // Initialize JWKS verifier for OAuth token validation (delegated to Hydra)
     if (this.config.remote.auth.type === 'oauth2') {
-      const oauthConfig = this.config.remote.auth as OAuthAuthConfig;
+      const oauthConfig = this.config.remote.auth;
       const issuer = oauthConfig.issuer || `http://${this.effectiveHost}:${this.effectivePort}`;
 
-      // Convert user config to OAuth users
-      const users = oauthConfig.users.map((u, i) => ({
-        id: `user_${i}`,
-        username: u.username,
-        passwordHash: u.passwordHash,
-        createdAt: Date.now(),
-      }));
-
-      this.oauthServer = new OAuthServer({
+      this.jwksVerifier = new JWKSVerifier({
+        jwksUrl: `${issuer}/.well-known/jwks.json`,
         issuer,
-        accessTokenExpiry: oauthConfig.accessTokenExpiry || '1h',
-        refreshTokenExpiry: oauthConfig.refreshTokenExpiry || '30d',
-        authorizationCodeExpiry: '10m',
-        allowedRedirectUris: oauthConfig.allowedRedirectUris || [],
-        users,
-        enablePersistence: true,
       });
 
-      await this.oauthServer.initialize();
-
-      cliLogger.info('OAuth persistence enabled - tokens will survive server restarts');
-      cliLogger.info({ storageLocation: '~/.sage/' }, 'OAuth storage location');
-      this.oauthHandler = new OAuthHandler(this.oauthServer, {
-        issuer,
-        accessTokenExpiry: oauthConfig.accessTokenExpiry || '1h',
-        refreshTokenExpiry: oauthConfig.refreshTokenExpiry || '30d',
-        allowedRedirectUris: oauthConfig.allowedRedirectUris || [],
-        users,
-      });
-
-      // Register shutdown handlers for OAuth persistence
-      const shutdownHandler = async () => {
-        cliLogger.info('Shutting down, flushing OAuth data...');
-        await this.oauthServer!.shutdown();
-        process.exit(0);
-      };
-
-      process.on('SIGTERM', shutdownHandler);
-      process.on('SIGINT', shutdownHandler);
+      cliLogger.info({ issuer }, 'JWKS-based token verification enabled (Hydra)');
     }
 
     return new Promise((resolve, reject) => {
@@ -287,12 +251,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   async stop(): Promise<void> {
     if (!this.running || !this.server) {
       return;
-    }
-
-    // Flush OAuth data if enabled
-    if (this.oauthServer) {
-      cliLogger.info('Shutting down, flushing OAuth data...');
-      await this.oauthServer.shutdown();
     }
 
     // Shutdown Google OAuth pending auth store
@@ -324,12 +282,8 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   isAuthEnabled(): boolean {
     return (
       (this.config.remote.auth.type === 'jwt' && this.authenticator !== null) ||
-      (this.config.remote.auth.type === 'oauth2' && this.oauthServer !== null)
+      (this.config.remote.auth.type === 'oauth2' && this.jwksVerifier !== null)
     );
-  }
-
-  isOAuthEnabled(): boolean {
-    return this.config.remote.auth.type === 'oauth2' && this.oauthServer !== null;
   }
 
   getConfig(): RemoteConfig {
@@ -373,12 +327,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       return;
     }
 
-    // OAuth health check endpoint (no auth required)
-    if (path === '/oauth/health' && method === 'GET') {
-      this.handleOAuthHealthCheck(res);
-      return;
-    }
-
     // Google OAuth callback endpoint (no auth required - receives redirect from Google)
     if (path === '/oauth/google/callback' && method === 'GET') {
       if (this.googleOAuthCallbackHandler) {
@@ -394,39 +342,22 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       return;
     }
 
-    // OAuth endpoints (Requirements 21-31)
-    if (this.oauthHandler) {
-      const oauthPaths = [
-        '/.well-known/oauth-protected-resource',
-        '/.well-known/oauth-authorization-server',
-        '/oauth/register',
-        '/oauth/authorize',
-        '/oauth/login',
-        '/oauth/token',
-      ];
-
-      if (oauthPaths.includes(path)) {
-        this.oauthHandler.handleRequest(req, res).catch(() => {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Internal server error' }));
-        });
-        return;
-      }
-
-      // JWKS endpoint — exposes the RS256 public key for token verification
-      if (path === '/.well-known/jwks.json' && method === 'GET') {
-        const jwks = this.oauthServer!.getJWKS();
-        res.writeHead(200, {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'public, max-age=3600',
-        });
-        res.end(JSON.stringify(jwks));
-        return;
-      }
+    // RFC 9728 — Protected Resource Metadata
+    if (path === '/.well-known/oauth-protected-resource' && method === 'GET') {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=3600',
+      });
+      res.end(JSON.stringify({
+        resource: 'https://mcp.ohno.be',
+        authorization_servers: ['https://mcp.ohno.be'],
+        bearer_methods_supported: ['header'],
+      }));
+      return;
     }
 
     // Auth token endpoint (for JWT mode)
-    if (path === '/auth/token' && method === 'POST' && !this.isOAuthEnabled()) {
+    if (path === '/auth/token' && method === 'POST' && this.config.remote.auth.type !== 'oauth2') {
       this.handleAuthToken(req, res);
       return;
     }
@@ -466,13 +397,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         endpoints: {
           mcp: '/mcp',
           health: '/health',
-          oauth: this.isOAuthEnabled() ? {
-            metadata: '/.well-known/oauth-authorization-server',
-            jwks: '/.well-known/jwks.json',
-            authorize: '/oauth/authorize',
-            token: '/oauth/token',
-            register: '/oauth/register',
-          } : undefined,
         },
       }));
       return;
@@ -516,41 +440,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(health));
-  }
-
-  /**
-   * Handle OAuth health check request
-   */
-  private handleOAuthHealthCheck(res: ServerResponse): void {
-    if (!this.oauthServer) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'OAuth not enabled' }));
-      return;
-    }
-
-    try {
-      const health = this.oauthServer.getHealthStatus();
-      const metrics = this.oauthServer.getMetrics();
-
-      const response = {
-        ...health,
-        metrics,
-        timestamp: new Date().toISOString(),
-      };
-
-      const statusCode = health.healthy ? 200 : 503;
-      res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(response, null, 2));
-
-      this.debugLog('OAuth health check:', response);
-    } catch (error) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        healthy: false,
-        error: 'Failed to get health status',
-        timestamp: new Date().toISOString(),
-      }));
-    }
   }
 
   private handleAuthToken(req: IncomingMessage, res: ServerResponse): void {
@@ -625,9 +514,9 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     return null;
   }
 
-
   /**
    * Verify authentication from request (checks Authorization header and Cookie)
+   * Uses JWKS-based verification for OAuth tokens (delegated to Hydra)
    */
   private async verifyAuthentication(req: IncomingMessage): Promise<{ valid: boolean; error?: string; token?: string }> {
     const token = this.extractToken(req);
@@ -639,14 +528,14 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
     this.debugLog('Verifying token...');
 
-    // Verify token based on authentication type
-    if (this.oauthServer) {
-      const result = await this.oauthServer.verifyAccessToken(token);
+    // Verify token using JWKS (Hydra)
+    if (this.jwksVerifier) {
+      const result = await this.jwksVerifier.verify(token);
       if (result.valid) {
-        this.debugLog('OAuth token verified successfully');
+        this.debugLog('JWKS token verified successfully');
         return { valid: true, token };
       }
-      // If OAuth fails and static tokens are enabled, try static token verification
+      // If JWKS fails and static tokens are enabled, try static token verification
       if (this.authenticator) {
         const staticResult = await this.authenticator.verifyToken(token);
         if (staticResult.valid) {
@@ -675,10 +564,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
    */
   private handleMCPGetRequest(req: IncomingMessage, res: ServerResponse): void {
     if (this.isAuthEnabled()) {
-      if (this.isOAuthEnabled() && this.oauthServer) {
-        res.setHeader('WWW-Authenticate', this.oauthServer.getWWWAuthenticateHeader());
-      }
-
       this.verifyAuthentication(req).then((result) => {
         if (!result.valid) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -729,10 +614,6 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
    */
   private handleMCPPostRequest(req: IncomingMessage, res: ServerResponse): void {
     if (this.isAuthEnabled()) {
-      if (this.isOAuthEnabled() && this.oauthServer) {
-        res.setHeader('WWW-Authenticate', this.oauthServer.getWWWAuthenticateHeader());
-      }
-
       this.verifyAuthentication(req).then((result) => {
         if (!result.valid) {
           res.writeHead(401, { 'Content-Type': 'application/json' });

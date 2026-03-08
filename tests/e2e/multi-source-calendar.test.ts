@@ -16,10 +16,10 @@
 import { CalendarSourceManager } from '../../src/integrations/calendar-source-manager.js';
 import { CalendarService } from '../../src/integrations/calendar-service.js';
 import { GoogleCalendarService } from '../../src/integrations/google-calendar-service.js';
-import { GoogleOAuthHandler } from '../../src/oauth/google-oauth-handler.js';
+import { GoogleOAuthHandler } from '../../src/google-oauth/google-oauth-handler.js';
 import { ConfigLoader } from '../../src/config/loader.js';
 import type { CalendarEvent } from '../../src/integrations/calendar-service.js';
-import type { GoogleOAuthTokens } from '../../src/oauth/google-oauth-handler.js';
+import type { GoogleOAuthTokens } from '../../src/google-oauth/google-oauth-handler.js';
 import * as fs from 'fs/promises';
 import * as syncFs from 'fs';
 

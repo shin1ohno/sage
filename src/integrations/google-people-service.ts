@@ -7,7 +7,7 @@
  */
 
 import { google, people_v1 } from 'googleapis';
-import { GoogleOAuthHandler } from '../oauth/google-oauth-handler.js';
+import { GoogleOAuthHandler } from '../google-oauth/google-oauth-handler.js';
 import { calendarLogger as peopleLogger } from '../utils/logger.js';
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
 import type {

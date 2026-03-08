@@ -7,9 +7,9 @@
  * series split (thisAndFuture), and series deletion with mocked API.
  */
 
-import { GoogleOAuthHandler, GOOGLE_CALENDAR_SCOPES } from '../../src/oauth/google-oauth-handler.js';
+import { GoogleOAuthHandler, GOOGLE_CALENDAR_SCOPES } from '../../src/google-oauth/google-oauth-handler.js';
 import { GoogleCalendarService } from '../../src/integrations/google-calendar-service.js';
-import type { GoogleOAuthTokens } from '../../src/oauth/google-oauth-handler.js';
+import type { GoogleOAuthTokens } from '../../src/google-oauth/google-oauth-handler.js';
 import type { GoogleCalendarEvent } from '../../src/types/google-calendar-types.js';
 import * as fs from 'fs/promises';
 import * as syncFs from 'fs';

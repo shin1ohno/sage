@@ -5,7 +5,7 @@
  * Comprehensive tests for the EncryptionService implementation.
  */
 
-import { EncryptionService } from '../../src/oauth/encryption-service.js';
+import { EncryptionService } from '../../src/google-oauth/encryption-service.js';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 

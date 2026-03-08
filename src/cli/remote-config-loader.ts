@@ -10,24 +10,12 @@ import { join } from 'path';
 import { homedir } from 'os';
 
 /**
- * OAuth User Configuration
- */
-export interface OAuthUserConfig {
-  username: string;
-  passwordHash: string;
-}
-
-/**
- * OAuth Configuration
+ * OAuth Configuration (token verification delegated to Hydra via JWKS)
  */
 export interface OAuthAuthConfig {
   type: 'oauth2';
+  /** Issuer URL (must match Hydra's issuer, e.g. https://mcp.ohno.be) */
   issuer: string;
-  accessTokenExpiry?: string;
-  refreshTokenExpiry?: string;
-  allowedRedirectUris?: string[];
-  users: OAuthUserConfig[];
-  scopes?: Record<string, string>;
   /** Also accept static JWT tokens (for CLI access without OAuth flow) */
   allowStaticTokens?: boolean;
   /** Secret for static JWT tokens (required if allowStaticTokens is true) */

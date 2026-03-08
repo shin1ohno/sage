@@ -7,7 +7,8 @@
  */
 
 import { createHash, randomBytes } from 'crypto';
-import { CodeChallengeMethod } from './types.js';
+
+export type CodeChallengeMethod = 'S256';
 
 /**
  * Characters allowed in code verifier (unreserved characters per RFC 7636)

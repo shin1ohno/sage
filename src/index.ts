@@ -22,7 +22,7 @@ import { TodoListManager } from "./integrations/todo-list-manager.js";
 import { TaskSynchronizer } from "./integrations/task-synchronizer.js";
 import { CalendarEventResponseService } from "./integrations/calendar-event-response.js";
 import { WorkingCadenceService } from "./services/working-cadence.js";
-import { GoogleOAuthHandler } from "./oauth/google-oauth-handler.js";
+import { GoogleOAuthHandler } from "./google-oauth/google-oauth-handler.js";
 import type { UserConfig } from "./types/index.js";
 import { VERSION, SERVER_NAME } from "./version.js";
 import { createErrorFromCatch } from "./utils/mcp-response.js";
@@ -1039,7 +1039,7 @@ async function createServer(): Promise<McpServer> {
           if (source === 'google' && googleCalendarService) {
             try {
               // Check if tokens already exist
-              const { GoogleOAuthHandler } = await import('./oauth/google-oauth-handler.js');
+              const { GoogleOAuthHandler } = await import('./google-oauth/google-oauth-handler.js');
               const oauthConfig = {
                 clientId: process.env.GOOGLE_CLIENT_ID || '',
                 clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',

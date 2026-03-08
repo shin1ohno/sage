@@ -3,7 +3,7 @@
  * Requirements: FR-2 (Local HTTP Callback Server)
  */
 
-import { OAuthCallbackServer } from '../../../src/oauth/oauth-callback-server.js';
+import { OAuthCallbackServer } from '../../../src/google-oauth/oauth-callback-server.js';
 import http from 'http';
 
 describe('OAuthCallbackServer', () => {

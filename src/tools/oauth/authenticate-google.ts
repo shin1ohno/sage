@@ -12,9 +12,9 @@
  */
 
 import { z } from 'zod';
-import { OAuthCallbackServer } from '../../oauth/oauth-callback-server.js';
-import { GoogleOAuthHandler, GOOGLE_CALENDAR_SCOPES } from '../../oauth/google-oauth-handler.js';
-import { PendingGoogleAuthStore } from '../../oauth/pending-google-auth-store.js';
+import { OAuthCallbackServer } from '../../google-oauth/oauth-callback-server.js';
+import { GoogleOAuthHandler, GOOGLE_CALENDAR_SCOPES } from '../../google-oauth/google-oauth-handler.js';
+import { PendingGoogleAuthStore } from '../../google-oauth/pending-google-auth-store.js';
 import { openBrowser } from '../../utils/browser-opener.js';
 import { oauthLogger } from '../../utils/logger.js';
 import type { OAuthToolsContext } from './index.js';

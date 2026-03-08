@@ -140,7 +140,7 @@ Alternatively, use the OAuth2 flow with SSH port forwarding.`,
         // Generate static JWT token using the configured secret
         const authenticator = createSecretAuthenticator({
           secret: oauthConfig.staticTokenSecret,
-          expiresIn: oauthConfig.accessTokenExpiry ?? '1h',
+          expiresIn: '1h',
         });
 
         const result = await authenticator.authenticate(oauthConfig.staticTokenSecret);

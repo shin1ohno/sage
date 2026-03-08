@@ -5,7 +5,7 @@
  * Exports OAuth-related MCP tool handlers and context.
  */
 
-import { GoogleOAuthHandler } from '../../oauth/google-oauth-handler.js';
+import { GoogleOAuthHandler } from '../../google-oauth/google-oauth-handler.js';
 
 /**
  * OAuth Tools Context

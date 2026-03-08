@@ -3,10 +3,10 @@
  * Requirements: FR-2, FR-4 (OAuth Callback Server + Token Exchange)
  */
 
-import { OAuthCallbackServer } from '../../src/oauth/oauth-callback-server.js';
-import { PendingGoogleAuthStore } from '../../src/oauth/pending-google-auth-store.js';
-import { GoogleOAuthCallbackHandler } from '../../src/oauth/google-oauth-callback-handler.js';
-import { GoogleOAuthHandler } from '../../src/oauth/google-oauth-handler.js';
+import { OAuthCallbackServer } from '../../src/google-oauth/oauth-callback-server.js';
+import { PendingGoogleAuthStore } from '../../src/google-oauth/pending-google-auth-store.js';
+import { GoogleOAuthCallbackHandler } from '../../src/google-oauth/google-oauth-callback-handler.js';
+import { GoogleOAuthHandler } from '../../src/google-oauth/google-oauth-handler.js';
 import http, { createServer, IncomingMessage, ServerResponse, Server } from 'http';
 import { URL } from 'url';
 

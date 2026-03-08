@@ -7,7 +7,7 @@
  */
 
 import { google, calendar_v3 } from 'googleapis';
-import { GoogleOAuthHandler } from '../oauth/google-oauth-handler.js';
+import { GoogleOAuthHandler } from '../google-oauth/google-oauth-handler.js';
 import { calendarLogger } from '../utils/logger.js';
 import type {
   CalendarEvent,

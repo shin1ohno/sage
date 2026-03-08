@@ -4,15 +4,15 @@
  */
 
 import { handleAuthenticateGoogle } from '../../../../src/tools/oauth/authenticate-google.js';
-import { OAuthCallbackServer } from '../../../../src/oauth/oauth-callback-server.js';
-import { GoogleOAuthHandler } from '../../../../src/oauth/google-oauth-handler.js';
-import { PendingGoogleAuthStore } from '../../../../src/oauth/pending-google-auth-store.js';
+import { OAuthCallbackServer } from '../../../../src/google-oauth/oauth-callback-server.js';
+import { GoogleOAuthHandler } from '../../../../src/google-oauth/google-oauth-handler.js';
+import { PendingGoogleAuthStore } from '../../../../src/google-oauth/pending-google-auth-store.js';
 import * as browserOpener from '../../../../src/utils/browser-opener.js';
 
 // Mock dependencies
-jest.mock('../../../../src/oauth/oauth-callback-server.js');
-jest.mock('../../../../src/oauth/google-oauth-handler.js');
-jest.mock('../../../../src/oauth/pending-google-auth-store.js');
+jest.mock('../../../../src/google-oauth/oauth-callback-server.js');
+jest.mock('../../../../src/google-oauth/google-oauth-handler.js');
+jest.mock('../../../../src/google-oauth/pending-google-auth-store.js');
 jest.mock('../../../../src/utils/browser-opener.js');
 jest.mock('googleapis', () => ({
   google: {

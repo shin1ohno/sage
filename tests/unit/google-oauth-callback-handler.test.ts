@@ -38,10 +38,10 @@ jest.mock('../../src/utils/logger.js', () => ({
 process.env.GOOGLE_CLIENT_ID = 'mock_client_id';
 process.env.GOOGLE_CLIENT_SECRET = 'mock_client_secret';
 
-import { GoogleOAuthCallbackHandler } from '../../src/oauth/google-oauth-callback-handler.js';
-import { PendingGoogleAuthStore } from '../../src/oauth/pending-google-auth-store.js';
-import type { PendingGoogleAuth } from '../../src/oauth/pending-google-auth-store.js';
-import { GoogleOAuthHandler } from '../../src/oauth/google-oauth-handler.js';
+import { GoogleOAuthCallbackHandler } from '../../src/google-oauth/google-oauth-callback-handler.js';
+import { PendingGoogleAuthStore } from '../../src/google-oauth/pending-google-auth-store.js';
+import type { PendingGoogleAuth } from '../../src/google-oauth/pending-google-auth-store.js';
+import { GoogleOAuthHandler } from '../../src/google-oauth/google-oauth-handler.js';
 
 describe('GoogleOAuthCallbackHandler', () => {
   let handler: GoogleOAuthCallbackHandler;

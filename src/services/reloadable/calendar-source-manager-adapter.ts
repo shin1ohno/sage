@@ -10,7 +10,7 @@ import type { UserConfig } from '../../types/config.js';
 import { CalendarSourceManager } from '../../integrations/calendar-source-manager.js';
 import { CalendarService } from '../../integrations/calendar-service.js';
 import { GoogleCalendarService } from '../../integrations/google-calendar-service.js';
-import { GoogleOAuthHandler } from '../../oauth/google-oauth-handler.js';
+import { GoogleOAuthHandler } from '../../google-oauth/google-oauth-handler.js';
 import { createLogger } from '../../utils/logger.js';
 
 const logger = createLogger('CalendarSourceManagerAdapter');

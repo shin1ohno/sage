@@ -5,7 +5,7 @@
  * Comprehensive tests for the GoogleOAuthHandler implementation.
  */
 
-import { GoogleOAuthHandler, GOOGLE_CALENDAR_SCOPES } from '../../src/oauth/google-oauth-handler.js';
+import { GoogleOAuthHandler, GOOGLE_CALENDAR_SCOPES } from '../../src/google-oauth/google-oauth-handler.js';
 import * as fs from 'fs/promises';
 
 // Mock modules
@@ -20,7 +20,7 @@ jest.mock('googleapis', () => ({
 jest.mock('fs/promises');
 
 // Mock EncryptionService
-jest.mock('../../src/oauth/encryption-service.js', () => {
+jest.mock('../../src/google-oauth/encryption-service.js', () => {
   return {
     EncryptionService: jest.fn().mockImplementation(() => ({
       initialize: jest.fn().mockResolvedValue(undefined),

@@ -18,7 +18,7 @@ import { WorkingCadenceService } from '../services/working-cadence.js';
 import { CalendarSourceManager } from '../integrations/calendar-source-manager.js';
 import { GoogleCalendarService } from '../integrations/google-calendar-service.js';
 import { GooglePeopleService } from '../integrations/google-people-service.js';
-import { GoogleOAuthHandler } from '../oauth/google-oauth-handler.js';
+import { GoogleOAuthHandler } from '../google-oauth/google-oauth-handler.js';
 import type { UserConfig } from '../types/index.js';
 
 // Hot-reload imports

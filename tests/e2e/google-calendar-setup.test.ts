@@ -14,11 +14,11 @@
  */
 
 import { CalendarSourceManager } from '../../src/integrations/calendar-source-manager.js';
-import { GoogleOAuthHandler, GOOGLE_CALENDAR_SCOPES } from '../../src/oauth/google-oauth-handler.js';
+import { GoogleOAuthHandler, GOOGLE_CALENDAR_SCOPES } from '../../src/google-oauth/google-oauth-handler.js';
 import { GoogleCalendarService } from '../../src/integrations/google-calendar-service.js';
 import { ConfigLoader } from '../../src/config/loader.js';
 import type { UserConfig } from '../../src/types/config.js';
-import type { GoogleOAuthTokens } from '../../src/oauth/google-oauth-handler.js';
+import type { GoogleOAuthTokens } from '../../src/google-oauth/google-oauth-handler.js';
 import * as fs from 'fs/promises';
 import * as syncFs from 'fs';
 
