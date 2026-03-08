@@ -412,6 +412,17 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
         });
         return;
       }
+
+      // JWKS endpoint — exposes the RS256 public key for token verification
+      if (path === '/.well-known/jwks.json' && method === 'GET') {
+        const jwks = this.oauthServer!.getJWKS();
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=3600',
+        });
+        res.end(JSON.stringify(jwks));
+        return;
+      }
     }
 
     // Auth token endpoint (for JWT mode)
@@ -457,6 +468,7 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
           health: '/health',
           oauth: this.isOAuthEnabled() ? {
             metadata: '/.well-known/oauth-authorization-server',
+            jwks: '/.well-known/jwks.json',
             authorize: '/oauth/authorize',
             token: '/oauth/token',
             register: '/oauth/register',

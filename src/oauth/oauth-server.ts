@@ -5,7 +5,7 @@
  * Main OAuth server that coordinates all OAuth components and handles requests.
  */
 
-import { createHash } from 'crypto';
+import { createHash, createPublicKey } from 'crypto';
 import { join } from 'path';
 import { homedir } from 'os';
 import { existsSync, statSync } from 'fs';
@@ -256,6 +256,26 @@ export class OAuthServer {
       token_endpoint_auth_methods_supported: ['none', 'client_secret_post'],
       code_challenge_methods_supported: ['S256'],
       service_documentation: 'https://github.com/shin1ohno/sage',
+    };
+  }
+
+  /**
+   * Get JSON Web Key Set (JWKS) containing the RS256 public key
+   * Enables external services to verify access tokens independently
+   */
+  getJWKS(): { keys: Array<Record<string, unknown>> } {
+    if (!this.publicKey) {
+      return { keys: [] };
+    }
+    const keyObject = createPublicKey(this.publicKey);
+    const jwk = keyObject.export({ format: 'jwk' });
+    return {
+      keys: [{
+        ...jwk,
+        alg: 'RS256',
+        use: 'sig',
+        kid: 'sage-oauth-key-1',
+      }],
     };
   }
 
