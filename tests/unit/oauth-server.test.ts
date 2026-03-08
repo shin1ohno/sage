@@ -59,6 +59,21 @@ describe('OAuth Server', () => {
     });
   });
 
+  describe('JWKS', () => {
+    it('should return RS256 public key in JWK format', () => {
+      const jwks = server.getJWKS();
+
+      expect(jwks.keys).toHaveLength(1);
+      const key = jwks.keys[0];
+      expect(key.kty).toBe('RSA');
+      expect(key.alg).toBe('RS256');
+      expect(key.use).toBe('sig');
+      expect(key.kid).toBe('sage-oauth-key-1');
+      expect(key.n).toBeDefined();
+      expect(key.e).toBeDefined();
+    });
+  });
+
   describe('WWW-Authenticate Header (Requirement 22.4, 22.5)', () => {
     it('should return correct header format', () => {
       const header = server.getWWWAuthenticateHeader();
