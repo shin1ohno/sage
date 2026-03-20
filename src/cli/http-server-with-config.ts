@@ -566,7 +566,10 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     if (this.isAuthEnabled()) {
       this.verifyAuthentication(req).then((result) => {
         if (!result.valid) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.writeHead(401, {
+            'Content-Type': 'application/json',
+            'WWW-Authenticate': 'Bearer resource_metadata="https://mcp.ohno.be/.well-known/oauth-protected-resource"',
+          });
           res.end(JSON.stringify({
             error: 'Unauthorized',
             message: result.error || 'Invalid token',
@@ -616,7 +619,10 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
     if (this.isAuthEnabled()) {
       this.verifyAuthentication(req).then((result) => {
         if (!result.valid) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.writeHead(401, {
+            'Content-Type': 'application/json',
+            'WWW-Authenticate': 'Bearer resource_metadata="https://mcp.ohno.be/.well-known/oauth-protected-resource"',
+          });
           res.end(JSON.stringify({
             jsonrpc: '2.0',
             id: null,
