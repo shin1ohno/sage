@@ -1325,6 +1325,12 @@ class MCPHandlerImpl implements MCPHandler {
               description:
                 "Optional comment to include with the response (e.g., '年末年始休暇のため')",
             },
+            source: {
+              type: 'string',
+              enum: ['eventkit', 'google'],
+              description:
+                'Optional: Specify the calendar source explicitly. If not provided, will try Google Calendar first, then EventKit.',
+            },
           },
           required: ['eventId', 'response'],
         },
@@ -1334,6 +1340,7 @@ class MCPHandlerImpl implements MCPHandler {
           eventId: args.eventId as string,
           response: args.response as EventResponseType,
           comment: args.comment as string | undefined,
+          source: args.source as 'eventkit' | 'google' | undefined,
         })
     );
 
@@ -1362,6 +1369,12 @@ class MCPHandlerImpl implements MCPHandler {
               description:
                 "Optional comment to include with all responses (e.g., '年末年始休暇のため')",
             },
+            source: {
+              type: 'string',
+              enum: ['eventkit', 'google'],
+              description:
+                'Optional: Specify the calendar source explicitly. If not provided, will try Google Calendar first, then EventKit.',
+            },
           },
           required: ['eventIds', 'response'],
         },
@@ -1371,6 +1384,7 @@ class MCPHandlerImpl implements MCPHandler {
           eventIds: args.eventIds as string[],
           response: args.response as EventResponseType,
           comment: args.comment as string | undefined,
+          source: args.source as 'eventkit' | 'google' | undefined,
         })
     );
 

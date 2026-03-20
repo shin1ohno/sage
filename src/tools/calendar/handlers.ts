@@ -134,6 +134,7 @@ export interface RespondToCalendarEventsBatchInput {
   eventIds: string[];
   response: 'accept' | 'decline' | 'tentative';
   comment?: string;
+  source?: 'eventkit' | 'google';
 }
 
 /**
@@ -608,7 +609,7 @@ export async function handleRespondToCalendarEventsBatch(
   ctx: CalendarToolsContext,
   args: RespondToCalendarEventsBatchInput
 ) {
-  const { eventIds, response } = args;
+  const { eventIds, response, source } = args;
   const config = ctx.getConfig();
 
   if (!config) {
@@ -648,7 +649,7 @@ export async function handleRespondToCalendarEventsBatch(
         const result = await calendarSourceManager!.respondToEvent(
           eventId,
           response,
-          undefined, // source: auto-detect
+          source,
           undefined  // calendarId: auto-detect
         );
 
