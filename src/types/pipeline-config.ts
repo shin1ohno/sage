@@ -41,3 +41,4 @@ export const SlackIntegrationConfigSchema = z.object({
 
 export type MeetingIntelligenceConfig = z.infer<typeof MeetingIntelligenceConfigSchema>;
 export type SlackIntegrationConfig = z.infer<typeof SlackIntegrationConfigSchema>;
+export type ExcludePattern = MeetingIntelligenceConfig['excludePatterns'][number];

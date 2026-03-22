@@ -152,15 +152,14 @@ export class PipelineScheduler {
   getStatus(): PipelineStatus {
     const state = this.stateStore.getState();
     const today = new Date().toISOString().split('T')[0];
-    const metrics = state.dailyMetrics;
-    const metricsValid = metrics.date === today;
+    const todayMetrics = state.dailyMetrics[today];
 
     return {
       isRunning: this.running,
-      briefingsSentToday: metricsValid ? metrics.briefingsSent : 0,
-      postMeetingProcessedToday: metricsValid ? metrics.postMeetingProcessed : 0,
-      actionItemsCreatedToday: metricsValid ? metrics.actionItemsCreated : 0,
-      errorsToday: metricsValid ? metrics.errors : 0,
+      briefingsSentToday: todayMetrics?.briefingsSent ?? 0,
+      postMeetingProcessedToday: todayMetrics?.postMeetingProcessed ?? 0,
+      actionItemsCreatedToday: todayMetrics?.actionItemsCreated ?? 0,
+      errorsToday: todayMetrics?.errors ?? 0,
       pendingPostMeetingPolls: this.pendingPostMeetingEvents.size,
     };
   }
@@ -302,8 +301,8 @@ export class PipelineScheduler {
       if (pollResult.status === 'ready') {
         const result = await this.postMeetingProcessor.process(
           event,
-          pollResult.transcript,
-          pollResult.notionNotes
+          pollResult.transcript ?? undefined,
+          pollResult.notionNotes ?? undefined
         );
         this.stateStore.setPostMeetingStatus(event.id, {
           status: 'processed',
@@ -459,21 +458,22 @@ export class PipelineScheduler {
   }
 
   private incrementMetric(
-    metric: keyof Omit<PipelineStateFile['dailyMetrics'], 'date'>,
+    metric: 'briefingsSent' | 'postMeetingProcessed' | 'actionItemsCreated' | 'errors',
     value: number = 1
   ): void {
     const state = this.stateStore.getState();
     const today = new Date().toISOString().split('T')[0];
 
-    if (state.dailyMetrics.date !== today) {
-      state.dailyMetrics.date = today;
-      state.dailyMetrics.briefingsSent = 0;
-      state.dailyMetrics.postMeetingProcessed = 0;
-      state.dailyMetrics.actionItemsCreated = 0;
-      state.dailyMetrics.errors = 0;
+    if (!state.dailyMetrics[today]) {
+      state.dailyMetrics[today] = {
+        briefingsSent: 0,
+        postMeetingProcessed: 0,
+        actionItemsCreated: 0,
+        errors: 0,
+      };
     }
 
-    (state.dailyMetrics[metric] as number) += value;
+    state.dailyMetrics[today][metric] += value;
     this.stateStore.save();
   }
 }

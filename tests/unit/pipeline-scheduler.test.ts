@@ -91,11 +91,12 @@ function makeState(overrides: Partial<PipelineStateFile> = {}): PipelineStateFil
     meetings: {},
     channelMappings: {},
     dailyMetrics: {
-      date: new Date().toISOString().split('T')[0],
-      briefingsSent: 0,
-      postMeetingProcessed: 0,
-      actionItemsCreated: 0,
-      errors: 0,
+      [new Date().toISOString().split('T')[0]]: {
+        briefingsSent: 0,
+        postMeetingProcessed: 0,
+        actionItemsCreated: 0,
+        errors: 0,
+      },
     },
     ...overrides,
   };
@@ -259,13 +260,15 @@ describe('PipelineScheduler', () => {
 
   describe('getStatus()', () => {
     it('returns correct PipelineStatus when metrics date matches today', () => {
+      const today = new Date().toISOString().split('T')[0];
       const state = makeState({
         dailyMetrics: {
-          date: new Date().toISOString().split('T')[0],
-          briefingsSent: 3,
-          postMeetingProcessed: 2,
-          actionItemsCreated: 5,
-          errors: 1,
+          [today]: {
+            briefingsSent: 3,
+            postMeetingProcessed: 2,
+            actionItemsCreated: 5,
+            errors: 1,
+          },
         },
       });
       const { scheduler } = createScheduler({ store: makeStateStore(state) });
@@ -281,11 +284,12 @@ describe('PipelineScheduler', () => {
     it('returns zero metrics when date is stale', () => {
       const state = makeState({
         dailyMetrics: {
-          date: '2020-01-01',
-          briefingsSent: 99,
-          postMeetingProcessed: 88,
-          actionItemsCreated: 77,
-          errors: 66,
+          '2020-01-01': {
+            briefingsSent: 99,
+            postMeetingProcessed: 88,
+            actionItemsCreated: 77,
+            errors: 66,
+          },
         },
       });
       const { scheduler } = createScheduler({ store: makeStateStore(state) });
@@ -354,7 +358,7 @@ describe('PipelineScheduler', () => {
       (scheduler as unknown as { running: boolean }).running = true;
 
       await scheduler.checkUpcomingMeetings();
-      expect(store._state.dailyMetrics.briefingsSent).toBe(1);
+      expect(store._state.dailyMetrics[new Date().toISOString().split('T')[0]]?.briefingsSent).toBe(1);
     });
 
     it('increments errors and continues processing other events on failure', async () => {
@@ -371,7 +375,7 @@ describe('PipelineScheduler', () => {
       (scheduler as unknown as { running: boolean }).running = true;
 
       await scheduler.checkUpcomingMeetings();
-      expect(store._state.dailyMetrics.errors).toBeGreaterThanOrEqual(1);
+      expect(store._state.dailyMetrics[new Date().toISOString().split('T')[0]]?.errors).toBeGreaterThanOrEqual(1);
       expect(bg.generateBriefing).toHaveBeenCalledTimes(2);
     });
 
@@ -531,8 +535,8 @@ describe('PipelineScheduler', () => {
       await scheduler.processPostMeetingQueue();
 
       expect(pmp.process).toHaveBeenCalledWith(pastEvent, 'transcript text', 'notes');
-      expect(store._state.dailyMetrics.postMeetingProcessed).toBeGreaterThanOrEqual(1);
-      expect(store._state.dailyMetrics.actionItemsCreated).toBe(2);
+      expect(store._state.dailyMetrics[new Date().toISOString().split('T')[0]]?.postMeetingProcessed).toBeGreaterThanOrEqual(1);
+      expect(store._state.dailyMetrics[new Date().toISOString().split('T')[0]]?.actionItemsCreated).toBe(2);
       expect(scheduler.getStatus().pendingPostMeetingPolls).toBe(0);
     });
   });
