@@ -182,6 +182,11 @@ export interface GoogleCalendarEvent {
    * Requirement: 4
    */
   birthdayProperties?: BirthdayProperties;
+  conferenceData?: {
+    conferenceId?: string;
+    conferenceSolution?: { name: string };
+    entryPoints?: { entryPointType: string; uri: string }[];
+  };
 }
 
 /**
@@ -302,6 +307,12 @@ export interface CalendarEvent {
    * Requirement: calendar-rsvp-support FR-1, FR-3, US-1, US-3, US-4, US-5
    */
   attendeesDetailed?: AttendeeInfo[];
+  /** Conference data for Google Meet transcript matching */
+  conferenceData?: {
+    conferenceId?: string;
+    conferenceSolution?: { name: string };
+    entryPoints?: { entryPointType: string; uri: string }[];
+  };
 }
 
 /**
@@ -447,6 +458,17 @@ export function convertGoogleToCalendarEvent(googleEvent: GoogleCalendarEvent): 
     // RSVP information (Requirement: calendar-rsvp-support FR-1, FR-2, FR-3)
     organizer,
     attendeesDetailed,
+    // Conference data for Meet transcript matching
+    conferenceData: googleEvent.conferenceData ? {
+      conferenceId: googleEvent.conferenceData.conferenceId,
+      conferenceSolution: googleEvent.conferenceData.conferenceSolution
+        ? { name: googleEvent.conferenceData.conferenceSolution.name }
+        : undefined,
+      entryPoints: googleEvent.conferenceData.entryPoints?.map((ep) => ({
+        entryPointType: ep.entryPointType,
+        uri: ep.uri,
+      })),
+    } : undefined,
   };
 }
 
