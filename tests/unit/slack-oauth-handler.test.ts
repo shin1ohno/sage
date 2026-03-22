@@ -13,7 +13,7 @@ const mockEncryptionService = {
   isInitialized: jest.fn().mockReturnValue(true),
 };
 
-jest.mock('../../src/oauth/encryption-service.js', () => ({
+jest.mock('../../src/google-oauth/encryption-service.js', () => ({
   EncryptionService: jest.fn().mockImplementation(() => mockEncryptionService),
 }));
 
