@@ -47,6 +47,7 @@
   "homepage": "https://github.com/shin1ohno/sage#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "@slack/web-api": "^7.15.0",
     "googleapis": "^134.0.0",
     "pino": "^10.1.0",
     "pino-pretty": "^13.1.3",

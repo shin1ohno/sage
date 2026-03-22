@@ -52,3 +52,11 @@ export {
   GoogleOAuthCallbackHandler,
   GoogleOAuthCallbackHandlerOptions,
 } from './google-oauth-callback-handler.js';
+
+// Slack OAuth Handler
+export {
+  SlackOAuthHandler,
+  SlackOAuthConfig,
+  SlackTokens,
+  SLACK_OAUTH_SCOPES,
+} from './slack-oauth-handler.js';
