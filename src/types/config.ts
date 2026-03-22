@@ -3,6 +3,7 @@
  */
 
 import type { Priority } from './task.js';
+import type { MeetingIntelligenceConfig, SlackIntegrationConfig } from './pipeline-config.js';
 
 export interface UserConfig {
   version: string;
@@ -16,6 +17,7 @@ export interface UserConfig {
   team: TeamConfig;
   integrations: IntegrationsConfig;
   preferences: PreferencesConfig;
+  meetingIntelligence?: MeetingIntelligenceConfig;
 }
 
 export interface UserProfile {
@@ -131,6 +133,7 @@ export interface IntegrationsConfig {
   appleReminders: AppleRemindersConfig;
   notion: NotionConfig;
   googleCalendar: GoogleCalendarConfig;
+  slack?: SlackIntegrationConfig;
 }
 
 export interface AppleRemindersConfig {
@@ -293,10 +296,28 @@ export const DEFAULT_CONFIG: UserConfig = {
       conflictDetection: true,
       lookAheadDays: 14,
     },
+    slack: {
+      enabled: false,
+    },
   },
   preferences: {
     language: 'ja',
     dateFormat: 'YYYY-MM-DD',
     timeFormat: '24h',
+  },
+  meetingIntelligence: {
+    enabled: false,
+    briefingWindow: 15,
+    preMeetingPollInterval: 5,
+    postMeetingPollInterval: 15,
+    postMeetingTimeout: 24,
+    postMeetingDelay: 30,
+    meetingEndBuffer: 10,
+    slackLookbackDays: 7,
+    slackMessageBatchSize: 50,
+    minimumAttendees: 2,
+    excludePatterns: [],
+    dailySummaryEnabled: true,
+    promptsDir: '~/.sage/prompts/',
   },
 };
