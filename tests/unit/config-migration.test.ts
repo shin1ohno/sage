@@ -86,7 +86,7 @@ describe('ConfigLoader migration', () => {
   describe('drive.readonly scope', () => {
     it('should include drive.readonly in GOOGLE_CALENDAR_SCOPES', async () => {
       const { GOOGLE_CALENDAR_SCOPES } = await import(
-        '../../src/oauth/google-oauth-handler.js'
+        '../../src/google-oauth/google-oauth-handler.js'
       );
       expect(GOOGLE_CALENDAR_SCOPES).toContain(
         'https://www.googleapis.com/auth/drive.readonly'
