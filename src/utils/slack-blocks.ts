@@ -57,8 +57,8 @@ function buildSourceElements(sourceLinks: SourceLinks): Array<{ type: string; te
     elements.push({ type: 'mrkdwn', text: `<${url}|Notion>` });
   }
 
-  for (const channel of sourceLinks.slackChannels) {
-    elements.push({ type: 'mrkdwn', text: `<#${channel}>` });
+  for (const url of (sourceLinks.slackChannelUrls ?? [])) {
+    elements.push({ type: 'mrkdwn', text: `<${url}|Slack>` });
   }
 
   if (sourceLinks.transcriptUrl) {
