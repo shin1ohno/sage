@@ -27,6 +27,12 @@
 
 [Describe the overall architecture and design patterns used]
 
+### Modular Design Principles
+- **Single File Responsibility**: Each file should handle one specific concern or domain
+- **Component Isolation**: Create small, focused components rather than large monolithic files
+- **Service Layer Separation**: Separate data access, business logic, and presentation layers
+- **Utility Modularity**: Break utilities into focused, single-purpose modules
+
 ```mermaid
 graph TD
     A[Component A] --> B[Component B]
