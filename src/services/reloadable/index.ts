@@ -42,6 +42,24 @@ export {
   createPriorityEngine,
 } from './priority-engine-adapter.js';
 
+export {
+  SlackServiceAdapter,
+  SlackServiceFactory,
+  createSlackService,
+} from './slack-service-adapter.js';
+
+export {
+  PipelineSchedulerAdapter,
+  PipelineSchedulerFactory,
+  createPipelineScheduler,
+} from './pipeline-scheduler-adapter.js';
+
+export {
+  PipelineStateStoreAdapter,
+  PipelineStateStoreFactory,
+  createPipelineStateStore,
+} from './pipeline-state-store-adapter.js';
+
 // Re-export types
 import type { ReloadableService } from '../../types/hot-reload.js';
 import type { UserConfig } from '../../types/config.js';
@@ -52,6 +70,9 @@ import { WorkingCadenceAdapter, createWorkingCadenceService } from './working-ca
 import { NotionServiceAdapter, createNotionMCPService } from './notion-service-adapter.js';
 import { TodoListManagerAdapter, createTodoListManager } from './todo-list-manager-adapter.js';
 import { PriorityEngineAdapter, createPriorityEngine } from './priority-engine-adapter.js';
+import { SlackServiceAdapter, createSlackService } from './slack-service-adapter.js';
+import { PipelineSchedulerAdapter, createPipelineScheduler } from './pipeline-scheduler-adapter.js';
+import { PipelineStateStoreAdapter, createPipelineStateStore } from './pipeline-state-store-adapter.js';
 
 /**
  * Service instances holder for factory function
@@ -63,6 +84,9 @@ export interface ServiceInstances {
   notionService?: NotionServiceAdapter;
   todoListManager?: TodoListManagerAdapter;
   priorityEngine?: PriorityEngineAdapter;
+  slackService?: SlackServiceAdapter;
+  pipelineScheduler?: PipelineSchedulerAdapter;
+  pipelineStateStore?: PipelineStateStoreAdapter;
 }
 
 /**
@@ -135,6 +159,33 @@ export function createAllReloadableAdapters(
     priorityAdapter.reinitialize(config);
   }
   adapters.push(priorityAdapter);
+
+  // PipelineStateStore adapter
+  const stateStoreAdapter = existingServices?.pipelineStateStore
+    ?? new PipelineStateStoreAdapter(createPipelineStateStore);
+  if (!existingServices?.pipelineStateStore) {
+    stateStoreAdapter.reinitialize(config);
+  }
+  adapters.push(stateStoreAdapter);
+
+  // SlackService adapter
+  const slackAdapter = existingServices?.slackService
+    ?? new SlackServiceAdapter(createSlackService);
+  if (!existingServices?.slackService) {
+    slackAdapter.reinitialize(config);
+  }
+  adapters.push(slackAdapter);
+
+  // PipelineScheduler adapter
+  // Note: Dependencies must be set externally before reinitialize works
+  const schedulerAdapter = existingServices?.pipelineScheduler
+    ?? new PipelineSchedulerAdapter(createPipelineScheduler);
+  if (!existingServices?.pipelineScheduler) {
+    // PipelineScheduler needs external dependency injection before start
+    // It will be initialized with null instance until dependencies are set
+    schedulerAdapter.reinitialize(config);
+  }
+  adapters.push(schedulerAdapter);
 
   return adapters;
 }
