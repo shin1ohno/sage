@@ -165,7 +165,7 @@ describe('PipelineStateFileSchema', () => {
       },
     },
     channelMappings: {
-      'evt-001': 'C12345',
+      'evt-001': ['C12345'],
     },
     dailyMetrics: {
       '2026-03-22': {
@@ -183,7 +183,7 @@ describe('PipelineStateFileSchema', () => {
     if (result.success) {
       expect(result.data.version).toBe(1);
       expect(result.data.meetings['evt-001'].title).toBe('Weekly Standup');
-      expect(result.data.channelMappings['evt-001']).toBe('C12345');
+      expect(result.data.channelMappings['evt-001']).toEqual(['C12345']);
     }
   });
 

@@ -20,6 +20,21 @@ import { createLogger } from '../utils/logger.js';
 
 const logger = createLogger('pipeline-state');
 
+type BriefingStatus = MeetingProcessingState['briefing']['status'];
+type PostMeetingStatus = MeetingProcessingState['postMeeting']['status'];
+
+function createDefaultMeeting(eventId: string): MeetingProcessingState {
+  return {
+    eventId,
+    title: '',
+    startTime: '',
+    endTime: '',
+    briefing: { status: 'pending' },
+    postMeeting: { status: 'pending', sources: [] },
+    actionItems: [],
+  };
+}
+
 /**
  * Create a default empty pipeline state
  */
@@ -29,13 +44,7 @@ function createDefaultState(): PipelineStateFile {
     lastUpdated: '',
     meetings: {},
     channelMappings: {},
-    dailyMetrics: {
-      date: '',
-      briefingsSent: 0,
-      postMeetingProcessed: 0,
-      actionItemsCreated: 0,
-      errors: 0,
-    },
+    dailyMetrics: {},
   };
 }
 
@@ -146,17 +155,10 @@ export class PipelineStateStore {
 
   setBriefingStatus(
     eventId: string,
-    status: { status: string; sentAt?: string; error?: string }
+    status: { status: BriefingStatus; sentAt?: string; error?: string }
   ): void {
     if (!this.state.meetings[eventId]) {
-      this.state.meetings[eventId] = {
-        eventId,
-        title: '',
-        startTime: '',
-        briefing: { status: 'pending' },
-        postMeeting: { status: 'pending' },
-        actionItems: [],
-      };
+      this.state.meetings[eventId] = createDefaultMeeting(eventId);
     }
     this.state.meetings[eventId].briefing = {
       ...this.state.meetings[eventId].briefing,
@@ -176,23 +178,16 @@ export class PipelineStateStore {
   setPostMeetingStatus(
     eventId: string,
     status: {
-      status: string;
+      status: PostMeetingStatus;
       pollStartedAt?: string;
       lastPollAt?: string;
       processedAt?: string;
-      sources?: { transcript: boolean; notionNotes: boolean };
+      sources?: string[];
       error?: string;
     }
   ): void {
     if (!this.state.meetings[eventId]) {
-      this.state.meetings[eventId] = {
-        eventId,
-        title: '',
-        startTime: '',
-        briefing: { status: 'pending' },
-        postMeeting: { status: 'pending' },
-        actionItems: [],
-      };
+      this.state.meetings[eventId] = createDefaultMeeting(eventId);
     }
     this.state.meetings[eventId].postMeeting = {
       ...this.state.meetings[eventId].postMeeting,
@@ -226,14 +221,7 @@ export class PipelineStateStore {
 
   recordActionItems(eventId: string, items: ActionItem[]): void {
     if (!this.state.meetings[eventId]) {
-      this.state.meetings[eventId] = {
-        eventId,
-        title: '',
-        startTime: '',
-        briefing: { status: 'pending' },
-        postMeeting: { status: 'pending' },
-        actionItems: [],
-      };
+      this.state.meetings[eventId] = createDefaultMeeting(eventId);
     }
     this.state.meetings[eventId].actionItems.push(...items);
     this.save();

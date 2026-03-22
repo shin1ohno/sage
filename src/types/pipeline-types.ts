@@ -60,7 +60,7 @@ export const PipelineStateFileSchema = z.object({
   version: z.literal(1),
   lastUpdated: z.string(),
   meetings: z.record(z.string(), MeetingProcessingStateSchema),
-  channelMappings: z.record(z.string(), z.string()),
+  channelMappings: z.record(z.string(), z.array(z.string())),
   dailyMetrics: z.record(z.string(), z.object({
     briefingsSent: z.number().default(0),
     postMeetingProcessed: z.number().default(0),
