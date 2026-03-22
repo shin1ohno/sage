@@ -118,6 +118,8 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
   // Google OAuth remote mode handlers
   private pendingGoogleAuthStore: PendingGoogleAuthStore | null = null;
   private googleOAuthCallbackHandler: GoogleOAuthCallbackHandler | null = null;
+  // Slack OAuth handler
+  private slackOAuthHandler: import('../oauth/slack-oauth-handler.js').SlackOAuthHandler | null = null;
   // Streamable HTTP Transport handlers (FR-1, FR-2, FR-3)
   private sseHandler: SSEStreamHandler | null = null;
   private streamableHandler: StreamableHTTPHandler | null = null;
@@ -216,6 +218,19 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
 
         cliLogger.info({ redirectUri }, 'Google OAuth remote mode enabled');
       }
+    }
+
+    // Initialize Slack OAuth handler if configured
+    if (process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET) {
+      const { SlackOAuthHandler } = await import('../oauth/slack-oauth-handler.js');
+      const slackRedirectUri = process.env.SLACK_REDIRECT_URI
+        || `http://${this.effectiveHost}:${this.effectivePort}/oauth/slack/callback`;
+      this.slackOAuthHandler = new SlackOAuthHandler({
+        clientId: process.env.SLACK_CLIENT_ID,
+        clientSecret: process.env.SLACK_CLIENT_SECRET,
+        redirectUri: slackRedirectUri,
+      });
+      cliLogger.info({ redirectUri: slackRedirectUri }, 'Slack OAuth enabled');
     }
 
     // Initialize JWKS verifier for OAuth token validation (delegated to Hydra)
@@ -342,6 +357,21 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       return;
     }
 
+    // Slack OAuth callback endpoint (no auth required - receives redirect from Slack)
+    if (path === '/oauth/slack/callback' && method === 'GET') {
+      if (this.slackOAuthHandler) {
+        this.handleSlackOAuthCallback(req, res).catch((error) => {
+          cliLogger.error({ err: error }, 'Slack OAuth callback failed');
+          res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end('<h1>Internal Server Error</h1>');
+        });
+      } else {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Slack OAuth not configured' }));
+      }
+      return;
+    }
+
     // RFC 9728 — Protected Resource Metadata
     if (path === '/.well-known/oauth-protected-resource' && method === 'GET') {
       res.writeHead(200, {
@@ -425,6 +455,30 @@ class HTTPServerWithConfigImpl implements HTTPServerWithConfig {
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Max-Age': '86400',
     };
+  }
+
+  private async handleSlackOAuthCallback(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const url = new URL(req.url || '', `http://${req.headers.host}`);
+    const code = url.searchParams.get('code');
+    const error = url.searchParams.get('error');
+
+    if (error) {
+      res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`<h1>Slack Authorization Failed</h1><p>${error}</p>`);
+      return;
+    }
+
+    if (!code) {
+      res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<h1>Missing authorization code</h1>');
+      return;
+    }
+
+    const tokens = await this.slackOAuthHandler!.exchangeCodeForToken(code);
+    await this.slackOAuthHandler!.storeTokens(tokens);
+
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end('<h1>Slack Authorization Successful!</h1><p>You can close this window.</p>');
   }
 
   private handleHealthCheck(res: ServerResponse): void {
