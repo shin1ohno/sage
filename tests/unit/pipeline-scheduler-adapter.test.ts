@@ -37,7 +37,6 @@ function createMockDependencies() {
     briefingGenerator: {} as BriefingGenerator,
     postMeetingProcessor: {} as PostMeetingProcessor,
     stateStore: {} as PipelineStateStore,
-    workingCadenceService: {} as WorkingCadenceService,
     slackService: {} as SlackService,
   };
 }
