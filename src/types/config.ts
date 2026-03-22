@@ -16,6 +16,7 @@ export interface UserConfig {
   team: TeamConfig;
   integrations: IntegrationsConfig;
   preferences: PreferencesConfig;
+  meetingIntelligence?: MeetingIntelligenceUserConfig;
 }
 
 export interface UserProfile {
@@ -127,10 +128,17 @@ export interface TeamMember {
   priority?: number;
 }
 
+export interface SlackConfig {
+  clientId: string;
+  clientSecret: string;
+  redirectUri?: string;
+}
+
 export interface IntegrationsConfig {
   appleReminders: AppleRemindersConfig;
   notion: NotionConfig;
   googleCalendar: GoogleCalendarConfig;
+  slack?: SlackConfig;
 }
 
 export interface AppleRemindersConfig {
@@ -155,6 +163,13 @@ export interface GoogleCalendarConfig {
   defaultCalendar: string;
   conflictDetection: boolean;
   lookAheadDays: number;
+}
+
+export interface MeetingIntelligenceUserConfig {
+  enabled?: boolean;
+  briefingLeadTimeMinutes?: number;
+  postMeetingDelayMinutes?: number;
+  schedulerIntervalMinutes?: number;
 }
 
 export interface PreferencesConfig {
