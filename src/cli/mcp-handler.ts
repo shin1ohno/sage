@@ -7,7 +7,7 @@
 
 import { VERSION, SERVER_NAME } from '../version.js';
 import { ConfigLoader } from '../config/loader.js';
-import { SetupWizard } from '../setup/wizard.js';
+// SetupWizard import removed — wizard is deprecated
 import { ReminderManager } from '../integrations/reminder-manager.js';
 import { CalendarService } from '../integrations/calendar-service.js';
 import { NotionMCPService } from '../integrations/notion-mcp.js';
@@ -181,7 +181,6 @@ export interface MCPHandler {
  */
 class MCPHandlerImpl implements MCPHandler {
   private config: UserConfig | null = null;
-  private wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
   private supportsSampling = false;
   private reminderManager: ReminderManager | null = null;
   private calendarService: CalendarService | null = null;
@@ -218,15 +217,10 @@ class MCPHandlerImpl implements MCPHandler {
       return;
     }
 
-    try {
-      this.config = await ConfigLoader.load();
-      if (this.config) {
-        this.initializeServices(this.config);
-        await this.initializeHotReload(this.config);
-      }
-    } catch {
-      this.config = null;
-    }
+    // Auto-bootstrap: load existing config or create default
+    this.config = await ConfigLoader.loadOrCreate();
+    this.initializeServices(this.config);
+    await this.initializeHotReload(this.config);
 
     this.initialized = true;
   }
@@ -388,10 +382,6 @@ class MCPHandlerImpl implements MCPHandler {
       getConfig: () => this.config,
       setConfig: (config: UserConfig) => {
         this.config = config;
-      },
-      getWizardSession: () => this.wizardSession,
-      setWizardSession: (session) => {
-        this.wizardSession = session;
       },
       initializeServices: (config: UserConfig) => this.initializeServices(config),
     };

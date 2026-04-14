@@ -15,7 +15,7 @@ import type { UserConfig } from '../../src/types/config.js';
 // Mock ConfigLoader
 jest.mock('../../src/config/loader.js', () => ({
   ConfigLoader: {
-    load: jest.fn(),
+    loadOrCreate: jest.fn(),
     getConfigPath: jest.fn().mockReturnValue('/mock/config/path'),
   },
 }));
@@ -49,43 +49,37 @@ describe('MCPHandler Initialization', () => {
   });
 
   describe('initialize()', () => {
-    it('should initialize with valid config', async () => {
+    it('should initialize with valid config via loadOrCreate', async () => {
       const mockConfig = createTestConfig();
-      mockedConfigLoader.load.mockResolvedValue(mockConfig);
+      mockedConfigLoader.loadOrCreate.mockResolvedValue(mockConfig);
 
       const handler = await createMCPHandler();
 
-      expect(mockedConfigLoader.load).toHaveBeenCalledTimes(1);
+      expect(mockedConfigLoader.loadOrCreate).toHaveBeenCalledTimes(1);
       expect(handler).toBeDefined();
       expect(typeof handler.handleRequest).toBe('function');
       expect(typeof handler.listTools).toBe('function');
     });
 
-    it('should handle config load failure gracefully', async () => {
-      mockedConfigLoader.load.mockRejectedValue(new Error('Config file not found'));
-
-      // Should not throw, should handle gracefully
-      const handler = await createMCPHandler();
-
-      expect(mockedConfigLoader.load).toHaveBeenCalledTimes(1);
-      expect(handler).toBeDefined();
-      // Handler should still be functional even without config
-      expect(typeof handler.handleRequest).toBe('function');
-    });
-
-    it('should handle null config gracefully', async () => {
-      mockedConfigLoader.load.mockResolvedValue(null as unknown as UserConfig);
+    it('should always have a non-null config after initialization', async () => {
+      // loadOrCreate always returns a config (creates default if none exists)
+      const mockConfig = createTestConfig();
+      mockedConfigLoader.loadOrCreate.mockResolvedValue(mockConfig);
 
       const handler = await createMCPHandler();
 
-      expect(mockedConfigLoader.load).toHaveBeenCalledTimes(1);
+      expect(mockedConfigLoader.loadOrCreate).toHaveBeenCalledTimes(1);
       expect(handler).toBeDefined();
       expect(typeof handler.handleRequest).toBe('function');
+
+      // All tools should be functional since config is always available
+      const tools = handler.listTools();
+      expect(tools.length).toBeGreaterThan(0);
     });
 
     it('should skip if already initialized', async () => {
       const mockConfig = createTestConfig();
-      mockedConfigLoader.load.mockResolvedValue(mockConfig);
+      mockedConfigLoader.loadOrCreate.mockResolvedValue(mockConfig);
 
       const handler = await createMCPHandler();
 
@@ -103,8 +97,8 @@ describe('MCPHandler Initialization', () => {
       await handler.handleRequest(request);
       await handler.handleRequest(request);
 
-      // ConfigLoader.load should only be called once during createMCPHandler
-      expect(mockedConfigLoader.load).toHaveBeenCalledTimes(1);
+      // ConfigLoader.loadOrCreate should only be called once during createMCPHandler
+      expect(mockedConfigLoader.loadOrCreate).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -133,7 +127,7 @@ describe('MCPHandler Initialization', () => {
           },
         },
       });
-      mockedConfigLoader.load.mockResolvedValue(mockConfig);
+      mockedConfigLoader.loadOrCreate.mockResolvedValue(mockConfig);
 
       const handler = await createMCPHandler();
 
@@ -175,7 +169,7 @@ describe('MCPHandler Initialization', () => {
           },
         },
       });
-      mockedConfigLoader.load.mockResolvedValue(mockConfig);
+      mockedConfigLoader.loadOrCreate.mockResolvedValue(mockConfig);
 
       const handler = await createMCPHandler();
 
@@ -189,7 +183,7 @@ describe('MCPHandler Initialization', () => {
   describe('handler functionality after initialization', () => {
     it('should handle tools/list request after initialization', async () => {
       const mockConfig = createTestConfig();
-      mockedConfigLoader.load.mockResolvedValue(mockConfig);
+      mockedConfigLoader.loadOrCreate.mockResolvedValue(mockConfig);
 
       const handler = await createMCPHandler();
       const response = await handler.handleRequest({
@@ -207,7 +201,7 @@ describe('MCPHandler Initialization', () => {
 
     it('should handle initialize MCP request', async () => {
       const mockConfig = createTestConfig();
-      mockedConfigLoader.load.mockResolvedValue(mockConfig);
+      mockedConfigLoader.loadOrCreate.mockResolvedValue(mockConfig);
 
       const handler = await createMCPHandler();
       const response = await handler.handleRequest({
@@ -238,8 +232,9 @@ describe('MCPHandler Initialization', () => {
       expect(result.serverInfo.name).toBe('sage');
     });
 
-    it('should return setup required for tools when no config', async () => {
-      mockedConfigLoader.load.mockResolvedValue(null as unknown as UserConfig);
+    it('should handle tools/call with auto-bootstrapped config', async () => {
+      const mockConfig = createTestConfig();
+      mockedConfigLoader.loadOrCreate.mockResolvedValue(mockConfig);
 
       const handler = await createMCPHandler();
       const response = await handler.handleRequest({
@@ -256,7 +251,7 @@ describe('MCPHandler Initialization', () => {
 
       expect(response.jsonrpc).toBe('2.0');
       expect(response.id).toBe(1);
-      // Should return result (not error) with setup required message
+      // Config is always available via loadOrCreate, so tool should execute
       expect(response.result).toBeDefined();
     });
   });

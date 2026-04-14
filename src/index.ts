@@ -11,7 +11,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { ConfigLoader } from "./config/loader.js";
-import { SetupWizard } from "./setup/wizard.js";
+// SetupWizard import removed — wizard is deprecated
 import { ReminderManager } from "./integrations/reminder-manager.js";
 import { CalendarService } from "./integrations/calendar-service.js";
 import { CalendarSourceManager } from "./integrations/calendar-source-manager.js";
@@ -117,7 +117,6 @@ import {
 
 // Global state
 let config: UserConfig | null = null;
-let wizardSession: ReturnType<typeof SetupWizard.createSession> | null = null;
 
 // Client capability state (capability-based approach)
 let supportsSampling = false;
@@ -199,10 +198,6 @@ function createSetupContext(): SetupContext {
     getConfig: () => config,
     setConfig: (c: UserConfig) => {
       config = c;
-    },
-    getWizardSession: () => wizardSession,
-    setWizardSession: (session) => {
-      wizardSession = session;
     },
     initializeServices,
     getConfigReloadService: () => configReloadService,
@@ -326,15 +321,9 @@ async function createServer(): Promise<McpServer> {
   // Store server reference for Sampling support
   mcpServerRef = server;
 
-  // Try to load existing config
-  try {
-    config = await ConfigLoader.load();
-    if (config) {
-      initializeServices(config);
-    }
-  } catch {
-    config = null;
-  }
+  // Auto-bootstrap: load existing config or create default
+  config = await ConfigLoader.loadOrCreate();
+  initializeServices(config);
 
   // Log client capabilities on initialization (capability-based approach)
   server.server.oninitialized = () => {

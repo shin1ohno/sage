@@ -8,7 +8,7 @@
 
 import type { UserConfig } from '../../src/types/index.js';
 import type { ClientInfo } from '../../src/types/sampling.js';
-import type { SetupContext, WizardSession } from '../../src/tools/setup/handlers.js';
+import type { SetupContext } from '../../src/tools/setup/handlers.js';
 import type { TaskToolsContext } from '../../src/tools/tasks/handlers.js';
 import type { CalendarToolsContext } from '../../src/tools/calendar/handlers.js';
 import type { ReminderTodoContext } from '../../src/tools/reminders/handlers.js';
@@ -31,7 +31,6 @@ import { DEFAULT_TEST_CONFIG } from './mock-config.js';
  */
 export interface MockSetupContext extends SetupContext {
   config: UserConfig | null;
-  wizardSession: WizardSession | null;
 }
 
 /**
@@ -51,29 +50,20 @@ export interface MockSetupContext extends SetupContext {
 export function createMockSetupContext(
   overrides?: Partial<{
     config: UserConfig | null;
-    wizardSession: WizardSession | null;
     getConfig: () => UserConfig | null;
     setConfig: (config: UserConfig) => void;
-    getWizardSession: () => WizardSession | null;
-    setWizardSession: (session: WizardSession | null) => void;
     initializeServices: (config: UserConfig) => void;
   }>
 ): MockSetupContext {
   const state = {
     config: overrides?.config !== undefined ? overrides.config : DEFAULT_TEST_CONFIG,
-    wizardSession: overrides?.wizardSession ?? null,
   };
 
   return {
     config: state.config,
-    wizardSession: state.wizardSession,
     getConfig: overrides?.getConfig ?? jest.fn(() => state.config),
     setConfig: overrides?.setConfig ?? jest.fn((config: UserConfig) => {
       state.config = config;
-    }),
-    getWizardSession: overrides?.getWizardSession ?? jest.fn(() => state.wizardSession),
-    setWizardSession: overrides?.setWizardSession ?? jest.fn((session: WizardSession | null) => {
-      state.wizardSession = session;
     }),
     initializeServices: overrides?.initializeServices ?? jest.fn(),
   };

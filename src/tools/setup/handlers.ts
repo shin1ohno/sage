@@ -9,16 +9,10 @@
  */
 
 import { ConfigLoader } from '../../config/loader.js';
-import { SetupWizard } from '../../setup/wizard.js';
 import type { UserConfig } from '../../types/index.js';
 import type { ReloadResult } from '../../types/hot-reload.js';
 import type { ConfigReloadService } from '../../config/config-reload-service.js';
-import { createToolResponse, createErrorFromCatch } from '../registry.js';
-
-/**
- * Wizard session type (from SetupWizard)
- */
-export type WizardSession = ReturnType<typeof SetupWizard.createSession>;
+import { createToolResponse } from '../registry.js';
 
 /**
  * Setup context containing shared state
@@ -26,8 +20,6 @@ export type WizardSession = ReturnType<typeof SetupWizard.createSession>;
 export interface SetupContext {
   getConfig: () => UserConfig | null;
   setConfig: (config: UserConfig) => void;
-  getWizardSession: () => WizardSession | null;
-  setWizardSession: (session: WizardSession | null) => void;
   initializeServices: (config: UserConfig) => void;
   getConfigReloadService?: () => ConfigReloadService | null;
 }
@@ -35,32 +27,58 @@ export interface SetupContext {
 /**
  * check_setup_status handler
  *
- * Checks if sage has been configured and returns guidance.
+ * Returns diagnostic view of configuration and integration health.
  * Requirement: 1.1, 1.2
  */
 export async function handleCheckSetupStatus(ctx: SetupContext) {
   const exists = await ConfigLoader.exists();
   const config = ctx.getConfig();
-  const isValid = config !== null;
 
-  if (!exists) {
+  if (!exists || !config) {
     return createToolResponse({
       setupComplete: false,
-      configExists: false,
+      configExists: exists,
       message:
-        'sageの初期設定が必要です。start_setup_wizardを実行してセットアップを開始してください。',
-      nextAction: 'start_setup_wizard',
+        'sageの設定ファイルが見つかりません。再起動すると自動的にデフォルト設定が作成されます。',
     });
   }
 
-  if (!isValid) {
-    return createToolResponse({
-      setupComplete: false,
-      configExists: true,
-      message:
-        '設定ファイルが見つかりましたが、読み込みに失敗しました。設定を再作成してください。',
-      nextAction: 'start_setup_wizard',
-    });
+  const isMacOS = process.platform === 'darwin';
+  const hasGoogleEnvVars = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+
+  // Build integration status
+  const integrations = {
+    eventKit: {
+      available: isMacOS,
+      enabled: config.calendar?.sources?.eventkit?.enabled ?? false,
+    },
+    googleCalendar: {
+      enabled: config.integrations?.googleCalendar?.enabled ?? false,
+      envVarsSet: hasGoogleEnvVars,
+    },
+    appleReminders: {
+      available: isMacOS,
+      enabled: config.integrations?.appleReminders?.enabled ?? false,
+    },
+    notion: {
+      enabled: config.integrations?.notion?.enabled ?? false,
+      databaseId: config.integrations?.notion?.databaseId || null,
+    },
+    slack: {
+      enabled: config.integrations?.slack?.enabled ?? false,
+    },
+  };
+
+  // Build suggestions
+  const suggestions: string[] = [];
+  if (!config.user.name) {
+    suggestions.push('user.name is not set. Use update_config to set your name.');
+  }
+  if (!isMacOS && !integrations.googleCalendar.enabled) {
+    suggestions.push('No calendar source enabled. Set up Google Calendar for calendar features.');
+  }
+  if (integrations.googleCalendar.enabled && !hasGoogleEnvVars) {
+    suggestions.push('Google Calendar enabled but GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET env vars not set.');
   }
 
   // Build hot reload status if service is available
@@ -75,7 +93,7 @@ export async function handleCheckSetupStatus(ctx: SetupContext) {
     if (configReloadService) {
       hotReload = {
         enabled: configReloadService.isAutoReloadEnabled(),
-        watching: configReloadService.isAutoReloadEnabled(), // Watching when auto-reload is enabled
+        watching: configReloadService.isAutoReloadEnabled(),
         lastReload: configReloadService.getLastReloadResult(),
       };
     }
@@ -84,166 +102,60 @@ export async function handleCheckSetupStatus(ctx: SetupContext) {
   return createToolResponse({
     setupComplete: true,
     configExists: true,
-    userName: config?.user.name,
-    message: 'sageは設定済みです。タスク分析やリマインド設定を開始できます。',
-    availableTools: [
-      'analyze_tasks',
-      'set_reminder',
-      'find_available_slots',
-      'sync_to_notion',
-      'update_config',
-      'reload_config',
-    ],
+    user: {
+      name: config.user.name || null,
+      timezone: config.user.timezone,
+    },
+    integrations,
+    suggestions,
     ...(hotReload && { hotReload }),
   });
 }
 
 /**
- * start_setup_wizard handler
+ * start_setup_wizard handler (DEPRECATED)
  *
- * Begins the interactive setup process.
- * Requirement: 1.3
+ * Returns deprecation notice. Sage now auto-configures on first connection.
  */
 export async function handleStartSetupWizard(
-  ctx: SetupContext,
-  args: { mode?: 'full' | 'quick' }
+  _ctx: SetupContext,
+  _args: { mode?: 'full' | 'quick' }
 ) {
-  const { mode = 'full' } = args;
-  const wizardSession = SetupWizard.createSession(mode);
-  ctx.setWizardSession(wizardSession);
-
-  const question = SetupWizard.getCurrentQuestion(wizardSession);
-
   return createToolResponse({
-    sessionId: wizardSession.sessionId,
-    currentStep: wizardSession.currentStep,
-    totalSteps: wizardSession.totalSteps,
-    progress: Math.round(
-      (wizardSession.currentStep / wizardSession.totalSteps) * 100
-    ),
-    question: {
-      id: question.id,
-      text: question.text,
-      type: question.type,
-      options: question.options,
-      defaultValue: question.defaultValue,
-      helpText: question.helpText,
-    },
-    message: 'セットアップを開始します。以下の質問に回答してください。',
+    deprecated: true,
+    message: 'セットアップウィザードは廃止されました。sageは初回接続時に自動でデフォルト設定を作成します。設定の変更にはupdate_configを使用してください。',
+    alternative: 'update_config',
   });
 }
 
 /**
- * answer_wizard_question handler
+ * answer_wizard_question handler (DEPRECATED)
  *
- * Answers a setup wizard question and returns next question.
- * Requirement: 1.3, 1.4
+ * Returns deprecation notice.
  */
 export async function handleAnswerWizardQuestion(
-  ctx: SetupContext,
-  args: { questionId: string; answer: string | string[] }
+  _ctx: SetupContext,
+  _args: { questionId: string; answer: string | string[] }
 ) {
-  const { questionId, answer } = args;
-  const wizardSession = ctx.getWizardSession();
-
-  if (!wizardSession) {
-    return createToolResponse({
-      error: true,
-      message:
-        'セットアップセッションが見つかりません。start_setup_wizardを実行してください。',
-    });
-  }
-
-  const result = SetupWizard.answerQuestion(wizardSession, questionId, answer);
-
-  if (!result.success) {
-    return createToolResponse({
-      error: true,
-      message: result.error,
-      currentQuestion: result.currentQuestion,
-    });
-  }
-
-  if (result.isComplete) {
-    return createToolResponse({
-      isComplete: true,
-      sessionId: wizardSession.sessionId,
-      answers: wizardSession.answers,
-      message:
-        'すべての質問に回答しました。save_configを実行して設定を保存してください。',
-      nextAction: 'save_config',
-    });
-  }
-
-  const nextQuestion = SetupWizard.getCurrentQuestion(wizardSession);
-
   return createToolResponse({
-    success: true,
-    currentStep: wizardSession.currentStep,
-    totalSteps: wizardSession.totalSteps,
-    progress: Math.round(
-      (wizardSession.currentStep / wizardSession.totalSteps) * 100
-    ),
-    question: {
-      id: nextQuestion.id,
-      text: nextQuestion.text,
-      type: nextQuestion.type,
-      options: nextQuestion.options,
-      defaultValue: nextQuestion.defaultValue,
-      helpText: nextQuestion.helpText,
-    },
+    deprecated: true,
+    message: 'セットアップウィザードは廃止されました。設定の変更にはupdate_configを使用してください。',
+    alternative: 'update_config',
   });
 }
 
 /**
- * save_config handler
+ * save_config handler (DEPRECATED)
  *
- * Saves the configuration from the setup wizard.
- * Requirement: 1.4, 1.5, 1.6
+ * Returns deprecation notice.
  */
 export async function handleSaveConfig(
-  ctx: SetupContext,
-  args: { confirm: boolean }
+  _ctx: SetupContext,
+  _args: { confirm: boolean }
 ) {
-  const { confirm } = args;
-
-  if (!confirm) {
-    return createToolResponse({
-      saved: false,
-      message: '設定の保存がキャンセルされました。',
-    });
-  }
-
-  const wizardSession = ctx.getWizardSession();
-
-  if (!wizardSession) {
-    return createToolResponse({
-      error: true,
-      message:
-        'セットアップセッションが見つかりません。start_setup_wizardを実行してください。',
-    });
-  }
-
-  try {
-    const newConfig = SetupWizard.buildConfig(wizardSession);
-    await ConfigLoader.save(newConfig);
-    ctx.setConfig(newConfig);
-    ctx.setWizardSession(null);
-    ctx.initializeServices(newConfig);
-
-    return createToolResponse({
-      saved: true,
-      configPath: ConfigLoader.getConfigPath(),
-      userName: newConfig.user.name,
-      message: `設定を保存しました。${newConfig.user.name}さん、sageをご利用いただきありがとうございます！`,
-      availableTools: [
-        'analyze_tasks',
-        'set_reminder',
-        'find_available_slots',
-        'sync_to_notion',
-      ],
-    });
-  } catch (error) {
-    return createErrorFromCatch('設定の保存に失敗しました', error);
-  }
+  return createToolResponse({
+    deprecated: true,
+    message: 'セットアップウィザードは廃止されました。設定の変更にはupdate_configを使用してください。',
+    alternative: 'update_config',
+  });
 }

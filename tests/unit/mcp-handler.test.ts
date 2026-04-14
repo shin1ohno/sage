@@ -135,7 +135,7 @@ describe('MCPHandler', () => {
     });
 
     it('should pass arguments to tools', async () => {
-      // Mock a config file to avoid setup requirement
+      // start_setup_wizard is deprecated and returns deprecation notice
       const request: MCPRequest = {
         jsonrpc: '2.0',
         id: 5,
@@ -158,9 +158,10 @@ describe('MCPHandler', () => {
       const result = response.result as { content: Array<{ type: string; text: string }> };
       expect(result.content[0].type).toBe('text');
 
-      // Parse the response JSON
+      // Parse the response JSON — should be deprecation notice
       const parsedContent = JSON.parse(result.content[0].text);
-      expect(parsedContent.sessionId).toBeDefined();
+      expect(parsedContent.deprecated).toBe(true);
+      expect(parsedContent.alternative).toBe('update_config');
     });
   });
 

@@ -7,7 +7,7 @@
  * Requirements: 1.1-1.6
  */
 
-export type { SetupContext, WizardSession } from './handlers.js';
+export type { SetupContext } from './handlers.js';
 
 export {
   handleCheckSetupStatus,

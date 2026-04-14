@@ -650,16 +650,16 @@ describe('Streamable HTTP Transport E2E - Codex-like Client Flow', () => {
 
       const sessionId = initResponse.sessionId!;
 
-      // Start setup wizard to create stateful session
-      const startWizardResponse = await sendMCPRequest(
+      // Call a tool to verify session state persists across requests
+      const toolResponse = await sendMCPRequest(
         port,
         {
           jsonrpc: '2.0',
           id: 2,
           method: 'tools/call',
           params: {
-            name: 'start_setup_wizard',
-            arguments: { mode: 'quick' },
+            name: 'check_setup_status',
+            arguments: {},
           },
         },
         {
@@ -668,15 +668,15 @@ describe('Streamable HTTP Transport E2E - Codex-like Client Flow', () => {
         }
       );
 
-      expect(startWizardResponse.status).toBe(200);
+      expect(toolResponse.status).toBe(200);
 
-      const wizardResult = startWizardResponse.body as {
+      const toolResult = toolResponse.body as {
         result: { content: Array<{ type: string; text: string }> };
       };
 
-      const wizardContent = JSON.parse(wizardResult.result.content[0].text);
-      expect(wizardContent.sessionId).toBeDefined();
-      expect(wizardContent.question).toBeDefined();
+      const content = JSON.parse(toolResult.result.content[0].text);
+      expect(typeof content.setupComplete).toBe('boolean');
+      expect(typeof content.configExists).toBe('boolean');
     });
   });
 
