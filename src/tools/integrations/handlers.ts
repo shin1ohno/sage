@@ -17,6 +17,7 @@ import {
   applyConfigUpdates,
 } from '../../config/update-validation.js';
 import { createToolResponse, createErrorFromCatch } from '../registry.js';
+import { notionGuidance } from '../setup-guidance.js';
 
 /**
  * Integration context containing shared state and services
@@ -86,11 +87,7 @@ export async function handleSyncToNotion(
   }
 
   if (!config.integrations.notion.enabled) {
-    return createToolResponse({
-      error: true,
-      message:
-        'Notion統合が有効になっていません。update_configでNotion設定を更新してください。',
-    });
+    return notionGuidance();
   }
 
   let notionService = ctx.getNotionService();

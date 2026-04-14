@@ -113,8 +113,8 @@ describe('macOS Platform Calendar Integration', () => {
       });
 
       const content = JSON.parse(result.content[0].text);
-      expect(content.success).toBe(false);
-      expect(content.message).toContain('有効なカレンダーソースがありません');
+      expect(content.setupRequired).toBe(true);
+      expect(content.integration).toBe('googleCalendar');
     });
 
     it('should initialize services if CalendarSourceManager is null', async () => {

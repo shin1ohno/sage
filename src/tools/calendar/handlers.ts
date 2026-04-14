@@ -23,6 +23,7 @@ import type {
   RecurrenceScope,
 } from '../../types/google-calendar-types.js';
 import { createToolResponse, createErrorFromCatch } from '../registry.js';
+import { googleCalendarGuidance } from '../setup-guidance.js';
 import { SamplingService, SamplingError } from '../../services/sampling-service.js';
 import { IntegrationStrategyManager } from '../../services/integration-strategy-manager.js';
 
@@ -294,11 +295,7 @@ export async function handleFindAvailableSlots(
     const enabledSources = calendarSourceManager!.getEnabledSources();
 
     if (enabledSources.length === 0) {
-      return createToolResponse({
-        success: false,
-        message:
-          '有効なカレンダーソースがありません。設定でEventKitまたはGoogle Calendarを有効にしてください。',
-      });
+      return googleCalendarGuidance();
     }
 
     const searchStart = startDate ?? new Date().toISOString().split('T')[0];
@@ -408,11 +405,7 @@ export async function handleListCalendarEvents(
     const enabledSources = calendarSourceManager!.getEnabledSources();
 
     if (enabledSources.length === 0) {
-      return createToolResponse({
-        success: false,
-        message:
-          '有効なカレンダーソースがありません。設定でEventKitまたはGoogle Calendarを有効にしてください。',
-      });
+      return googleCalendarGuidance();
     }
 
     // Fetch all events from calendar sources
@@ -630,11 +623,7 @@ export async function handleRespondToCalendarEventsBatch(
     const enabledSources = calendarSourceManager!.getEnabledSources();
 
     if (enabledSources.length === 0) {
-      return createToolResponse({
-        success: false,
-        message:
-          '有効なカレンダーソースがありません。設定でEventKitまたはGoogle Calendarを有効にしてください。',
-      });
+      return googleCalendarGuidance();
     }
 
     // Process each event using CalendarSourceManager.respondToEvent()
@@ -769,11 +758,7 @@ export async function handleCreateCalendarEvent(
     const enabledSources = calendarSourceManager!.getEnabledSources();
 
     if (enabledSources.length === 0) {
-      return createToolResponse({
-        success: false,
-        message:
-          '有効なカレンダーソースがありません。設定でEventKitまたはGoogle Calendarを有効にしてください。',
-      });
+      return googleCalendarGuidance();
     }
 
     // Build base request using CreateEventRequest type
@@ -1026,11 +1011,7 @@ export async function handleDeleteCalendarEvent(
     const enabledSources = calendarSourceManager!.getEnabledSources();
 
     if (enabledSources.length === 0) {
-      return createToolResponse({
-        success: false,
-        message:
-          '有効なカレンダーソースがありません。設定でEventKitまたはGoogle Calendarを有効にしてください。',
-      });
+      return googleCalendarGuidance();
     }
 
     await calendarSourceManager!.deleteEvent(eventId, source, deleteScope);
@@ -1080,11 +1061,7 @@ export async function handleDeleteCalendarEventsBatch(
     const enabledSources = calendarSourceManager!.getEnabledSources();
 
     if (enabledSources.length === 0) {
-      return createToolResponse({
-        success: false,
-        message:
-          '有効なカレンダーソースがありません。設定でEventKitまたはGoogle Calendarを有効にしてください。',
-      });
+      return googleCalendarGuidance();
     }
 
     const results: Array<{ eventId: string; success: boolean; error?: string }> =
