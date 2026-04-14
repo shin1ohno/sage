@@ -140,8 +140,8 @@ describe('MCP over HTTP E2E', () => {
     });
   });
 
-  describe('tools/call - start_setup_wizard', () => {
-    it('should start setup wizard and return first question', async () => {
+  describe('tools/call - start_setup_wizard (deprecated)', () => {
+    it('should return deprecation notice', async () => {
       const port = getNextPort();
       server = await createServer(port);
 
@@ -168,10 +168,8 @@ describe('MCP over HTTP E2E', () => {
       };
 
       const content = JSON.parse(body.result.content[0].text);
-      expect(content.sessionId).toBeDefined();
-      expect(content.question).toBeDefined();
-      expect(content.question.id).toBeDefined();
-      expect(content.question.text).toBeDefined();
+      expect(content.deprecated).toBe(true);
+      expect(content.alternative).toBe('update_config');
     });
   });
 

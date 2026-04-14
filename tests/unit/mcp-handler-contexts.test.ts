@@ -65,8 +65,8 @@ describe('MCPHandler Context Creation', () => {
       });
     });
 
-    describe('through start_setup_wizard', () => {
-      it('should start wizard in quick mode', async () => {
+    describe('through start_setup_wizard (deprecated)', () => {
+      it('should return deprecation notice for quick mode', async () => {
         const request: MCPRequest = {
           jsonrpc: '2.0',
           id: 2,
@@ -87,12 +87,11 @@ describe('MCPHandler Context Creation', () => {
         };
         const parsed = JSON.parse(result.content[0].text);
 
-        expect(parsed.sessionId).toBeDefined();
-        expect(parsed.question).toBeDefined();
-        expect(parsed.question.id).toBeDefined();
+        expect(parsed.deprecated).toBe(true);
+        expect(parsed.alternative).toBe('update_config');
       });
 
-      it('should start wizard in full mode', async () => {
+      it('should return deprecation notice for full mode', async () => {
         const request: MCPRequest = {
           jsonrpc: '2.0',
           id: 3,
@@ -112,9 +111,8 @@ describe('MCPHandler Context Creation', () => {
         };
         const parsed = JSON.parse(result.content[0].text);
 
-        expect(parsed.sessionId).toBeDefined();
-        expect(parsed.question).toBeDefined();
-        expect(parsed.question.id).toBeDefined();
+        expect(parsed.deprecated).toBe(true);
+        expect(parsed.alternative).toBe('update_config');
       });
     });
   });

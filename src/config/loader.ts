@@ -139,6 +139,19 @@ export class ConfigLoader {
   }
 
   /**
+   * Load the configuration, or create a default one if it doesn't exist
+   */
+  static async loadOrCreate(): Promise<UserConfig> {
+    try {
+      return await this.load();
+    } catch {
+      const config = this.getDefaultConfig();
+      await this.save(config);
+      return config;
+    }
+  }
+
+  /**
    * Get the default configuration
    */
   static getDefaultConfig(): UserConfig {
