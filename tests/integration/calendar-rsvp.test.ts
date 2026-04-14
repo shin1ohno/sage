@@ -263,8 +263,8 @@ describe('Calendar RSVP Integration', () => {
       });
 
       const responseData = JSON.parse(result.content[0].text);
-      expect(responseData.success).toBe(false);
-      expect(responseData.message).toContain('有効なカレンダーソースがありません');
+      expect(responseData.setupRequired).toBe(true);
+      expect(responseData.integration).toBe('googleCalendar');
     });
   });
 });

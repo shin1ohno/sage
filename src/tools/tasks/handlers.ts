@@ -13,6 +13,7 @@ import type { UserConfig } from '../../types/index.js';
 import type { TodoListManager } from '../../integrations/todo-list-manager.js';
 import type { TaskSynchronizer } from '../../integrations/task-synchronizer.js';
 import { createToolResponse, createErrorFromCatch } from '../registry.js';
+import { profileIncompleteHint } from '../setup-guidance.js';
 
 /**
  * Task context containing shared state and services
@@ -75,6 +76,8 @@ export async function handleAnalyzeTasks(
   try {
     const result = await TaskAnalyzer.analyzeTasks(args.tasks, config);
 
+    const hint = profileIncompleteHint(config);
+
     return createToolResponse({
       success: true,
       summary: result.summary,
@@ -89,6 +92,7 @@ export async function handleAnalyzeTasks(
         reasoning: t.reasoning,
         suggestedReminders: t.suggestedReminders,
       })),
+      ...(hint && hint),
     });
   } catch (error) {
     return createErrorFromCatch('タスク分析に失敗しました', error);

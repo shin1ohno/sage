@@ -52,7 +52,7 @@ describe('Integration Handlers', () => {
       expect(response.message).toContain('設定されていません');
     });
 
-    it('should return error when Notion is not enabled', async () => {
+    it('should return setup guidance when Notion is not enabled', async () => {
       const ctx = createMockIntegrationToolsContext({
         config: DEFAULT_TEST_CONFIG, // Notion disabled in default config
       });
@@ -62,8 +62,9 @@ describe('Integration Handlers', () => {
       });
       const response = JSON.parse(result.content[0].text);
 
-      expect(response.error).toBe(true);
-      expect(response.message).toContain('Notion統合が有効になっていません');
+      expect(response.setupRequired).toBe(true);
+      expect(response.integration).toBe('notion');
+      expect(response.steps).toBeDefined();
     });
 
     it('should sync to Notion successfully via MCP', async () => {
