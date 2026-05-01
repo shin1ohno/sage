@@ -45,6 +45,7 @@ import {
   BudgetExceededError,
   type BudgetKind,
 } from '../services/reliability/budget-guard.js';
+import { MutationLogger } from '../services/reliability/mutation-logger.js';
 
 // Extracted tool handlers
 import {
@@ -215,6 +216,7 @@ class MCPHandlerImpl implements MCPHandler {
   private readonly killSwitch: KillSwitch = new KillSwitch();
   private readonly heartbeat: Heartbeat = new Heartbeat();
   private readonly budgetGuard: BudgetGuard = new BudgetGuard();
+  private readonly mutationLogger: MutationLogger = new MutationLogger();
 
   // Map each write tool to the budget bucket it consumes. Tools not in this
   // map are gated only by the kill switch; tools listed here also count
@@ -767,14 +769,34 @@ class MCPHandlerImpl implements MCPHandler {
       }
     }
 
+    const isWriteTool = MCPHandlerImpl.WRITE_TOOL_NAMES.has(toolName);
+    const correlationId = isWriteTool ? this.mutationLogger.newCorrelationId() : undefined;
+
     try {
       const result = await tool.handler(toolArgs);
+      if (isWriteTool && correlationId) {
+        this.mutationLogger.record(
+          { tool: toolName, args: toolArgs, outcome: 'success', result },
+          correlationId
+        );
+      }
       return {
         jsonrpc: '2.0',
         id,
         result,
       };
     } catch (error) {
+      if (isWriteTool && correlationId) {
+        this.mutationLogger.record(
+          {
+            tool: toolName,
+            args: toolArgs,
+            outcome: 'error',
+            errorMessage: error instanceof Error ? error.message : String(error),
+          },
+          correlationId
+        );
+      }
       // Return error as content (MCP convention for tool errors)
       return {
         jsonrpc: '2.0',
