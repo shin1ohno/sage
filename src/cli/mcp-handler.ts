@@ -40,6 +40,11 @@ import { ConfigReloadService } from '../config/config-reload-service.js';
 import { getHotReloadConfig } from '../config/hot-reload-config.js';
 import { KillSwitch, KillSwitchActiveError } from '../services/reliability/kill-switch.js';
 import { Heartbeat } from '../services/reliability/heartbeat.js';
+import {
+  BudgetGuard,
+  BudgetExceededError,
+  type BudgetKind,
+} from '../services/reliability/budget-guard.js';
 
 // Extracted tool handlers
 import {
@@ -209,6 +214,23 @@ class MCPHandlerImpl implements MCPHandler {
 
   private readonly killSwitch: KillSwitch = new KillSwitch();
   private readonly heartbeat: Heartbeat = new Heartbeat();
+  private readonly budgetGuard: BudgetGuard = new BudgetGuard();
+
+  // Map each write tool to the budget bucket it consumes. Tools not in this
+  // map are gated only by the kill switch; tools listed here also count
+  // against the daily quota in budgetGuard.
+  private static readonly TOOL_BUDGET_KIND: ReadonlyMap<string, BudgetKind> = new Map([
+    ['create_calendar_event', 'calendarMutations'],
+    ['update_calendar_event', 'calendarMutations'],
+    ['delete_calendar_event', 'calendarMutations'],
+    ['delete_calendar_events_batch', 'calendarMutations'],
+    ['respond_to_calendar_event', 'calendarMutations'],
+    ['respond_to_calendar_events_batch', 'calendarMutations'],
+    ['set_reminder', 'notionWrites'],
+    ['update_task_status', 'notionWrites'],
+    ['sync_to_notion', 'notionWrites'],
+    ['sync_tasks', 'notionWrites'],
+  ]);
 
   // Tools whose handlers cause externally-observable mutations and must be
   // gated by reliability primitives (kill switch, budget cap, audit log...).
@@ -708,6 +730,41 @@ class MCPHandlerImpl implements MCPHandler {
         }
         throw error;
       }
+
+      const budgetKind = MCPHandlerImpl.TOOL_BUDGET_KIND.get(toolName);
+      if (budgetKind) {
+        try {
+          this.budgetGuard.consume(budgetKind, 1);
+        } catch (error) {
+          if (error instanceof BudgetExceededError) {
+            return {
+              jsonrpc: '2.0',
+              id,
+              result: {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify(
+                      {
+                        error: true,
+                        code: error.code,
+                        message: error.message,
+                        kind: error.kind,
+                        limit: error.limit,
+                        consumed: error.consumed,
+                        hint: `Daily ${error.kind} budget exhausted. Increase reliability.dailyBudget.${error.kind} or wait until UTC midnight.`,
+                      },
+                      null,
+                      2
+                    ),
+                  },
+                ],
+              },
+            };
+          }
+          throw error;
+        }
+      }
     }
 
     try {
@@ -791,6 +848,7 @@ class MCPHandlerImpl implements MCPHandler {
       async () => {
         const status = this.heartbeat.status();
         const killSwitchActive = this.killSwitch.isActive();
+        const budget = this.budgetGuard.snapshot();
         return {
           content: [
             {
@@ -802,6 +860,7 @@ class MCPHandlerImpl implements MCPHandler {
                     path: this.killSwitch.getPath(),
                   },
                   heartbeat: status,
+                  budget,
                   initialized: this.initialized,
                 },
                 null,
