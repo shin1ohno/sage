@@ -31,6 +31,7 @@ import { mcpLogger } from "./utils/logger.js";
 // Hot-reload imports
 import { ServiceRegistry } from "./services/service-registry.js";
 import { createAllReloadableAdapters } from "./services/reloadable/index.js";
+import { IdempotencyLock, IdempotencyLockError } from "./services/reliability/idempotency-lock.js";
 import { ConfigWatcher } from "./config/config-watcher.js";
 import { ConfigReloadService } from "./config/config-reload-service.js";
 import { getHotReloadConfig } from "./config/hot-reload-config.js";
@@ -1538,6 +1539,34 @@ async function main(): Promise<void> {
       process.exit(1);
     }
   }
+
+  // Acquire single-instance lock before any server startup. Help/version/token
+  // paths above exit early and do not need protection; this guards both --remote
+  // and the default stdio server below.
+  const idempotencyLock = new IdempotencyLock();
+  try {
+    idempotencyLock.acquire();
+  } catch (error) {
+    if (error instanceof IdempotencyLockError) {
+      mcpLogger.error(
+        { holderPid: error.holderPid, lockPath: idempotencyLock.getPath() },
+        `another sage process is already running (pid ${error.holderPid}). exiting to avoid duplicate writes`
+      );
+      process.exit(1);
+    }
+    throw error;
+  }
+
+  const releaseLockOnExit = (): void => {
+    try {
+      idempotencyLock.release();
+    } catch {
+      // best-effort during shutdown
+    }
+  };
+  process.on("exit", releaseLockOnExit);
+  process.on("SIGINT", releaseLockOnExit);
+  process.on("SIGTERM", releaseLockOnExit);
 
   // Start in HTTP mode if --remote flag is set
   if (options.remote) {
