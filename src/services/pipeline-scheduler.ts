@@ -10,6 +10,7 @@ import { createLogger } from '../utils/logger.js';
 import { formatDailySummary, formatCriticalError } from '../utils/slack-blocks.js';
 import { shouldProcessMeeting } from './meeting-filter.js';
 import { ConfigLoader } from '../config/loader.js';
+import { KillSwitch } from './reliability/kill-switch.js';
 import type { CalendarEvent } from '../types/google-calendar-types.js';
 import type { MeetingIntelligenceConfig } from '../types/pipeline-config.js';
 import type {
@@ -86,6 +87,7 @@ export class PipelineScheduler {
   >();
   private dailySummarySent = false;
   private dailySummaryDate = '';
+  private readonly killSwitch: KillSwitch = new KillSwitch();
 
   constructor(
     private readonly calendarSourceManager: CalendarSourceManagerDep,
@@ -168,6 +170,10 @@ export class PipelineScheduler {
 
   async checkUpcomingMeetings(): Promise<void> {
     if (!this.running) return;
+    if (this.killSwitch.isActive()) {
+      logger.warn({ path: this.killSwitch.getPath() }, 'kill switch active; skipping pre-meeting tick');
+      return;
+    }
 
     const now = new Date();
     const windowEnd = new Date(now.getTime() + this.config.briefingWindow * 60_000);
@@ -247,6 +253,10 @@ export class PipelineScheduler {
       this.postMeetingQueue.size === 0 &&
       this.postMeetingQueue.pending === 0
     ) {
+      return;
+    }
+    if (this.killSwitch.isActive()) {
+      logger.warn({ path: this.killSwitch.getPath() }, 'kill switch active; skipping post-meeting tick');
       return;
     }
 

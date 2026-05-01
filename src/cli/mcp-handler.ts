@@ -38,6 +38,7 @@ import {
 import { ConfigWatcher } from '../config/config-watcher.js';
 import { ConfigReloadService } from '../config/config-reload-service.js';
 import { getHotReloadConfig } from '../config/hot-reload-config.js';
+import { KillSwitch, KillSwitchActiveError } from '../services/reliability/kill-switch.js';
 
 // Extracted tool handlers
 import {
@@ -204,6 +205,25 @@ class MCPHandlerImpl implements MCPHandler {
   private todoListManagerAdapter: TodoListManagerAdapter | null = null;
 
   private tools: Map<string, { definition: ToolDefinition; handler: ToolHandler }> = new Map();
+
+  private readonly killSwitch: KillSwitch = new KillSwitch();
+
+  // Tools whose handlers cause externally-observable mutations and must be
+  // gated by reliability primitives (kill switch, budget cap, audit log...).
+  private static readonly WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
+    'create_calendar_event',
+    'update_calendar_event',
+    'delete_calendar_event',
+    'delete_calendar_events_batch',
+    'respond_to_calendar_event',
+    'respond_to_calendar_events_batch',
+    'set_reminder',
+    'update_task_status',
+    'sync_to_notion',
+    'sync_tasks',
+    'save_config',
+    'update_config',
+  ]);
 
   constructor() {
     this.registerTools();
@@ -655,6 +675,37 @@ class MCPHandlerImpl implements MCPHandler {
           message: `Tool not found: ${toolName}`,
         },
       };
+    }
+
+    if (MCPHandlerImpl.WRITE_TOOL_NAMES.has(toolName)) {
+      try {
+        this.killSwitch.assertNotKilled(toolName);
+      } catch (error) {
+        if (error instanceof KillSwitchActiveError) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      error: true,
+                      code: error.code,
+                      message: error.message,
+                      hint: `Remove ${this.killSwitch.getPath()} to resume write operations.`,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            },
+          };
+        }
+        throw error;
+      }
     }
 
     try {
