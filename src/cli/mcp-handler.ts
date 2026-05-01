@@ -39,6 +39,7 @@ import { ConfigWatcher } from '../config/config-watcher.js';
 import { ConfigReloadService } from '../config/config-reload-service.js';
 import { getHotReloadConfig } from '../config/hot-reload-config.js';
 import { KillSwitch, KillSwitchActiveError } from '../services/reliability/kill-switch.js';
+import { Heartbeat } from '../services/reliability/heartbeat.js';
 
 // Extracted tool handlers
 import {
@@ -207,6 +208,7 @@ class MCPHandlerImpl implements MCPHandler {
   private tools: Map<string, { definition: ToolDefinition; handler: ToolHandler }> = new Map();
 
   private readonly killSwitch: KillSwitch = new KillSwitch();
+  private readonly heartbeat: Heartbeat = new Heartbeat();
 
   // Tools whose handlers cause externally-observable mutations and must be
   // gated by reliability primitives (kill switch, budget cap, audit log...).
@@ -773,6 +775,42 @@ class MCPHandlerImpl implements MCPHandler {
         },
       },
       async () => handleCheckSetupStatus(this.createSetupContext())
+    );
+
+    // get_health - reliability snapshot for monitors and operators
+    this.registerTool(
+      {
+        name: 'get_health',
+        description:
+          'Return sage reliability health: kill switch state, heartbeat freshness, last tick source. Read-only.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      async () => {
+        const status = this.heartbeat.status();
+        const killSwitchActive = this.killSwitch.isActive();
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  killSwitch: {
+                    active: killSwitchActive,
+                    path: this.killSwitch.getPath(),
+                  },
+                  heartbeat: status,
+                  initialized: this.initialized,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
     );
 
     // start_setup_wizard - uses extracted handler

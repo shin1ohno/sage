@@ -11,6 +11,7 @@ import { formatDailySummary, formatCriticalError } from '../utils/slack-blocks.j
 import { shouldProcessMeeting } from './meeting-filter.js';
 import { ConfigLoader } from '../config/loader.js';
 import { KillSwitch } from './reliability/kill-switch.js';
+import { Heartbeat } from './reliability/heartbeat.js';
 import type { CalendarEvent } from '../types/google-calendar-types.js';
 import type { MeetingIntelligenceConfig } from '../types/pipeline-config.js';
 import type {
@@ -88,6 +89,7 @@ export class PipelineScheduler {
   private dailySummarySent = false;
   private dailySummaryDate = '';
   private readonly killSwitch: KillSwitch = new KillSwitch();
+  private readonly heartbeat: Heartbeat = new Heartbeat();
 
   constructor(
     private readonly calendarSourceManager: CalendarSourceManagerDep,
@@ -230,6 +232,8 @@ export class PipelineScheduler {
         logger.error({ err, eventTitle: event.title }, 'Failed to process briefing');
       }
     }
+
+    this.heartbeat.touch('pipeline.preMeeting', this.config.preMeetingPollInterval * 60);
   }
 
   // ---- Post-meeting ---------------------------------------------
@@ -293,6 +297,8 @@ export class PipelineScheduler {
 
     // Check daily summary
     await this.checkDailySummary();
+
+    this.heartbeat.touch('pipeline.postMeeting', this.config.postMeetingPollInterval * 60);
   }
 
   private async pollAndProcessPostMeeting(event: CalendarEvent): Promise<void> {

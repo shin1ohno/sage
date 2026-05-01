@@ -361,6 +361,25 @@ async function createServer(): Promise<McpServer> {
   );
 
   server.tool(
+    "get_health",
+    "Return sage reliability health: kill switch state, heartbeat freshness, last tick source. Read-only.",
+    {},
+    async () => {
+      const { KillSwitch } = await import("./services/reliability/kill-switch.js");
+      const { Heartbeat } = await import("./services/reliability/heartbeat.js");
+      const killSwitch = new KillSwitch();
+      const heartbeat = new Heartbeat();
+      const payload = {
+        killSwitch: { active: killSwitch.isActive(), path: killSwitch.getPath() },
+        heartbeat: heartbeat.status(),
+      };
+      return {
+        content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+      };
+    },
+  );
+
+  server.tool(
     "start_setup_wizard",
     "Start the interactive setup wizard for sage. Returns the first question.",
     {
