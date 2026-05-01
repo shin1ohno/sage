@@ -8,7 +8,6 @@ import { DEFAULT_CONFIG } from '../../src/types/config.js';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { homedir } from 'node:os';
 
 describe('ConfigLoader migration', () => {
   const testDir = join(tmpdir(), 'sage-migration-test-' + Date.now());
@@ -80,6 +79,70 @@ describe('ConfigLoader migration', () => {
         ConfigLoader.getConfigPath = originalGetConfigPath;
         ConfigLoader.save = originalSave;
       }
+    });
+  });
+
+  describe('integrations sub-field migration', () => {
+    async function loadWithConfigFile(filename: string, config: unknown) {
+      const configPath = join(testDir, filename);
+      await writeFile(configPath, JSON.stringify(config), 'utf-8');
+
+      const originalGetConfigPath = ConfigLoader.getConfigPath;
+      const originalSave = ConfigLoader.save;
+      ConfigLoader.getConfigPath = () => configPath;
+      ConfigLoader.save = async () => {};
+
+      try {
+        return await ConfigLoader.load();
+      } finally {
+        ConfigLoader.getConfigPath = originalGetConfigPath;
+        ConfigLoader.save = originalSave;
+      }
+    }
+
+    it('should add googleCalendar defaults when missing', async () => {
+      const partial = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+      delete partial.integrations.googleCalendar;
+      const loaded = await loadWithConfigFile('config-no-google.json', partial);
+
+      expect(loaded.integrations.googleCalendar).toBeDefined();
+      expect(loaded.integrations.googleCalendar.enabled).toBe(
+        DEFAULT_CONFIG.integrations.googleCalendar.enabled
+      );
+    });
+
+    it('should add notion defaults when missing', async () => {
+      const partial = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+      delete partial.integrations.notion;
+      const loaded = await loadWithConfigFile('config-no-notion.json', partial);
+
+      expect(loaded.integrations.notion).toBeDefined();
+      expect(loaded.integrations.notion.enabled).toBe(
+        DEFAULT_CONFIG.integrations.notion.enabled
+      );
+    });
+
+    it('should add appleReminders defaults when missing', async () => {
+      const partial = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+      delete partial.integrations.appleReminders;
+      const loaded = await loadWithConfigFile('config-no-apple.json', partial);
+
+      expect(loaded.integrations.appleReminders).toBeDefined();
+      expect(loaded.integrations.appleReminders.enabled).toBe(
+        DEFAULT_CONFIG.integrations.appleReminders.enabled
+      );
+    });
+
+    it('should rebuild entire integrations block when absent', async () => {
+      const partial = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+      delete partial.integrations;
+      const loaded = await loadWithConfigFile('config-no-integrations.json', partial);
+
+      expect(loaded.integrations).toBeDefined();
+      expect(loaded.integrations.googleCalendar).toBeDefined();
+      expect(loaded.integrations.notion).toBeDefined();
+      expect(loaded.integrations.appleReminders).toBeDefined();
+      expect(loaded.integrations.slack).toBeDefined();
     });
   });
 
