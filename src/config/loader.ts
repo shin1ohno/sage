@@ -73,13 +73,35 @@ export class ConfigLoader {
         migrated = true;
       }
 
-      // Migrate config if integrations.slack is missing
-      if (!parsed.integrations?.slack) {
-        if (!parsed.integrations) {
-          parsed.integrations = { ...DEFAULT_CONFIG.integrations };
-        }
-        parsed.integrations.slack = SlackIntegrationConfigSchema.parse({});
+      // Migrate integrations: backfill any missing sub-fields from DEFAULT_CONFIG.
+      // Older configs (and test fixtures) may omit googleCalendar/notion/appleReminders/slack;
+      // downstream adapters access these unconditionally, so we ensure shape parity here.
+      if (!parsed.integrations) {
+        parsed.integrations = JSON.parse(JSON.stringify(DEFAULT_CONFIG.integrations));
         migrated = true;
+      } else {
+        if (!parsed.integrations.appleReminders) {
+          parsed.integrations.appleReminders = JSON.parse(
+            JSON.stringify(DEFAULT_CONFIG.integrations.appleReminders)
+          );
+          migrated = true;
+        }
+        if (!parsed.integrations.notion) {
+          parsed.integrations.notion = JSON.parse(
+            JSON.stringify(DEFAULT_CONFIG.integrations.notion)
+          );
+          migrated = true;
+        }
+        if (!parsed.integrations.googleCalendar) {
+          parsed.integrations.googleCalendar = JSON.parse(
+            JSON.stringify(DEFAULT_CONFIG.integrations.googleCalendar)
+          );
+          migrated = true;
+        }
+        if (!parsed.integrations.slack) {
+          parsed.integrations.slack = SlackIntegrationConfigSchema.parse({});
+          migrated = true;
+        }
       }
 
       // Validate calendar.sources if present
