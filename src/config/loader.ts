@@ -104,6 +104,14 @@ export class ConfigLoader {
         }
       }
 
+      // Backfill autonomy block when missing. Default to Tier 1 across all
+      // known write tools so existing configs become safe-by-default after
+      // upgrade rather than silently auto-executing every mutation.
+      if (!parsed.autonomy) {
+        parsed.autonomy = JSON.parse(JSON.stringify(DEFAULT_CONFIG.autonomy));
+        migrated = true;
+      }
+
       // Validate calendar.sources if present
       if (parsed.calendar.sources) {
         const validation = validateCalendarSources(parsed.calendar.sources);

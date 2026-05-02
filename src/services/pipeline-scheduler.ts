@@ -12,6 +12,7 @@ import { shouldProcessMeeting } from './meeting-filter.js';
 import { ConfigLoader } from '../config/loader.js';
 import { KillSwitch } from './reliability/kill-switch.js';
 import { Heartbeat } from './reliability/heartbeat.js';
+import { ErrorDedupCache } from './reliability/error-dedup-cache.js';
 import type { CalendarEvent } from '../types/google-calendar-types.js';
 import type { MeetingIntelligenceConfig } from '../types/pipeline-config.js';
 import type {
@@ -90,6 +91,7 @@ export class PipelineScheduler {
   private dailySummaryDate = '';
   private readonly killSwitch: KillSwitch = new KillSwitch();
   private readonly heartbeat: Heartbeat = new Heartbeat();
+  private readonly errorDedup: ErrorDedupCache = new ErrorDedupCache();
 
   constructor(
     private readonly calendarSourceManager: CalendarSourceManagerDep,
@@ -444,6 +446,15 @@ export class PipelineScheduler {
       message,
       timestamp: new Date().toISOString(),
     };
+
+    // Suppress repeat notifications for the same error class within an hour
+    // so a 5-minute auth failure does not produce 12 Slack DMs/hr (288/day)
+    // and trip Slack's tier-1 rate limit.
+    const dedupKey = `${criticalError.type}:${message.slice(0, 80)}`;
+    if (!this.errorDedup.shouldNotify(dedupKey)) {
+      logger.debug({ type: criticalError.type }, 'critical error notification suppressed by dedup window');
+      return;
+    }
 
     const blocks = formatCriticalError(criticalError);
 

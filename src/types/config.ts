@@ -18,6 +18,24 @@ export interface UserConfig {
   integrations: IntegrationsConfig;
   preferences: PreferencesConfig;
   meetingIntelligence?: MeetingIntelligenceConfig;
+  autonomy?: AutonomyConfig;
+}
+
+/**
+ * Tier 0 = autonomous (immediate execution)
+ * Tier 1 = requires explicit confirm_action call
+ * Tier 2 = forbidden
+ */
+export type AutonomyTier = 0 | 1 | 2;
+
+export interface AutonomyConfig {
+  /**
+   * Per-tool autonomy level. Tools not present default to Tier 1.
+   * Keys are MCP tool names (e.g. "create_calendar_event").
+   */
+  tools: Record<string, AutonomyTier>;
+  /** Pending action TTL in minutes; default 30 */
+  pendingActionTTLMinutes: number;
 }
 
 export interface UserProfile {
@@ -319,5 +337,27 @@ export const DEFAULT_CONFIG: UserConfig = {
     excludePatterns: [],
     dailySummaryEnabled: true,
     promptsDir: '~/.sage/prompts/',
+  },
+  autonomy: {
+    // Default policy: every write tool requires an explicit confirm_action
+    // step (Tier 1). Operators can promote individual tools to Tier 0 in
+    // their config to opt back into immediate execution. This matches the
+    // reliability roundtable conclusion that "veterans guard the boundary
+    // strictly" — confidence is built per-tool, not via a single slider.
+    tools: {
+      create_calendar_event: 1,
+      update_calendar_event: 1,
+      delete_calendar_event: 1,
+      delete_calendar_events_batch: 1,
+      respond_to_calendar_event: 1,
+      respond_to_calendar_events_batch: 1,
+      set_reminder: 1,
+      update_task_status: 1,
+      sync_to_notion: 1,
+      sync_tasks: 1,
+      save_config: 1,
+      update_config: 1,
+    },
+    pendingActionTTLMinutes: 30,
   },
 };

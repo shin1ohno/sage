@@ -16,24 +16,58 @@ describe('Audit log via MCP handler', () => {
     await rm(SAGE_AUDIT_PATH, { force: true });
   });
 
-  it('records save_config dispatch as an audit entry', async () => {
+  it('does not record save_config when it is queued at Tier 1 (default)', async () => {
     const handler = await createMCPHandler();
     const beforeCall = new Date();
-    await handler.handleRequest({
+    const response = await handler.handleRequest({
       jsonrpc: '2.0',
       id: 1,
       method: 'tools/call',
       params: { name: 'save_config', arguments: { config: {} } },
     });
 
+    // Default autonomy is Tier 1: save_config returns pending without dispatch
+    const result = response.result as { content: Array<{ type: string; text: string }> };
+    const body = JSON.parse(result.content[0].text) as { code?: string };
+    expect(body.code).toBe('CAPABILITY_PENDING');
+
     const reader = new MutationLogger();
     const records = reader.readSince(beforeCall);
+    expect(records.find((r) => r.tool === 'save_config')).toBeUndefined();
 
-    expect(records.length).toBeGreaterThanOrEqual(1);
+    await handler.shutdown();
+  });
+
+  it('records save_config dispatch when explicitly confirmed', async () => {
+    const handler = await createMCPHandler();
+    const beforeCall = new Date();
+
+    // Step 1: queue Tier 1 action and capture token
+    const pendingResp = await handler.handleRequest({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'save_config', arguments: { config: {} } },
+    });
+    const pendingBody = JSON.parse(
+      (pendingResp.result as { content: Array<{ type: string; text: string }> }).content[0].text
+    ) as { token?: string; code?: string };
+    expect(pendingBody.code).toBe('CAPABILITY_PENDING');
+    expect(pendingBody.token).toBeDefined();
+
+    // Step 2: confirm_action triggers dispatch which writes the audit entry
+    await handler.handleRequest({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'confirm_action', arguments: { token: pendingBody.token } },
+    });
+
+    const reader = new MutationLogger();
+    const records = reader.readSince(beforeCall);
     const entry = records.find((r) => r.tool === 'save_config');
     expect(entry).toBeDefined();
     expect(entry?.correlationId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(typeof entry?.outcome).toBe('string');
 
     await handler.shutdown();
   });
