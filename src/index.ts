@@ -380,6 +380,74 @@ async function createServer(): Promise<McpServer> {
   );
 
   server.tool(
+    "sage_undo",
+    "List recent write-tool dispatches from the audit log along with their inverse operation when reversible. Read-only — does not mutate state.",
+    {
+      sinceMinutes: z
+        .number()
+        .optional()
+        .describe("Look back this many minutes (default 60)."),
+      correlationId: z
+        .string()
+        .optional()
+        .describe("If set, only return the record with this correlation id."),
+    },
+    async ({ sinceMinutes, correlationId }) => {
+      const { MutationLogger } = await import("./services/reliability/mutation-logger.js");
+      const minutes = typeof sinceMinutes === "number" && sinceMinutes > 0 ? sinceMinutes : 60;
+      const cutoff = new Date(Date.now() - minutes * 60_000);
+      const reader = new MutationLogger();
+      const records = reader.readSince(cutoff);
+      const filtered = correlationId
+        ? records.filter((r) => r.correlationId === correlationId)
+        : records;
+      const reversible = filtered.filter((r) => r.inverseOp?.tool);
+      const irreversible = filtered.filter(
+        (r) => r.outcome === "success" && (!r.inverseOp || r.inverseOp.tool === null),
+      );
+      const failed = filtered.filter((r) => r.outcome === "error");
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                windowMinutes: minutes,
+                totalRecords: filtered.length,
+                reversible: reversible.map((r) => ({
+                  correlationId: r.correlationId,
+                  timestamp: r.timestamp,
+                  tool: r.tool,
+                  inverseOp: r.inverseOp,
+                })),
+                irreversible: irreversible.map((r) => ({
+                  correlationId: r.correlationId,
+                  timestamp: r.timestamp,
+                  tool: r.tool,
+                  reason: r.inverseOp?.reason ?? "no inverse defined",
+                  args: r.inverseOp?.args,
+                })),
+                failed: failed.map((r) => ({
+                  correlationId: r.correlationId,
+                  timestamp: r.timestamp,
+                  tool: r.tool,
+                  errorMessage: r.errorMessage,
+                })),
+                hint:
+                  reversible.length > 0
+                    ? "To undo, call the suggested inverseOp.tool with inverseOp.args via tools/call."
+                    : "No reversible mutations found in this window.",
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  );
+
+  server.tool(
     "start_setup_wizard",
     "Start the interactive setup wizard for sage. Returns the first question.",
     {

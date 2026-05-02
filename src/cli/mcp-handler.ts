@@ -45,7 +45,7 @@ import {
   BudgetExceededError,
   type BudgetKind,
 } from '../services/reliability/budget-guard.js';
-import { MutationLogger } from '../services/reliability/mutation-logger.js';
+import { MutationLogger, type InverseOp } from '../services/reliability/mutation-logger.js';
 
 // Extracted tool handlers
 import {
@@ -217,6 +217,69 @@ class MCPHandlerImpl implements MCPHandler {
   private readonly heartbeat: Heartbeat = new Heartbeat();
   private readonly budgetGuard: BudgetGuard = new BudgetGuard();
   private readonly mutationLogger: MutationLogger = new MutationLogger();
+
+  // Synthesize an InverseOp describing how to undo a successful write tool
+  // dispatch. Returning a tool=null InverseOp marks the mutation as
+  // irreversible so sage_undo can flag it for manual cleanup.
+  private static synthesizeInverseOp(
+    toolName: string,
+    args: Record<string, unknown>,
+    result: unknown
+  ): InverseOp | undefined {
+    const resultObj = (result && typeof result === 'object' ? result : {}) as Record<string, unknown>;
+    const content = Array.isArray((resultObj as { content?: unknown }).content)
+      ? ((resultObj as { content: Array<{ type: string; text: string }> }).content)
+      : [];
+    let parsed: Record<string, unknown> | undefined;
+    if (content.length > 0 && content[0].type === 'text') {
+      try {
+        parsed = JSON.parse(content[0].text) as Record<string, unknown>;
+      } catch {
+        parsed = undefined;
+      }
+    }
+
+    switch (toolName) {
+      case 'create_calendar_event': {
+        const eventId =
+          (parsed?.eventId as string | undefined) ??
+          ((parsed?.event as { id?: string } | undefined)?.id);
+        if (!eventId) return { tool: null, reason: 'no eventId in result' };
+        return {
+          tool: 'delete_calendar_event',
+          args: {
+            eventId,
+            calendarName: args.calendarName,
+          },
+        };
+      }
+      case 'delete_calendar_event':
+      case 'delete_calendar_events_batch':
+        return { tool: null, reason: 'calendar event deletion is irreversible' };
+      case 'sync_to_notion': {
+        // Notion pages can be archived; without the page id we cannot undo.
+        const pageId =
+          (parsed?.pageId as string | undefined) ??
+          ((parsed?.page as { id?: string } | undefined)?.id);
+        if (!pageId) return { tool: null, reason: 'no pageId in result' };
+        return { tool: null, reason: 'manual archive needed', args: { pageId } };
+      }
+      case 'set_reminder': {
+        const reminderId = parsed?.reminderId as string | undefined;
+        if (!reminderId) return { tool: null, reason: 'no reminderId in result' };
+        return { tool: null, reason: 'reminder deletion not exposed as MCP tool', args: { reminderId } };
+      }
+      case 'respond_to_calendar_event':
+      case 'respond_to_calendar_events_batch':
+      case 'update_calendar_event':
+        // RSVP / update can in theory be undone but requires the previous
+        // state, which is not currently captured. Mark irreversible until
+        // we add prev-state snapshot.
+        return { tool: null, reason: 'undo requires previous-state snapshot (not implemented)' };
+      default:
+        return undefined;
+    }
+  }
 
   // Map each write tool to the budget bucket it consumes. Tools not in this
   // map are gated only by the kill switch; tools listed here also count
@@ -775,8 +838,9 @@ class MCPHandlerImpl implements MCPHandler {
     try {
       const result = await tool.handler(toolArgs);
       if (isWriteTool && correlationId) {
+        const inverseOp = MCPHandlerImpl.synthesizeInverseOp(toolName, toolArgs, result);
         this.mutationLogger.record(
-          { tool: toolName, args: toolArgs, outcome: 'success', result },
+          { tool: toolName, args: toolArgs, outcome: 'success', result, inverseOp },
           correlationId
         );
       }
@@ -854,6 +918,84 @@ class MCPHandlerImpl implements MCPHandler {
         },
       },
       async () => handleCheckSetupStatus(this.createSetupContext())
+    );
+
+    // sage_undo - list reversible mutations from the audit log so the user
+    // (or Claude) can decide whether to dispatch the inverse tool.
+    this.registerTool(
+      {
+        name: 'sage_undo',
+        description:
+          'List recent write-tool dispatches from the audit log along with their inverse operation when reversible. Read-only — does not mutate state. Use the suggested inverse tool name + args to actually undo.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sinceMinutes: {
+              type: 'number',
+              description: 'Look back this many minutes (default 60).',
+            },
+            correlationId: {
+              type: 'string',
+              description: 'If set, only return the record with this correlation id.',
+            },
+          },
+        },
+      },
+      async (args) => {
+        const sinceMinutes =
+          typeof args.sinceMinutes === 'number' && args.sinceMinutes > 0 ? args.sinceMinutes : 60;
+        const cutoff = new Date(Date.now() - sinceMinutes * 60_000);
+        const records = this.mutationLogger.readSince(cutoff);
+        const filtered =
+          typeof args.correlationId === 'string'
+            ? records.filter((r) => r.correlationId === args.correlationId)
+            : records;
+
+        const reversible = filtered.filter((r) => r.inverseOp?.tool);
+        const irreversible = filtered.filter(
+          (r) => r.outcome === 'success' && (!r.inverseOp || r.inverseOp.tool === null)
+        );
+        const failed = filtered.filter((r) => r.outcome === 'error');
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  windowMinutes: sinceMinutes,
+                  totalRecords: filtered.length,
+                  reversible: reversible.map((r) => ({
+                    correlationId: r.correlationId,
+                    timestamp: r.timestamp,
+                    tool: r.tool,
+                    inverseOp: r.inverseOp,
+                  })),
+                  irreversible: irreversible.map((r) => ({
+                    correlationId: r.correlationId,
+                    timestamp: r.timestamp,
+                    tool: r.tool,
+                    reason: r.inverseOp?.reason ?? 'no inverse defined',
+                    args: r.inverseOp?.args,
+                  })),
+                  failed: failed.map((r) => ({
+                    correlationId: r.correlationId,
+                    timestamp: r.timestamp,
+                    tool: r.tool,
+                    errorMessage: r.errorMessage,
+                  })),
+                  hint:
+                    reversible.length > 0
+                      ? 'To undo, call the suggested inverseOp.tool with inverseOp.args via tools/call.'
+                      : 'No reversible mutations found in this window.',
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
     );
 
     // get_health - reliability snapshot for monitors and operators
