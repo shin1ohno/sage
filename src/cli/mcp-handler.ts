@@ -46,6 +46,16 @@ import {
   type BudgetKind,
 } from '../services/reliability/budget-guard.js';
 import { MutationLogger, type InverseOp } from '../services/reliability/mutation-logger.js';
+import { CapabilityGate } from '../services/reliability/capability-gate.js';
+import { PendingActionStore } from '../services/reliability/pending-action-store.js';
+
+function safeJSONParse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
 
 // Extracted tool handlers
 import {
@@ -217,6 +227,8 @@ class MCPHandlerImpl implements MCPHandler {
   private readonly heartbeat: Heartbeat = new Heartbeat();
   private readonly budgetGuard: BudgetGuard = new BudgetGuard();
   private readonly mutationLogger: MutationLogger = new MutationLogger();
+  private readonly capabilityGate: CapabilityGate = new CapabilityGate(undefined);
+  private readonly pendingActionStore: PendingActionStore = new PendingActionStore();
 
   // Synthesize an InverseOp describing how to undo a successful write tool
   // dispatch. Returning a tool=null InverseOp marks the mutation as
@@ -328,6 +340,7 @@ class MCPHandlerImpl implements MCPHandler {
 
     // Auto-bootstrap: load existing config or create default
     this.config = await ConfigLoader.loadOrCreate();
+    this.capabilityGate.updateConfig(this.config.autonomy);
     this.initializeServices(this.config);
     await this.initializeHotReload(this.config);
 
@@ -738,7 +751,8 @@ class MCPHandlerImpl implements MCPHandler {
    */
   private async handleToolsCall(
     id: number | string | null,
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
+    options: { bypassCapabilityGate?: boolean; confirmedToken?: string } = {}
   ): Promise<MCPResponse> {
     if (!params?.name) {
       return {
@@ -794,6 +808,70 @@ class MCPHandlerImpl implements MCPHandler {
           };
         }
         throw error;
+      }
+
+      // Capability gate: route Tier 1 calls to a pending queue, deny Tier 2,
+      // and let Tier 0 (or already-confirmed) calls proceed. The gate is
+      // skipped only when the caller is confirm_action (bypassCapabilityGate).
+      if (!options.bypassCapabilityGate) {
+        const decision = this.capabilityGate.decide(toolName);
+        if (decision.kind === 'deny') {
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      error: true,
+                      code: 'CAPABILITY_DENIED',
+                      tool: toolName,
+                      tier: decision.tier,
+                      message: `Tool ${toolName} is configured at Tier 2 (forbidden) in autonomy.tools. Promote it to Tier 0 or 1 to enable.`,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            },
+          };
+        }
+        if (decision.kind === 'pending') {
+          const pending = this.pendingActionStore.enqueue(
+            toolName,
+            toolArgs,
+            this.capabilityGate.pendingTTLMinutes(),
+            `${toolName}(${JSON.stringify(toolArgs).slice(0, 80)})`
+          );
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      kind: 'pending',
+                      code: 'CAPABILITY_PENDING',
+                      tool: toolName,
+                      tier: decision.tier,
+                      token: pending.token,
+                      summary: pending.summary,
+                      expiresAt: pending.expiresAt,
+                      hint: `This tool is at Tier 1. Call confirm_action with token=${pending.token} to execute, or list_pending_actions to inspect the queue. Promote to Tier 0 in autonomy.tools.${toolName} to bypass.`,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            },
+          };
+        }
       }
 
       const budgetKind = MCPHandlerImpl.TOOL_BUDGET_KIND.get(toolName);
@@ -918,6 +996,133 @@ class MCPHandlerImpl implements MCPHandler {
         },
       },
       async () => handleCheckSetupStatus(this.createSetupContext())
+    );
+
+    // list_pending_actions - inspect Tier 1 actions awaiting confirm_action
+    this.registerTool(
+      {
+        name: 'list_pending_actions',
+        description:
+          'List Tier 1 write actions queued for explicit confirmation. Returns tokens, tool names, args, and expiry. Read-only.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      async () => {
+        const actions = this.pendingActionStore.list();
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  count: actions.length,
+                  actions: actions.map((a) => ({
+                    token: a.token,
+                    toolName: a.toolName,
+                    args: a.args,
+                    summary: a.summary,
+                    createdAt: a.createdAt,
+                    expiresAt: a.expiresAt,
+                  })),
+                  hint:
+                    actions.length > 0
+                      ? 'Call confirm_action with one of the listed tokens to execute. Tokens are one-shot.'
+                      : 'No actions awaiting confirmation.',
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+    );
+
+    // confirm_action - execute a queued Tier 1 write action by token
+    this.registerTool(
+      {
+        name: 'confirm_action',
+        description:
+          'Execute a previously-queued Tier 1 write action. Provide the token from list_pending_actions or the pending response. Tokens are one-shot.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            token: {
+              type: 'string',
+              description: 'The pending action token to confirm and execute.',
+            },
+          },
+          required: ['token'],
+        },
+      },
+      async (args) => {
+        const token = typeof args.token === 'string' ? args.token : '';
+        if (!token) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  { error: true, message: 'token is required' },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        const action = this.pendingActionStore.consume(token);
+        if (!action) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    code: 'PENDING_TOKEN_UNKNOWN',
+                    message: `No pending action found for token ${token} (it may have expired or been already consumed)`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        // Re-dispatch through the normal write-tool path but bypass the
+        // capability gate (the user has explicitly confirmed). Kill switch,
+        // budget, and audit log all still apply.
+        const dispatchResponse = await this.handleToolsCall(
+          0,
+          { name: action.toolName, arguments: action.args },
+          { bypassCapabilityGate: true, confirmedToken: token }
+        );
+
+        const inner = (dispatchResponse.result as { content?: Array<{ type: string; text: string }> })
+          ?.content?.[0]?.text;
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  confirmed: true,
+                  token,
+                  toolName: action.toolName,
+                  innerResult: inner ? safeJSONParse(inner) : null,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
     );
 
     // sage_undo - list reversible mutations from the audit log so the user

@@ -380,6 +380,97 @@ async function createServer(): Promise<McpServer> {
   );
 
   server.tool(
+    "list_pending_actions",
+    "List Tier 1 write actions queued for explicit confirmation. Returns tokens, tool names, args, and expiry. Read-only.",
+    {},
+    async () => {
+      const { PendingActionStore } = await import("./services/reliability/pending-action-store.js");
+      const store = new PendingActionStore();
+      const actions = store.list();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                count: actions.length,
+                actions: actions.map((a) => ({
+                  token: a.token,
+                  toolName: a.toolName,
+                  args: a.args,
+                  summary: a.summary,
+                  createdAt: a.createdAt,
+                  expiresAt: a.expiresAt,
+                })),
+                hint:
+                  actions.length > 0
+                    ? "Call confirm_action with one of the listed tokens to execute. Tokens are one-shot."
+                    : "No actions awaiting confirmation.",
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  );
+
+  server.tool(
+    "confirm_action",
+    "Execute a previously-queued Tier 1 write action. Provide the token from list_pending_actions or the pending response. Tokens are one-shot.",
+    {
+      token: z.string().describe("The pending action token to confirm and execute."),
+    },
+    async ({ token }) => {
+      // In stdio mode the dispatcher lives inside McpServer; consuming a
+      // pending action and routing it back through the McpServer here is
+      // not straightforward, so we surface the queued action's tool/args so
+      // the caller can re-dispatch it explicitly.
+      const { PendingActionStore } = await import("./services/reliability/pending-action-store.js");
+      const store = new PendingActionStore();
+      const action = store.consume(token);
+      if (!action) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: true,
+                  code: "PENDING_TOKEN_UNKNOWN",
+                  message: `No pending action found for token ${token} (it may have expired or been already consumed)`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                confirmed: true,
+                token,
+                toolName: action.toolName,
+                args: action.args,
+                hint:
+                  "Re-dispatch this tool with the listed args. The autonomy gate will be bypassed for this confirmed call.",
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  );
+
+  server.tool(
     "sage_undo",
     "List recent write-tool dispatches from the audit log along with their inverse operation when reversible. Read-only — does not mutate state.",
     {
