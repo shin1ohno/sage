@@ -5,11 +5,17 @@
 //! `../../../src/utils` and `../../../src/tools`, preserving the exact output
 //! contract. The TS unit tests are the parity oracle (see `rust/parity`).
 //!
-//! Phase 0 ships the type spine + one ported helper to prove the test-vector
-//! workflow. Phase 1 ports the full engines: priority cascade, estimation
-//! formula, stakeholder extraction (mind the CJK regex divergence — Rust
-//! `\w` is Unicode by default; use `(?-u)` / `[\x{4E00}-\x{9FAF}]`), and the
-//! task splitter (Kahn topological order).
+//! Phase 1 ports the config-input types (here) and the engines: priority
+//! cascade, estimation formula, stakeholder extraction (mind the CJK regex
+//! divergence — Rust `\w` is Unicode by default; use `(?-u)` /
+//! `[\x{4E00}-\x{9FAF}]`), and the task splitter (Kahn topological order).
+
+pub mod config;
+
+pub use config::{
+    ConditionOperator, ConditionType, ConditionValue, DeadlineUnit, EstimationConfig,
+    KeywordMapping, PriorityCondition, PriorityRules, TeamConfig, TeamMember, TeamRole,
+};
 
 /// Task priority. Mirrors the TS `Priority` union `'P0' | 'P1' | 'P2' | 'P3'`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
