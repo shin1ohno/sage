@@ -11,11 +11,15 @@
 //! `[\x{4E00}-\x{9FAF}]`), and the task splitter (Kahn topological order).
 
 pub mod config;
+pub mod estimation;
+pub mod task;
 
 pub use config::{
     ConditionOperator, ConditionType, ConditionValue, DeadlineUnit, EstimationConfig,
     KeywordMapping, PriorityCondition, PriorityRules, TeamConfig, TeamMember, TeamRole,
 };
+pub use estimation::{default_estimation_config, estimate_duration, EstimationResult};
+pub use task::Task;
 
 /// Task priority. Mirrors the TS `Priority` union `'P0' | 'P1' | 'P2' | 'P3'`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
