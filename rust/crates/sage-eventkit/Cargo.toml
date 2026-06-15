@@ -1,0 +1,12 @@
+[package]
+name = "sage-eventkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Native EventKit (calendar events + reminders) via objc2. macOS only."
+
+[dependencies]
+# Phase 2 (macOS only): objc2, objc2-foundation, objc2-event-kit (0.3.2 has
+# EKEvent/EKEventStore/EKReminder). Gated with [target.'cfg(target_os="macos")'].

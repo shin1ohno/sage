@@ -1,0 +1,14 @@
+[package]
+name = "sage-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Config types (UserConfig/RemoteConfig), loading, validation, hot-reload for sage."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sage-domain = { workspace = true }
+# Phase 1+: schemars, garde (validation), notify + notify-debouncer-mini (hot-reload).

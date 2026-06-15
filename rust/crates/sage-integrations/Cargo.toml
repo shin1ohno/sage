@@ -1,0 +1,16 @@
+[package]
+name = "sage-integrations"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "External-boundary traits + impls (Google, Slack, Notion, crypto, Sampler) for sage."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sage-domain = { workspace = true }
+# Phase 2+: reqwest (Google/Slack REST), oauth2 (+PKCE), rmcp client +
+# transport-child-process (Notion MCP server spawn), aes-gcm + scrypt + sha2 +
+# base64 (encryption-service, byte-compatible with TS ~/.sage/*.enc).

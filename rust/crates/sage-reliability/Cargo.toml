@@ -1,0 +1,13 @@
+[package]
+name = "sage-reliability"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Reliability suite (kill-switch, budget, capability-gate, audit, etc.) for sage."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Phase 2: nix (pid liveness via kill(pid, None)), fd-lock, uuid, chrono.
