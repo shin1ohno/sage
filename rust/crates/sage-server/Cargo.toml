@@ -1,0 +1,21 @@
+[package]
+name = "sage-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "sage MCP server binary — stdio (Phase 0) + Streamable HTTP (Phase 3)."
+
+[[bin]]
+name = "sage"
+path = "src/main.rs"
+
+[dependencies]
+rmcp = { workspace = true }
+sage-mcp = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+# Phase 3: axum, hyper, tower-http (HTTP transport), jsonwebtoken, arc-swap, dashmap.

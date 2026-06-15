@@ -1,0 +1,14 @@
+[package]
+name = "sage-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "MCP tool surface: rmcp ServerHandler, tool registration, dispatch for sage."
+
+[dependencies]
+rmcp = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sage-domain = { workspace = true }

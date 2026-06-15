@@ -1,0 +1,55 @@
+# sage — Rust rewrite workspace.
+#
+# Phased migration of the TypeScript MCP server (../src). The TS tree remains
+# the behavior-parity oracle during migration; this workspace builds the
+# replacement `sage` binary. See ../.claude/specs/rust-rewrite/ (created after
+# Phase 0) and the approved plan for phase breakdown.
+[workspace]
+resolver = "2"
+members = [
+    "crates/sage-domain",
+    "crates/sage-config",
+    "crates/sage-reliability",
+    "crates/sage-eventkit",
+    "crates/sage-integrations",
+    "crates/sage-mcp",
+    "crates/sage-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["shin1ohno"]
+repository = "https://github.com/shin1ohno/sage"
+
+[workspace.dependencies]
+# Shared third-party versions. Heavy per-phase deps (objc2/objc2-event-kit,
+# axum/hyper, reqwest, oauth2, jsonwebtoken, notify, arc-swap) are added to
+# their owning crate when their phase begins — Phase 0 keeps the dep graph to
+# rmcp + tokio + serde to keep the first build tractable.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+# Official Model Context Protocol Rust SDK (verified 1.7.0, 12.6M downloads).
+# default features already include `server` + `macros`; transport-io adds the
+# stdio transport used by sage-server. Streamable-HTTP server transport is
+# enabled in Phase 3.
+rmcp = { version = "1.7", features = ["schemars", "transport-io"] }
+
+# Internal crates.
+sage-domain = { path = "crates/sage-domain" }
+sage-config = { path = "crates/sage-config" }
+sage-reliability = { path = "crates/sage-reliability" }
+sage-eventkit = { path = "crates/sage-eventkit" }
+sage-integrations = { path = "crates/sage-integrations" }
+sage-mcp = { path = "crates/sage-mcp" }
+
+[profile.release]
+lto = "thin"
+strip = true

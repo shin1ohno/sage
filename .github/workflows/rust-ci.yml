@@ -1,0 +1,37 @@
+name: rust-ci
+
+on:
+  push:
+    paths:
+      - "rust/**"
+      - ".github/workflows/rust-ci.yml"
+  pull_request:
+    paths:
+      - "rust/**"
+      - ".github/workflows/rust-ci.yml"
+
+defaults:
+  run:
+    working-directory: rust
+
+jobs:
+  check:
+    # Phase 0 builds on Linux (no objc2 yet). A macOS job is added in Phase 2
+    # when sage-eventkit pulls in objc2-event-kit (macOS-only).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: fmt
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: build
+        run: cargo build --workspace
+      - name: test
+        run: cargo test --workspace
