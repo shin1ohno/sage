@@ -13,7 +13,9 @@
 pub mod config;
 pub mod estimation;
 pub mod priority;
+pub mod stakeholders;
 pub mod task;
+pub mod task_splitter;
 
 pub use config::{
     ConditionOperator, ConditionType, ConditionValue, DeadlineUnit, EstimationConfig,
@@ -21,7 +23,13 @@ pub use config::{
 };
 pub use estimation::{default_estimation_config, estimate_duration, EstimationResult};
 pub use priority::{determine_priority, PriorityResult};
+pub use stakeholders::{
+    extract_potential_names, extract_stakeholders, manager_priority_boost, StakeholderResult,
+};
 pub use task::Task;
+pub use task_splitter::{
+    analyze_complexity, split_tasks, ComplexityAnalysis, SplitResult, SplitTask, TaskDependency,
+};
 
 /// Task priority. Mirrors the TS `Priority` union `'P0' | 'P1' | 'P2' | 'P3'`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
