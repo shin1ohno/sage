@@ -543,16 +543,20 @@ version = "0.1.0"
 name = "sage-integrations"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "sage-domain",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "sage-mcp"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "rmcp",
+ "sage-config",
  "sage-domain",
  "serde",
  "serde_json",

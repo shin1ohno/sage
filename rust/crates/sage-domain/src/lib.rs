@@ -10,12 +10,18 @@
 //! divergence — Rust `\w` is Unicode by default; use `(?-u)` /
 //! `[\x{4E00}-\x{9FAF}]`), and the task splitter (Kahn topological order).
 
+pub mod analyze;
 pub mod config;
 pub mod estimation;
 pub mod priority;
 pub mod stakeholders;
 pub mod task;
 pub mod task_splitter;
+
+pub use analyze::{
+    analyze_from_text, analyze_task, analyze_tasks, AnalysisReasoning, AnalysisResult,
+    AnalysisSummary, AnalyzeInputs, AnalyzedTask, Reminder, SplitInfo,
+};
 
 pub use config::{
     ConditionOperator, ConditionType, ConditionValue, DeadlineUnit, EstimationConfig,

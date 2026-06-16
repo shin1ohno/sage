@@ -1,16 +1,13 @@
 //! `sage-integrations` — external-service boundaries behind traits.
 //!
-//! Phase 2+ home for the trait definitions (`Sampler`, `CalendarSource`,
-//! `ReminderStore`, `NotionClient`, `SlackClient`, `DirectoryService`) and
-//! their concrete impls:
-//! - **google**: `reqwest` over Calendar v3 (events/calendarList/freebusy) +
-//!   People `searchDirectoryPeople`; `oauth2` + PKCE + pre-emptive refresh.
-//! - **slack**: `reqwest` Web API (5 methods) + OAuth (2 calls).
+//! Phase 1c establishes the `Sampler` seam (MCP sampling). Phase 2+ adds the
+//! concrete integrations and their traits:
+//! - **google**: `reqwest` over Calendar v3 + People; `oauth2` + PKCE + refresh.
+//! - **slack**: `reqwest` Web API + OAuth.
 //! - **notion**: `rmcp` client over `transport-child-process` (spawn the Notion
-//!   MCP server) — the TS `StdioClientTransport` was never wired.
-//! - **crypto**: AES-256-GCM + scrypt encryption-service (byte-compatible),
-//!   PKCE S256.
-//!
-//! `Sampler` is the single most important seam: sage holds no NLP; all natural
-//! -language analysis is delegated through MCP `sampling/createMessage`. Empty
-//! in Phase 0; the trait lands in Phase 1.
+//!   MCP server).
+//! - **crypto**: AES-256-GCM + scrypt encryption-service (byte-compatible), PKCE.
+
+pub mod sampler;
+
+pub use sampler::{Sampler, SamplingError, SamplingMessage, SamplingRequest, SamplingResponse};
