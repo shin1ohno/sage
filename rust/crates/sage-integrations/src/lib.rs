@@ -8,9 +8,16 @@
 //!   MCP server).
 //! - **crypto**: AES-256-GCM + scrypt encryption-service (byte-compatible), PKCE.
 
+pub mod calendar;
 pub mod encryption;
+pub mod google;
 pub mod pkce;
 pub mod sampler;
 
+pub use calendar::{AttendeeDetail, CalendarEvent, EventType, Organizer};
 pub use encryption::{CryptoError, EncryptionService};
+pub use google::{
+    convert_google_to_calendar_event, normalize_to_rfc3339, token_is_valid, GoogleAuthError,
+    GoogleEvent, GoogleOAuthHandler, GoogleOAuthTokens, StoredTokens, GOOGLE_SCOPES,
+};
 pub use sampler::{Sampler, SamplingError, SamplingMessage, SamplingRequest, SamplingResponse};

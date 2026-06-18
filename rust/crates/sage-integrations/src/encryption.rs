@@ -40,13 +40,37 @@ fn default_key_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".sage/oauth_encryption_key"))
 }
 
-#[cfg(unix)]
-fn set_mode(path: &Path, mode: u32) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode));
+/// Create/overwrite a file owner-readable only (0600 on unix), with the mode
+/// applied AT CREATION so the file is never momentarily world-readable (the TS
+/// wrote-then-chmod'd, leaving a brief window).
+fn write_private(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(path)?;
+    f.write_all(contents)
 }
-#[cfg(not(unix))]
-fn set_mode(_path: &Path, _mode: u32) {}
+
+/// Create a directory (recursive) restricted to the owner (0700 on unix).
+fn create_private_dir(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(path)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir_all(path)
+    }
+}
 
 impl EncryptionService {
     /// Construct with an explicit key (tests / injected config).
@@ -84,11 +108,9 @@ impl EncryptionService {
         rand::thread_rng().fill_bytes(&mut raw);
         let key = hex::encode(raw);
         if let Some(parent) = key_storage_path.parent() {
-            std::fs::create_dir_all(parent)?;
-            set_mode(parent, 0o700);
+            create_private_dir(parent)?;
         }
-        std::fs::write(&key_storage_path, &key)?;
-        set_mode(&key_storage_path, 0o600);
+        write_private(&key_storage_path, key.as_bytes())?;
         Ok(Self {
             key,
             key_storage_path,
@@ -154,12 +176,11 @@ impl EncryptionService {
     pub fn encrypt_to_file(&self, data: &str, path: &Path) -> Result<(), CryptoError> {
         let encrypted = self.encrypt(data)?;
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-            set_mode(parent, 0o700);
+            create_private_dir(parent)?;
         }
         let temp = path.with_extension("tmp");
-        std::fs::write(&temp, &encrypted)?;
-        set_mode(&temp, 0o600);
+        // Temp written 0600-at-creation so encrypted tokens are never momentarily readable.
+        write_private(&temp, encrypted.as_bytes())?;
         std::fs::rename(&temp, path)?;
         Ok(())
     }
