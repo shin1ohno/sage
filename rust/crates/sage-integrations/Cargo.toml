@@ -13,6 +13,16 @@ serde_json = { workspace = true }
 sage-domain = { workspace = true }
 thiserror = { workspace = true }
 async-trait = "0.1"
-# Phase 2+: reqwest (Google/Slack REST), oauth2 (+PKCE), rmcp client +
-# transport-child-process (Notion MCP server spawn), aes-gcm + scrypt + sha2 +
-# base64 (encryption-service, byte-compatible with TS ~/.sage/*.enc).
+# crypto (Phase 2b): byte-compatible with the TS encryption-service
+# (AES-256-GCM, 16-byte IV, scrypt N=16384/r=8/p=1, hex salt:iv:authTag:ct) + PKCE S256.
+aes-gcm = "0.10"
+scrypt = "0.11"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+hex = "0.4"
+dirs = "5"
+# Phase 2c+: reqwest (Google/Slack REST), oauth2, rmcp client + transport-child-process (Notion).
+
+[dev-dependencies]
+tempfile = "3"

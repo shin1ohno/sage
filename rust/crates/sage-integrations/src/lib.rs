@@ -8,6 +8,9 @@
 //!   MCP server).
 //! - **crypto**: AES-256-GCM + scrypt encryption-service (byte-compatible), PKCE.
 
+pub mod encryption;
+pub mod pkce;
 pub mod sampler;
 
+pub use encryption::{CryptoError, EncryptionService};
 pub use sampler::{Sampler, SamplingError, SamplingMessage, SamplingRequest, SamplingResponse};
