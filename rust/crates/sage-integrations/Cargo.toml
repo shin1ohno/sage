@@ -26,7 +26,10 @@ chrono = { workspace = true }
 # Google/Slack REST over reqwest (rustls, no system OpenSSL). OAuth is hand-rolled
 # form-POSTs (PKCE from this crate); the googleapis/oauth2 crates are not needed.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-# Phase 2e: rmcp client + transport-child-process (Notion MCP server spawn).
+# Notion (Phase 2e): rmcp MCP *client* spawning the Notion MCP server as a child
+# process (fixes the TS stub that never wired StdioClientTransport).
+rmcp = { workspace = true, features = ["client", "transport-child-process"] }
+tokio = { workspace = true, features = ["process"] }
 
 [dev-dependencies]
 tempfile = "3"
