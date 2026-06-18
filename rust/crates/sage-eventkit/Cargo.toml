@@ -8,5 +8,25 @@ repository.workspace = true
 description = "Native EventKit (calendar events + reminders) via objc2. macOS only."
 
 [dependencies]
-# Phase 2 (macOS only): objc2, objc2-foundation, objc2-event-kit (0.3.2 has
-# EKEvent/EKEventStore/EKReminder). Gated with [target.'cfg(target_os="macos")'].
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+async-trait = "0.1"
+sage-domain = { workspace = true }
+
+# macOS-only: native EventKit via objc2 (verified on crates.io 2026-06:
+# objc2 0.6.4, objc2-foundation 0.3.2, objc2-event-kit 0.3.2). Default features
+# of objc2-event-kit pull in EKEventStore/EKEvent/EKReminder/EKCalendar/
+# EKCalendarItem/EKParticipant/EKRecurrenceRule/EKAlarm; objc2-foundation default
+# provides NSISO8601DateFormatter/NSDate/NSCalendar/NSDateComponents/NSPredicate.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-foundation = "0.3.2"
+objc2-event-kit = "0.3.2"
+# block2 is pulled in transitively by objc2-event-kit's default features, but we
+# name RcBlock directly for the reminders-fetch completion handler.
+block2 = "0.6"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
