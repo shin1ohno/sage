@@ -11,6 +11,8 @@ description = "External-boundary traits + impls (Google, Slack, Notion, crypto, 
 serde = { workspace = true }
 serde_json = { workspace = true }
 sage-domain = { workspace = true }
+thiserror = { workspace = true }
+async-trait = "0.1"
 # Phase 2+: reqwest (Google/Slack REST), oauth2 (+PKCE), rmcp client +
 # transport-child-process (Notion MCP server spawn), aes-gcm + scrypt + sha2 +
 # base64 (encryption-service, byte-compatible with TS ~/.sage/*.enc).

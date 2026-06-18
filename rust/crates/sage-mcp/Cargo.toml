@@ -11,4 +11,6 @@ description = "MCP tool surface: rmcp ServerHandler, tool registration, dispatch
 rmcp = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+chrono = { workspace = true }
 sage-domain = { workspace = true }
+sage-config = { workspace = true }

@@ -444,6 +444,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex"
+version = "1.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1292b7759ae1cb9ec195452d1390a074f0cd8541ab7a5a8c31cd6db45d4a6ba"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "regex-automata"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -517,6 +529,8 @@ dependencies = [
 name = "sage-domain"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "regex",
  "serde",
  "serde_json",
 ]
@@ -529,16 +543,20 @@ version = "0.1.0"
 name = "sage-integrations"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "sage-domain",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "sage-mcp"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "rmcp",
+ "sage-config",
  "sage-domain",
  "serde",
  "serde_json",
