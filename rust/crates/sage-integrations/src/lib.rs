@@ -11,6 +11,8 @@
 pub mod calendar;
 pub mod encryption;
 pub mod google;
+pub mod google_calendar;
+pub mod google_people;
 pub mod pkce;
 pub mod sampler;
 
@@ -20,4 +22,9 @@ pub use google::{
     convert_google_to_calendar_event, normalize_to_rfc3339, token_is_valid, GoogleAuthError,
     GoogleEvent, GoogleOAuthHandler, GoogleOAuthTokens, StoredTokens, GOOGLE_SCOPES,
 };
+pub use google_calendar::{
+    build_event_body, is_available, parse_alarm_minutes, parse_freebusy, BusyPeriod, CalendarError,
+    CalendarInfo, CreateEventRequest, GoogleCalendarClient,
+};
+pub use google_people::{DirectoryPerson, GooglePeopleClient, PeopleError};
 pub use sampler::{Sampler, SamplingError, SamplingMessage, SamplingRequest, SamplingResponse};
