@@ -15,6 +15,8 @@ pub mod google_calendar;
 pub mod google_people;
 pub mod pkce;
 pub mod sampler;
+pub mod slack;
+pub mod slack_blocks;
 
 pub use calendar::{AttendeeDetail, CalendarEvent, EventType, Organizer};
 pub use encryption::{CryptoError, EncryptionService};
@@ -28,3 +30,11 @@ pub use google_calendar::{
 };
 pub use google_people::{DirectoryPerson, GooglePeopleClient, PeopleError};
 pub use sampler::{Sampler, SamplingError, SamplingMessage, SamplingRequest, SamplingResponse};
+pub use slack::{
+    classify_error, SlackChannel, SlackClient, SlackError, SlackMessage, SlackOAuthHandler,
+    SlackTokens, SlackUser, SLACK_SCOPES,
+};
+pub use slack_blocks::{
+    format_briefing, format_critical_error, format_daily_summary, format_post_meeting_report,
+    CriticalPipelineError, DailySummaryStatus, SourceLinks,
+};
