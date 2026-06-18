@@ -10,4 +10,15 @@ description = "Reliability suite (kill-switch, budget, capability-gate, audit, e
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-# Phase 2: nix (pid liveness via kill(pid, None)), fd-lock, uuid, chrono.
+chrono = { workspace = true }
+thiserror = { workspace = true }
+uuid = { version = "1", features = ["v4"] }
+dirs = "5"
+
+[target.'cfg(unix)'.dependencies]
+# PID liveness probe via kill(pid, None) (signal 0 equivalent), like the TS
+# IdempotencyLock's process.kill(pid, 0).
+nix = { version = "0.29", features = ["signal", "process"] }
+
+[dev-dependencies]
+tempfile = "3"
