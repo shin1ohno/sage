@@ -13,6 +13,7 @@ pub mod encryption;
 pub mod google;
 pub mod google_calendar;
 pub mod google_people;
+pub mod notion;
 pub mod pkce;
 pub mod sampler;
 pub mod slack;
@@ -29,6 +30,10 @@ pub use google_calendar::{
     CalendarInfo, CreateEventRequest, GoogleCalendarClient,
 };
 pub use google_people::{DirectoryPerson, GooglePeopleClient, PeopleError};
+pub use notion::{
+    build_create_page_args, parse_page_result, validate_database_id, NotionError, NotionMcpClient,
+    NotionPageRequest, NotionPageResult,
+};
 pub use sampler::{Sampler, SamplingError, SamplingMessage, SamplingRequest, SamplingResponse};
 pub use slack::{
     classify_error, SlackChannel, SlackClient, SlackError, SlackMessage, SlackOAuthHandler,
