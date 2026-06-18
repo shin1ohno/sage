@@ -14,6 +14,7 @@ pub mod analyze;
 pub mod config;
 pub mod estimation;
 pub mod priority;
+pub mod recurrence;
 pub mod stakeholders;
 pub mod task;
 pub mod task_splitter;
@@ -29,6 +30,11 @@ pub use config::{
 };
 pub use estimation::{default_estimation_config, estimate_duration, EstimationResult};
 pub use priority::{determine_priority, PriorityResult};
+pub use recurrence::{
+    create_rrule, describe_recurrence, is_valid_byday, is_valid_until_date, parse_int_js,
+    parse_rrule, validate_recurrence_rules, validate_single_rule, ParsedRrule, ValidationError,
+    ValidationResult, VALID_DAY_CODES, VALID_FREQUENCIES,
+};
 pub use stakeholders::{
     extract_potential_names, extract_stakeholders, manager_priority_boost, StakeholderResult,
 };
