@@ -11,6 +11,7 @@
 //! `[\x{4E00}-\x{9FAF}]`), and the task splitter (Kahn topological order).
 
 pub mod analyze;
+pub mod calendar;
 pub mod config;
 pub mod estimation;
 pub mod priority;
@@ -24,6 +25,7 @@ pub use analyze::{
     AnalysisSummary, AnalyzeInputs, AnalyzedTask, Reminder, SplitInfo,
 };
 
+pub use calendar::{AttendeeDetail, CalendarEvent, CalendarResource, EventType, Organizer};
 pub use config::{
     ConditionOperator, ConditionType, ConditionValue, DeadlineUnit, EstimationConfig,
     KeywordMapping, PriorityCondition, PriorityRules, TeamConfig, TeamMember, TeamRole,

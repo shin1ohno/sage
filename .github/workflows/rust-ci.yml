@@ -16,8 +16,10 @@ defaults:
 
 jobs:
   check:
-    # Phase 0 builds on Linux (no objc2 yet). A macOS job is added in Phase 2
-    # when sage-eventkit pulls in objc2-event-kit (macOS-only).
+    # Linux: the whole workspace minus the macOS-only objc2 paths in
+    # sage-eventkit (gated by cfg(target_os = "macos"), so the crate compiles to
+    # an empty stub here). The macOS-native EventKit code is exercised by
+    # `check-macos` below.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +31,28 @@ jobs:
           workspaces: rust
       - name: fmt
         run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: build
+        run: cargo build --workspace
+      - name: test
+        run: cargo test --workspace
+
+  check-macos:
+    # macOS: required so the sage-eventkit objc2/EventKit code (only compiled
+    # under cfg(target_os = "macos")) is fmt/clippy/build/test-checked. Live
+    # Calendar/Reminders permission grants are not available in CI, so the tests
+    # here exercise pure helpers (date/RRULE conversion, mapping) — EventStore
+    # access is verified manually on a real Mac.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: build
